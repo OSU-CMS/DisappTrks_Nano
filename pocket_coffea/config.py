@@ -22,14 +22,15 @@ from workflow import DisappTrksProcessor
 cloudpickle.register_pickle_by_value(cuts)
 cloudpickle.register_pickle_by_value(workflow)
 
-localdir = os.path.dirname(os.path.abspath(__file__))
+#localdir = os.path.dirname(os.path.abspath(__file__))
+localdir = "/uscms_data/d3/mjoyce/DisTrks/CMSSW_15_0_10/src/DisappTrks_Nano/pocket_coffea"
 parameters = defaults.get_default_parameters()
 
 cfg = Configurator(
     parameters=parameters,
     datasets={
-        "jsons": [f"{localdir}/datasets/local_2022D_muon.json"],
-        "filter": {"samples": ["DATA_Muon"], "year": ["2022"]},
+        "jsons": [f"{localdir}/datasets/local_2024F_muon.json"],
+        "filter": {"samples": ["DATA_Muon"], "year": ["2024"]},
     },
     workflow=DisappTrksProcessor,
     calibrators=[],
