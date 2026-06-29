@@ -1,0 +1,31 @@
+[project]
+name = "disapptrks-nano"
+version = "0.1.0"
+description = "PocketCoffea analysis for the Run 3 disappearing-track search"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [ { name = "Joyce" } ]
+
+[project.scripts]
+disapptrks = "disapptrks.cli:main"
+
+[build-system]
+requires = ["setuptools>=61","wheel"]
+build-backend = "setuptools.build_meta"
+
+[project.optional-dependencies]
+analysis = [
+  "awkward>=2",
+  "coffea>=2024.8.0",
+  "hist>=2",
+  "numpy>=1.24",
+  "uproot>=5",
+  "vector>=1",
+]
+pocket-coffea = [
+  "pocket_coffea",
+]
+test = ["pytest", "numpy>=1.24"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
