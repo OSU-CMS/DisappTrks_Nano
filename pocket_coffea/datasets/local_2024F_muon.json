@@ -1,7 +1,7 @@
 {
   "Run2024F_Muon_OSUNano_local": {
     "files": [
-      "../../../nano_99.root"
+      "/uscms_data/d3/mjoyce/DisTrks/CMSSW_15_0_10/src/nano_99.root"
     ],
     "metadata": {
       "sample": "DATA_Muon",
