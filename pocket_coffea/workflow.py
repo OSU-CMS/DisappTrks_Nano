@@ -26,6 +26,7 @@ class DisappTrksProcessor(BaseProcessorABC):
         ]
 
     def count_objects(self, variation):
+        self.events["nIsoTrack"] = ak.num(self.events.IsoTrack)
         self.events["nIsoTrackProbe"] = ak.num(self.events.IsoTrackProbe)
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
 
