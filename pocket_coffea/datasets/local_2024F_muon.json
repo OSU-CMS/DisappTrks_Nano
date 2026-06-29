@@ -1,12 +1,12 @@
 {
-  "Run2022D_Muon_OSUNano_local": {
+  "Run2024F_Muon_OSUNano_local": {
     "files": [
       "../../../nano_99.root"
     ],
     "metadata": {
       "sample": "DATA_Muon",
-      "year": "2022",
-      "era": "D",
+      "year": "2024",
+      "era": "F",
       "isMC": "False",
       "primaryDataset": "Muon",
       "nevents": "510119",

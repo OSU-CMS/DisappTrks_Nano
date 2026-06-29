@@ -16,7 +16,8 @@ variables, and analysis selections are computed downstream in Python.
   dataset configuration.
 
 The current local smoke-test file is expected outside this repository as
-`../nano_99.root`. Check productions before running:
+`../nano_99.root`. Its dataset metadata is labeled as 2024F Muon data. Check
+productions before running:
 
 ```bash
 python -m pip install -e '.[analysis,test]'
@@ -38,7 +39,7 @@ Once a file passes the schema audit:
 
 ```bash
 cd pocket_coffea
-pocket-coffea run --cfg config.py -o output
+pocket-coffea run --cfg config.py --test -lf 1 -lc 1 -c 50000 -e iterative -ps -o output_test_nano99
 ```
 
 ## Physics-equivalence caveat
