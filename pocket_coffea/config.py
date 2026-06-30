@@ -21,6 +21,8 @@ from cuts import has_disappearing_track, search_diagnostic_cuts, search_kinemati
 from cuts import (
     has_muon_veto_os_mass10_pair,
     has_muon_veto_os_pair,
+    has_muon_pveto_ss_zwindow_pass_pair,
+    has_muon_pveto_zwindow_pass_pair,
     has_muon_veto_ss_mass10_pair,
     has_muon_veto_ss_pair,
     has_muon_tag,
@@ -82,9 +84,11 @@ cfg = Configurator(
         "muon_veto_zwindow": [has_muon_veto_zwindow_pair],
         "muon_veto_zwindow_pass": [has_muon_veto_zwindow_pass_pair],
         "muon_veto_zwindow_fail": [has_muon_veto_zwindow_fail_pair],
+        "muon_pveto_zwindow_pass": [has_muon_pveto_zwindow_pass_pair],
         "muon_veto_ss_zwindow": [has_muon_veto_ss_zwindow_pair],
         "muon_veto_ss_zwindow_pass": [has_muon_veto_ss_zwindow_pass_pair],
         "muon_veto_ss_zwindow_fail": [has_muon_veto_ss_zwindow_fail_pair],
+        "muon_pveto_ss_zwindow_pass": [has_muon_pveto_ss_zwindow_pass_pair],
         **diagnostic_categories,
     },
     weights={"common": {"inclusive": []}, "bysample": {}},
@@ -235,6 +239,18 @@ cfg = Configurator(
                 )
             ]
         ),
+        "nMuonPVetoTagProbePairZWindowPass": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonPVetoTagProbePairZWindowPass",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(OS Z-window pairs passing muon Pveto numerator)",
+                )
+            ]
+        ),
         "nMuonVetoTagProbePairSSZWindow": HistConf(
             [
                 Axis(
@@ -268,6 +284,18 @@ cfg = Configurator(
                     start=0,
                     stop=10,
                     label="N(SS Z-window pairs failing muon veto)",
+                )
+            ]
+        ),
+        "nMuonPVetoTagProbePairSSZWindowPass": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonPVetoTagProbePairSSZWindowPass",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(SS Z-window pairs passing muon Pveto numerator)",
                 )
             ]
         ),

@@ -229,6 +229,10 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
             "probe_dRMinMuon": probe.dRMinMuon,
             "probe_missingOuterHits": probe.missingOuterHits,
             "probe_passMuonVeto": (probe.dRMinMuon < 0.0) | (probe.dRMinMuon > 0.15),
+            "probe_passMuonPVetoNoFiducial": (
+                ((probe.dRMinMuon < 0.0) | (probe.dRMinMuon > 0.15))
+                & (probe.missingOuterHits >= 3)
+            ),
         }
     )
 
@@ -267,6 +271,18 @@ def muon_veto_pair_pass_mask(pairs):
 
 def muon_veto_pair_fail_mask(pairs):
     return ~pairs.probe_passMuonVeto
+
+
+def muon_pveto_pair_pass_mask(pairs):
+    """Muon-Pveto numerator before applying lepton fiducial-map vetoes.
+
+    The AN numerator counts tag-and-probe denominator pairs for which the probe
+    track both passes the muon veto and satisfies the disappearing-track
+    missing-outer-hit requirement.  Fiducial maps are applied as an additional
+    veto in the legacy ntuple workflow; Nano-side fiducial-map application will
+    be layered on top of this once the maps are available in this repository.
+    """
+    return pairs.probe_passMuonPVetoNoFiducial
 
 
 def search_track_mask(tracks, *, layer: str = "combinedBins"):

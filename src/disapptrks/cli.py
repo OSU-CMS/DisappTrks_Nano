@@ -16,6 +16,7 @@ from .summaries import (
     summarize_ss_subtracted_veto_probability,
     summarize_veto_probability,
 )
+from .tables import write_muon_cutflow_latex, write_muon_pveto_latex
 
 
 def _audit_command(args: argparse.Namespace) -> int:
@@ -104,6 +105,46 @@ def _make_dataset_json_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _make_pveto_tables_command(args: argparse.Namespace) -> int:
+    from coffea.util import load
+
+    output = load(args.file)
+    cutflow = output["cutflow"]
+
+    write_muon_cutflow_latex(
+        cutflow,
+        args.cutflow_tex,
+        dataset=args.dataset,
+        sample=args.sample,
+        variation=args.variation,
+        include_table_env=args.table_env,
+    )
+    summary = write_muon_pveto_latex(
+        cutflow,
+        args.pveto_tex,
+        run_period=args.run_period,
+        flavor=args.flavor,
+        layer=args.layer,
+        dataset=args.dataset,
+        sample=args.sample,
+        variation=args.variation,
+        os_denominator_name=args.denominator,
+        os_numerator_name=args.numerator,
+        ss_denominator_name=args.ss_denominator,
+        ss_numerator_name=args.ss_numerator,
+        include_table_env=args.table_env,
+    )
+
+    print(f"Wrote {args.cutflow_tex}")
+    print(f"Wrote {args.pveto_tex}")
+    print(
+        "P_veto = "
+        f"{summary.central:.6g} +{summary.err_up:.6g} -{summary.err_down:.6g} "
+        f"(signed numerator={summary.numerator:g}, denominator={summary.denominator:g})"
+    )
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(prog="disapptrks")
     subparsers = parser.add_subparsers(dest="command")
@@ -141,7 +182,7 @@ def main():
     )
     pveto.add_argument(
         "--numerator",
-        default="muon_veto_zwindow_pass",
+        default="muon_pveto_zwindow_pass",
         help="OS cutflow category used as numerator.",
     )
     pveto.add_argument(
@@ -151,10 +192,60 @@ def main():
     )
     pveto.add_argument(
         "--ss-numerator",
-        default="muon_veto_ss_zwindow_pass",
+        default="muon_pveto_ss_zwindow_pass",
         help="SS cutflow category subtracted from the numerator.",
     )
     pveto.set_defaults(func=_summarize_pveto_command)
+
+    pveto_tables = subparsers.add_parser(
+        "make-pveto-tables",
+        help="Write AN-style muon Pveto cutflow and probability LaTeX tables.",
+    )
+    pveto_tables.add_argument("file", type=Path)
+    pveto_tables.add_argument("--dataset", help="Restrict to one dataset key.")
+    pveto_tables.add_argument("--sample", help="Restrict to one sample key.")
+    pveto_tables.add_argument("--variation", default="nominal")
+    pveto_tables.add_argument("--run-period", required=True, help="Run-period label used in the Pveto table.")
+    pveto_tables.add_argument("--flavor", default=r"$\mu$", help="Flavor label used in the Pveto table.")
+    pveto_tables.add_argument("--layer", default="combinedBins", help="Layer-bin label used in the Pveto table.")
+    pveto_tables.add_argument(
+        "--cutflow-tex",
+        type=Path,
+        default=Path("muon_pveto_cutflow.tex"),
+        help="Output path for the cutflow LaTeX table.",
+    )
+    pveto_tables.add_argument(
+        "--pveto-tex",
+        type=Path,
+        default=Path("muon_pveto_table.tex"),
+        help="Output path for the Pveto LaTeX table.",
+    )
+    pveto_tables.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap each tabular in a LaTeX table environment.",
+    )
+    pveto_tables.add_argument(
+        "--denominator",
+        default="muon_veto_zwindow",
+        help="OS cutflow category used as denominator.",
+    )
+    pveto_tables.add_argument(
+        "--numerator",
+        default="muon_pveto_zwindow_pass",
+        help="OS cutflow category used as numerator.",
+    )
+    pveto_tables.add_argument(
+        "--ss-denominator",
+        default="muon_veto_ss_zwindow",
+        help="SS cutflow category subtracted from the denominator.",
+    )
+    pveto_tables.add_argument(
+        "--ss-numerator",
+        default="muon_pveto_ss_zwindow_pass",
+        help="SS cutflow category subtracted from the numerator.",
+    )
+    pveto_tables.set_defaults(func=_make_pveto_tables_command)
 
     dataset_json = subparsers.add_parser(
         "make-dataset-json",

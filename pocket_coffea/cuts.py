@@ -135,6 +135,12 @@ has_muon_veto_zwindow_fail_pair = Cut(
     function=_has_count,
 )
 
+has_muon_pveto_zwindow_pass_pair = Cut(
+    name="has_muon_pveto_zwindow_pass_pair",
+    params={"field": "nMuonPVetoTagProbePairZWindowPass", "minimum": 1},
+    function=_has_count,
+)
+
 has_muon_veto_ss_zwindow_pair = Cut(
     name="has_muon_veto_ss_zwindow_pair",
     params={"field": "nMuonVetoTagProbePairSSZWindow", "minimum": 1},
@@ -150,6 +156,12 @@ has_muon_veto_ss_zwindow_pass_pair = Cut(
 has_muon_veto_ss_zwindow_fail_pair = Cut(
     name="has_muon_veto_ss_zwindow_fail_pair",
     params={"field": "nMuonVetoTagProbePairSSZWindowFail", "minimum": 1},
+    function=_has_count,
+)
+
+has_muon_pveto_ss_zwindow_pass_pair = Cut(
+    name="has_muon_pveto_ss_zwindow_pass_pair",
+    params={"field": "nMuonPVetoTagProbePairSSZWindowPass", "minimum": 1},
     function=_has_count,
 )
 
