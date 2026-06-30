@@ -7,11 +7,14 @@ import awkward as ak
 from pocket_coffea.lib.cut_definition import Cut
 
 
-SEARCH_DIAGNOSTIC_FIELDS = [
+EVENT_DIAGNOSTIC_FIELDS = [
     "event_metNoMu120",
     "event_leadingJet110",
     "event_jetMetDphi0p5",
     "event_dijetDphi2p5",
+]
+
+TRACK_DIAGNOSTIC_FIELDS = [
     "track_pt55",
     "track_eta2p1",
     "track_noECALCrack",
@@ -34,6 +37,14 @@ SEARCH_DIAGNOSTIC_FIELDS = [
     "track_muonVeto",
     "track_tauVeto",
 ]
+
+COMBINED_DIAGNOSTIC_FIELDS = [
+    f"eventKinematics_{field}" for field in TRACK_DIAGNOSTIC_FIELDS
+]
+
+SEARCH_DIAGNOSTIC_FIELDS = (
+    EVENT_DIAGNOSTIC_FIELDS + TRACK_DIAGNOSTIC_FIELDS + COMBINED_DIAGNOSTIC_FIELDS
+)
 
 
 def _has_disappearing_track(events, params, **kwargs):

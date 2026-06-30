@@ -105,6 +105,18 @@ cfg = Configurator(
                 )
             ]
         ),
+        "nIsoTrackSearchPreLeptonVeto": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nIsoTrackSearchPreLeptonVeto",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(search tracks before lepton vetoes)",
+                )
+            ]
+        ),
         "metNoMu_pt": HistConf(
             [
                 Axis(
@@ -253,6 +265,21 @@ cfg = Configurator(
                         start=-0.5,
                         stop=20.5,
                         label=f"Search preselection track outer {label}",
+                    )
+                ]
+            )
+            for field, label in outer_hit_variants.items()
+        },
+        **{
+            f"preLeptonVetoTrack_{field}": HistConf(
+                [
+                    Axis(
+                        coll="IsoTrackSearchPreLeptonVeto",
+                        field=field,
+                        bins=21,
+                        start=-0.5,
+                        stop=20.5,
+                        label=f"Search pre-lepton-veto track outer {label}",
                     )
                 ]
             )

@@ -27,6 +27,9 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["IsoTrackSearchPreMissingOuter"] = self.events.IsoTrack[
             search_diagnostic_masks["track_calo10"]
         ]
+        self.events["IsoTrackSearchPreLeptonVeto"] = self.events.IsoTrack[
+            search_diagnostic_masks["track_missingOuter3"]
+        ]
         self.events["IsoTrackSearch"] = self.events.IsoTrack[
             search_track_mask(self.events.IsoTrack)
         ]
@@ -37,15 +40,25 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["nIsoTrackSearchPreMissingOuter"] = ak.num(
             self.events.IsoTrackSearchPreMissingOuter
         )
+        self.events["nIsoTrackSearchPreLeptonVeto"] = ak.num(
+            self.events.IsoTrackSearchPreLeptonVeto
+        )
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
 
+        track_diagnostics = {}
         diagnostics = {}
         for name, mask in search_track_cutflow_masks(self.events.IsoTrack).items():
             n_name = f"n{name[0].upper()}{name[1:]}"
             self.events[n_name] = ak.num(self.events.IsoTrack[mask])
-            diagnostics[name] = self.events[n_name] >= 1
+            track_diagnostics[name] = self.events[n_name] >= 1
 
-        diagnostics.update(search_event_cutflow_masks(self.events.AnalysisEvent))
+        diagnostics.update(track_diagnostics)
+
+        event_diagnostics = search_event_cutflow_masks(self.events.AnalysisEvent)
+        diagnostics.update(event_diagnostics)
+        event_search_kinematics = event_diagnostics["event_dijetDphi2p5"]
+        for name, mask in track_diagnostics.items():
+            diagnostics[f"eventKinematics_{name}"] = event_search_kinematics & mask
         self.events["SearchDiag"] = ak.zip(diagnostics)
 
     def define_common_variables_before_presel(self, variation):
