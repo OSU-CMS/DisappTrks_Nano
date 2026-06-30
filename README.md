@@ -20,7 +20,7 @@ The current local smoke-test file is expected outside this repository as
 productions before running:
 
 ```bash
-python3 -m pip install -e '.[analysis,test]'
+python3 -m pip install -e '.[analysis,test,pocket-coffea]'
 disapptrks audit-schema ../nano_99.root
 ```
 
@@ -28,10 +28,20 @@ The audit exits with status 2 if the requested scope is incomplete.
 
 ## PocketCoffea setup
 
-Install the sibling checkout and this analysis in one environment:
+Install this analysis and the recommended PocketCoffea release in one
+environment:
 
 ```bash
-python3 -m pip install -e ./PocketCoffea
+python3 -m pip install -e '.[analysis,test,pocket-coffea]'
+```
+
+The `pocket-coffea` extra pins `pocket-coffea==0.9.12`, matching the current
+PocketCoffea release line and its Coffea/Awkward dependency stack. If you are
+developing PocketCoffea itself from a sibling checkout, install that checkout
+instead of the extra:
+
+```bash
+python3 -m pip install -e ../PocketCoffea
 python3 -m pip install -e '.[analysis,test]'
 ```
 

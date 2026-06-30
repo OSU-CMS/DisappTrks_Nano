@@ -23,8 +23,7 @@ from workflow import DisappTrksProcessor
 cloudpickle.register_pickle_by_value(cuts)
 cloudpickle.register_pickle_by_value(workflow)
 
-#localdir = os.path.dirname(os.path.abspath(__file__))
-localdir = "/uscms_data/d3/mjoyce/DisTrks/CMSSW_15_0_10/src/DisappTrks_Nano/pocket_coffea"
+localdir = os.path.dirname(os.path.abspath(__file__))
 parameters = defaults.get_default_parameters()
 diagnostic_categories = {
     f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()

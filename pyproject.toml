@@ -15,16 +15,17 @@ build-backend = "setuptools.build_meta"
 
 [project.optional-dependencies]
 analysis = [
-  "awkward>=2",
-  "coffea>=2024.8.0",
-  "hist>=2",
-  "numpy>=1.24",
-  "uproot>=5",
-  "vector>=1",
+  "awkward>=1.10.3,<2",
+  "coffea==0.7.29",
+  "hist>=2.8.0",
+  "numpy>=1.22.0",
+  "uproot>=4,<5",
+  "vector<1.5.0",
 ]
 pocket-coffea = [
+  "pocket-coffea==0.9.12",
 ]
-test = ["pytest", "numpy>=1.24"]
+test = ["pytest", "numpy>=1.22.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
