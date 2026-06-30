@@ -51,6 +51,10 @@ def _has_disappearing_track(events, params, **kwargs):
     return events.nIsoTrackSearch >= params["minimum"]
 
 
+def _has_count(events, params, **kwargs):
+    return events[params["field"]] >= params["minimum"]
+
+
 def _search_diagnostic(events, params, **kwargs):
     return events.SearchDiag[params["field"]]
 
@@ -69,6 +73,36 @@ has_disappearing_track = Cut(
     name="has_disappearing_track",
     params={"minimum": 1},
     function=_has_disappearing_track,
+)
+
+has_muon_tag = Cut(
+    name="has_muon_tag",
+    params={"field": "nMuonTag", "minimum": 1},
+    function=_has_count,
+)
+
+has_muon_veto_probe_track = Cut(
+    name="has_muon_veto_probe_track",
+    params={"field": "nMuonVetoProbeTrack", "minimum": 1},
+    function=_has_count,
+)
+
+has_muon_veto_tag_probe_pair = Cut(
+    name="has_muon_veto_tag_probe_pair",
+    params={"field": "nMuonVetoTagProbePair", "minimum": 1},
+    function=_has_count,
+)
+
+has_muon_veto_zwindow_pair = Cut(
+    name="has_muon_veto_zwindow_pair",
+    params={"field": "nMuonVetoTagProbePairZWindow", "minimum": 1},
+    function=_has_count,
+)
+
+has_muon_veto_zwindow_pass_pair = Cut(
+    name="has_muon_veto_zwindow_pass_pair",
+    params={"field": "nMuonVetoTagProbePairZWindowPass", "minimum": 1},
+    function=_has_count,
 )
 
 search_kinematics = Cut(

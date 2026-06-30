@@ -149,6 +149,80 @@ def base_probe_track_mask(
     return mask
 
 
+def muon_tag_mask(muons, *, pt_min: float = 26.0, eta_max: float = 2.1, iso_max: float = 0.15):
+    """Tight, isolated muon tag used for the first tag-and-probe prototype."""
+    return (
+        (muons.pt > pt_min)
+        & (abs(muons.eta) < eta_max)
+        & muons.tightId
+        & (muons.pfRelIso04_all < iso_max)
+    )
+
+
+def muon_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
+    """Probe-track denominator for a first muon-veto tag-and-probe study.
+
+    This intentionally does not apply the muon veto.  The muon-veto pass/fail
+    decision is measured on top of this denominator.
+    """
+    return base_probe_track_mask(
+        tracks,
+        pt_min=30.0,
+        layer=layer,
+        apply_calo_cut=True,
+        apply_outer_hits_cut=False,
+    ) & (
+        ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+        & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+    )
+
+
+def invariant_mass(first, second, *, first_mass: float = 0.105658, second_mass: float = 0.105658):
+    """Compute invariant mass from NanoAOD-style pt/eta/phi records."""
+    first_px = first.pt * np.cos(first.phi)
+    first_py = first.pt * np.sin(first.phi)
+    first_pz = first.pt * np.sinh(first.eta)
+    first_e = np.sqrt(first_px**2 + first_py**2 + first_pz**2 + first_mass**2)
+
+    second_px = second.pt * np.cos(second.phi)
+    second_py = second.pt * np.sin(second.phi)
+    second_pz = second.pt * np.sinh(second.eta)
+    second_e = np.sqrt(second_px**2 + second_py**2 + second_pz**2 + second_mass**2)
+
+    mass2 = (
+        (first_e + second_e) ** 2
+        - (first_px + second_px) ** 2
+        - (first_py + second_py) ** 2
+        - (first_pz + second_pz) ** 2
+    )
+    return np.sqrt(np.maximum(mass2, 0.0))
+
+
+def build_muon_veto_tag_probe_pairs(tags, probes):
+    """Build flat per-event muon-tag/probe-track pairs for P(muon veto)."""
+    import awkward as ak
+
+    tag, probe = ak.unzip(ak.cartesian([tags, probes], axis=1))
+    mass = invariant_mass(tag, probe)
+    return ak.zip(
+        {
+            "mass": mass,
+            "os": tag.charge * probe.charge < 0,
+            "ss": tag.charge * probe.charge > 0,
+            "probe_pt": probe.pt,
+            "probe_eta": probe.eta,
+            "probe_phi": probe.phi,
+            "probe_dRMinMuon": probe.dRMinMuon,
+            "probe_missingOuterHits": probe.missingOuterHits,
+            "probe_passMuonVeto": (probe.dRMinMuon < 0.0) | (probe.dRMinMuon > 0.15),
+        }
+    )
+
+
+def z_window_muon_probe_pair_mask(pairs, *, z_mass: float = 91.1876, window: float = 10.0):
+    return pairs.os & (pairs.mass > z_mass - window) & (pairs.mass < z_mass + window)
+
+
 def search_track_mask(tracks, *, layer: str = "combinedBins"):
     return base_probe_track_mask(
         tracks,

@@ -18,6 +18,13 @@ from pocket_coffea.utils.configurator import Configurator
 import cuts
 import workflow
 from cuts import has_disappearing_track, search_diagnostic_cuts, search_kinematics
+from cuts import (
+    has_muon_tag,
+    has_muon_veto_probe_track,
+    has_muon_veto_tag_probe_pair,
+    has_muon_veto_zwindow_pair,
+    has_muon_veto_zwindow_pass_pair,
+)
 from workflow import DisappTrksProcessor
 
 cloudpickle.register_pickle_by_value(cuts)
@@ -51,6 +58,11 @@ cfg = Configurator(
     categories={
         "inclusive": [passthrough],
         "search": [search_kinematics, has_disappearing_track],
+        "muon_veto_tag": [has_muon_tag],
+        "muon_veto_probe": [has_muon_tag, has_muon_veto_probe_track],
+        "muon_veto_pair": [has_muon_veto_tag_probe_pair],
+        "muon_veto_zwindow": [has_muon_veto_zwindow_pair],
+        "muon_veto_zwindow_pass": [has_muon_veto_zwindow_pass_pair],
         **diagnostic_categories,
     },
     weights={"common": {"inclusive": []}, "bysample": {}},
@@ -78,6 +90,66 @@ cfg = Configurator(
                     start=0,
                     stop=10,
                     label="N(probe tracks)",
+                )
+            ]
+        ),
+        "nMuonTag": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonTag",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(tight isolated muon tags)",
+                )
+            ]
+        ),
+        "nMuonVetoProbeTrack": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoProbeTrack",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(muon-veto probe tracks)",
+                )
+            ]
+        ),
+        "nMuonVetoTagProbePair": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePair",
+                    bins=20,
+                    start=0,
+                    stop=20,
+                    label="N(muon tag-probe pairs)",
+                )
+            ]
+        ),
+        "nMuonVetoTagProbePairZWindow": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePairZWindow",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(OS muon tag-probe pairs in Z window)",
+                )
+            ]
+        ),
+        "nMuonVetoTagProbePairZWindowPass": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePairZWindowPass",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(OS Z-window pairs passing muon veto)",
                 )
             ]
         ),
@@ -222,6 +294,102 @@ cfg = Configurator(
                     start=-1,
                     stop=5,
                     label=r"Probe track min $\Delta R$(jet)",
+                )
+            ]
+        ),
+        "muonTag_pt": HistConf(
+            [
+                Axis(
+                    coll="MuonTag",
+                    field="pt",
+                    bins=60,
+                    start=0,
+                    stop=300,
+                    label="Muon tag $p_T$ [GeV]",
+                )
+            ]
+        ),
+        "muonTag_eta": HistConf(
+            [
+                Axis(
+                    coll="MuonTag",
+                    field="eta",
+                    bins=50,
+                    start=-2.5,
+                    stop=2.5,
+                    label="Muon tag eta",
+                )
+            ]
+        ),
+        "muonVetoProbeTrack_pt": HistConf(
+            [
+                Axis(
+                    coll="MuonVetoProbeTrack",
+                    field="pt",
+                    bins=60,
+                    start=0,
+                    stop=300,
+                    label="Muon-veto probe track $p_T$ [GeV]",
+                )
+            ]
+        ),
+        "muonVetoProbeTrack_eta": HistConf(
+            [
+                Axis(
+                    coll="MuonVetoProbeTrack",
+                    field="eta",
+                    bins=50,
+                    start=-2.5,
+                    stop=2.5,
+                    label="Muon-veto probe track eta",
+                )
+            ]
+        ),
+        "muonVetoProbeTrack_dRMinMuon": HistConf(
+            [
+                Axis(
+                    coll="MuonVetoProbeTrack",
+                    field="dRMinMuon",
+                    bins=60,
+                    start=-1,
+                    stop=5,
+                    label=r"Probe track min $\Delta R$(muon)",
+                )
+            ]
+        ),
+        "muonVetoTagProbePair_mass": HistConf(
+            [
+                Axis(
+                    coll="MuonVetoTagProbePair",
+                    field="mass",
+                    bins=80,
+                    start=0,
+                    stop=200,
+                    label="Muon tag-probe mass [GeV]",
+                )
+            ]
+        ),
+        "muonVetoTagProbePairZWindow_mass": HistConf(
+            [
+                Axis(
+                    coll="MuonVetoTagProbePairZWindow",
+                    field="mass",
+                    bins=40,
+                    start=70,
+                    stop=110,
+                    label="OS Z-window muon tag-probe mass [GeV]",
+                )
+            ]
+        ),
+        "muonVetoTagProbePairZWindow_probe_dRMinMuon": HistConf(
+            [
+                Axis(
+                    coll="MuonVetoTagProbePairZWindow",
+                    field="probe_dRMinMuon",
+                    bins=60,
+                    start=-1,
+                    stop=5,
+                    label=r"OS Z-window probe min $\Delta R$(muon)",
                 )
             ]
         ),
