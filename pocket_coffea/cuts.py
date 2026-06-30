@@ -7,8 +7,41 @@ import awkward as ak
 from pocket_coffea.lib.cut_definition import Cut
 
 
+SEARCH_DIAGNOSTIC_FIELDS = [
+    "event_metNoMu120",
+    "event_leadingJet110",
+    "event_jetMetDphi0p5",
+    "event_dijetDphi2p5",
+    "track_pt55",
+    "track_eta2p1",
+    "track_noECALCrack",
+    "track_noDTWheelGap",
+    "track_noCSCTransition",
+    "track_noTOBCrack",
+    "track_fiducialECAL",
+    "track_pixelHits4",
+    "track_validHits4",
+    "track_noMissingInner",
+    "track_noMissingMiddle",
+    "track_chargedIso0p05",
+    "track_dxy0p02",
+    "track_dz0p5",
+    "track_dRJet0p5",
+    "track_layers4plus",
+    "track_calo10",
+    "track_missingOuter3",
+    "track_electronVeto",
+    "track_muonVeto",
+    "track_tauVeto",
+]
+
+
 def _has_disappearing_track(events, params, **kwargs):
     return events.nIsoTrackSearch >= params["minimum"]
+
+
+def _search_diagnostic(events, params, **kwargs):
+    return events.SearchDiag[params["field"]]
 
 
 def _search_kinematics(events, params, **kwargs):
@@ -37,3 +70,12 @@ search_kinematics = Cut(
     },
     function=_search_kinematics,
 )
+
+search_diagnostic_cuts = {
+    field: Cut(
+        name=field,
+        params={"field": field},
+        function=_search_diagnostic,
+    )
+    for field in SEARCH_DIAGNOSTIC_FIELDS
+}

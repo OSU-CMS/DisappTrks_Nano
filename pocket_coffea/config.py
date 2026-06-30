@@ -17,7 +17,7 @@ from pocket_coffea.utils.configurator import Configurator
 
 import cuts
 import workflow
-from cuts import has_disappearing_track, search_kinematics
+from cuts import has_disappearing_track, search_diagnostic_cuts, search_kinematics
 from workflow import DisappTrksProcessor
 
 cloudpickle.register_pickle_by_value(cuts)
@@ -26,6 +26,9 @@ cloudpickle.register_pickle_by_value(workflow)
 #localdir = os.path.dirname(os.path.abspath(__file__))
 localdir = "/uscms_data/d3/mjoyce/DisTrks/CMSSW_15_0_10/src/DisappTrks_Nano/pocket_coffea"
 parameters = defaults.get_default_parameters()
+diagnostic_categories = {
+    f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()
+}
 
 cfg = Configurator(
     parameters=parameters,
@@ -40,6 +43,7 @@ cfg = Configurator(
     categories={
         "inclusive": [passthrough],
         "search": [search_kinematics, has_disappearing_track],
+        **diagnostic_categories,
     },
     weights={"common": {"inclusive": []}, "bysample": {}},
     weights_classes=[],

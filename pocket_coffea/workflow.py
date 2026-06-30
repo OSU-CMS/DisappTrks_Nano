@@ -10,6 +10,8 @@ from disapptrks.selections import (
     add_event_derived_fields,
     add_isotrack_derived_fields,
     base_probe_track_mask,
+    search_event_cutflow_masks,
+    search_track_cutflow_masks,
     search_track_mask,
 )
 
@@ -29,6 +31,15 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["nIsoTrack"] = ak.num(self.events.IsoTrack)
         self.events["nIsoTrackProbe"] = ak.num(self.events.IsoTrackProbe)
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
+
+        diagnostics = {}
+        for name, mask in search_track_cutflow_masks(self.events.IsoTrack).items():
+            n_name = f"n{name[0].upper()}{name[1:]}"
+            self.events[n_name] = ak.num(self.events.IsoTrack[mask])
+            diagnostics[name] = self.events[n_name] >= 1
+
+        diagnostics.update(search_event_cutflow_masks(self.events.AnalysisEvent))
+        self.events["SearchDiag"] = ak.zip(diagnostics)
 
     def define_common_variables_before_presel(self, variation):
         pass
