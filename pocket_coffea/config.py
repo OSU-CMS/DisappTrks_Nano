@@ -17,7 +17,12 @@ from pocket_coffea.utils.configurator import Configurator
 
 import cuts
 import workflow
-from cuts import has_disappearing_track, search_diagnostic_cuts, search_kinematics
+from cuts import (
+    has_disappearing_track,
+    muon_pveto_layer_cuts,
+    search_diagnostic_cuts,
+    search_kinematics,
+)
 from cuts import (
     has_muon_veto_os_mass10_pair,
     has_muon_veto_os_pair,
@@ -51,6 +56,10 @@ dataset_year = os.environ.get("DISAPPTRKS_DATASET_YEAR", "2024")
 diagnostic_categories = {
     f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()
 }
+muon_pveto_layer_categories = {
+    name: [cut] for name, cut in muon_pveto_layer_cuts.items()
+}
+pveto_layers = ("NLayers4", "NLayers5", "NLayers6plus")
 outer_hit_variants = {
     "missingOuterHits": "tracker layers without measurement",
     "hp_nLostHitsOuter": "lost hits",
@@ -89,6 +98,7 @@ cfg = Configurator(
         "muon_veto_ss_zwindow_pass": [has_muon_veto_ss_zwindow_pass_pair],
         "muon_veto_ss_zwindow_fail": [has_muon_veto_ss_zwindow_fail_pair],
         "muon_pveto_ss_zwindow_pass": [has_muon_pveto_ss_zwindow_pass_pair],
+        **muon_pveto_layer_categories,
         **diagnostic_categories,
     },
     weights={"common": {"inclusive": []}, "bysample": {}},
@@ -299,6 +309,66 @@ cfg = Configurator(
                 )
             ]
         ),
+        **{
+            f"nMuonVetoTagProbePairZWindow_{layer}": HistConf(
+                [
+                    Axis(
+                        coll="events",
+                        field=f"nMuonVetoTagProbePairZWindow_{layer}",
+                        bins=10,
+                        start=0,
+                        stop=10,
+                        label=f"N(OS Z-window pairs, {layer})",
+                    )
+                ]
+            )
+            for layer in pveto_layers
+        },
+        **{
+            f"nMuonPVetoTagProbePairZWindowPass_{layer}": HistConf(
+                [
+                    Axis(
+                        coll="events",
+                        field=f"nMuonPVetoTagProbePairZWindowPass_{layer}",
+                        bins=10,
+                        start=0,
+                        stop=10,
+                        label=f"N(OS Z-window pairs passing muon Pveto numerator, {layer})",
+                    )
+                ]
+            )
+            for layer in pveto_layers
+        },
+        **{
+            f"nMuonVetoTagProbePairSSZWindow_{layer}": HistConf(
+                [
+                    Axis(
+                        coll="events",
+                        field=f"nMuonVetoTagProbePairSSZWindow_{layer}",
+                        bins=10,
+                        start=0,
+                        stop=10,
+                        label=f"N(SS Z-window pairs, {layer})",
+                    )
+                ]
+            )
+            for layer in pveto_layers
+        },
+        **{
+            f"nMuonPVetoTagProbePairSSZWindowPass_{layer}": HistConf(
+                [
+                    Axis(
+                        coll="events",
+                        field=f"nMuonPVetoTagProbePairSSZWindowPass_{layer}",
+                        bins=10,
+                        start=0,
+                        stop=10,
+                        label=f"N(SS Z-window pairs passing muon Pveto numerator, {layer})",
+                    )
+                ]
+            )
+            for layer in pveto_layers
+        },
         "nIsoTrackSearch": HistConf(
             [
                 Axis(

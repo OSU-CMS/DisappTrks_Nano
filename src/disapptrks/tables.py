@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import sqrt
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from .summaries import cutflow_count
 
@@ -48,6 +48,8 @@ DISPLAY_LAYER = {
     "NLayers6plus": r"$N_{\mathrm{layers}}\geq 6$",
     "combinedBins": r"combined",
 }
+
+PVETO_TABLE_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins")
 
 
 def format_count(value: float) -> str:
@@ -200,7 +202,7 @@ def write_muon_pveto_latex(
     *,
     run_period: str,
     flavor: str = r"$\mu$",
-    layer: str = "combinedBins",
+    layers: Sequence[str] = PVETO_TABLE_LAYERS,
     dataset: str | None = None,
     sample: str | None = None,
     variation: str = "nominal",
@@ -209,44 +211,54 @@ def write_muon_pveto_latex(
     ss_denominator_name: str = "muon_veto_ss_zwindow",
     ss_numerator_name: str = "muon_pveto_ss_zwindow_pass",
     include_table_env: bool = False,
-) -> AsymmetricVetoProbability:
-    """Write an AN/Table-24-style muon Pveto row."""
+) -> dict[str, AsymmetricVetoProbability]:
+    """Write AN/Table-24-style muon Pveto rows."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    den_os_value = _category_count(
-        cutflow,
-        os_denominator_name,
-        dataset=dataset,
-        sample=sample,
-        variation=variation,
-    )
-    num_os_value = _category_count(
-        cutflow,
-        os_numerator_name,
-        dataset=dataset,
-        sample=sample,
-        variation=variation,
-    )
-    den_ss_value = _category_count(
-        cutflow,
-        ss_denominator_name,
-        dataset=dataset,
-        sample=sample,
-        variation=variation,
-    )
-    num_ss_value = _category_count(
-        cutflow,
-        ss_numerator_name,
-        dataset=dataset,
-        sample=sample,
-        variation=variation,
-    )
 
-    summary = pveto_with_asymmetric_uncertainty(
-        den_os=CountWithVariance(den_os_value, den_os_value),
-        num_os=CountWithVariance(num_os_value, num_os_value),
-        den_ss=CountWithVariance(den_ss_value, den_ss_value),
-        num_ss=CountWithVariance(num_ss_value, num_ss_value),
-    )
+    if isinstance(layers, str):
+        layers = (layers,)
+    summaries = {}
+
+    rows = []
+    for layer in layers:
+        suffix = "" if layer == "combinedBins" else f"_{layer}"
+        den_os_value = _category_count(
+            cutflow,
+            f"{os_denominator_name}{suffix}",
+            dataset=dataset,
+            sample=sample,
+            variation=variation,
+        )
+        num_os_value = _category_count(
+            cutflow,
+            f"{os_numerator_name}{suffix}",
+            dataset=dataset,
+            sample=sample,
+            variation=variation,
+        )
+        den_ss_value = _category_count(
+            cutflow,
+            f"{ss_denominator_name}{suffix}",
+            dataset=dataset,
+            sample=sample,
+            variation=variation,
+        )
+        num_ss_value = _category_count(
+            cutflow,
+            f"{ss_numerator_name}{suffix}",
+            dataset=dataset,
+            sample=sample,
+            variation=variation,
+        )
+
+        summary = pveto_with_asymmetric_uncertainty(
+            den_os=CountWithVariance(den_os_value, den_os_value),
+            num_os=CountWithVariance(num_os_value, num_os_value),
+            den_ss=CountWithVariance(den_ss_value, den_ss_value),
+            num_ss=CountWithVariance(num_ss_value, num_ss_value),
+        )
+        summaries[layer] = summary
+        rows.append((layer, den_os_value, num_os_value, den_ss_value, num_ss_value, summary))
 
     with path.open("w") as out:
         if include_table_env:
@@ -264,15 +276,16 @@ def write_muon_pveto_latex(
             r"$P_{\mathrm{veto}}$ \\" + "\n"
         )
         out.write(r"\hline" + "\n")
-        out.write(
-            f"{run_period} & {flavor} & {DISPLAY_LAYER.get(layer, layer)} & "
-            f"{format_count(den_os_value)} & {format_count(num_os_value)} & "
-            f"{format_count(den_ss_value)} & {format_count(num_ss_value)} & "
-            f"{format_pveto_latex(summary)} \\\\\n"
-        )
+        for layer, den_os_value, num_os_value, den_ss_value, num_ss_value, summary in rows:
+            out.write(
+                f"{run_period} & {flavor} & {DISPLAY_LAYER.get(layer, layer)} & "
+                f"{format_count(den_os_value)} & {format_count(num_os_value)} & "
+                f"{format_count(den_ss_value)} & {format_count(num_ss_value)} & "
+                f"{format_pveto_latex(summary)} \\\\\n"
+            )
         out.write(r"\hline" + "\n")
         out.write(r"\end{tabular}" + "\n")
         if include_table_env:
             out.write(r"\end{table}" + "\n")
 
-    return summary
+    return summaries

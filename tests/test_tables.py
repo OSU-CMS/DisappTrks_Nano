@@ -48,6 +48,10 @@ def test_write_muon_latex_tables(tmp_path: Path):
         "muon_pveto_zwindow_pass": {"dataset": {"sample": {"nominal": 1.0}}},
         "muon_veto_ss_zwindow": {"dataset": {"sample": {"nominal": 2.0}}},
         "muon_pveto_ss_zwindow_pass": {"dataset": {"sample": {"nominal": 0.0}}},
+        "muon_veto_zwindow_NLayers4": {"dataset": {"sample": {"nominal": 3.0}}},
+        "muon_pveto_zwindow_pass_NLayers4": {"dataset": {"sample": {"nominal": 1.0}}},
+        "muon_veto_ss_zwindow_NLayers4": {"dataset": {"sample": {"nominal": 1.0}}},
+        "muon_pveto_ss_zwindow_pass_NLayers4": {"dataset": {"sample": {"nominal": 0.0}}},
     }
 
     cutflow_path = tmp_path / "cutflow.tex"
@@ -58,10 +62,11 @@ def test_write_muon_latex_tables(tmp_path: Path):
         dataset="dataset",
         sample="sample",
     )
-    summary = write_muon_pveto_latex(
+    summaries = write_muon_pveto_latex(
         cutflow,
         pveto_path,
         run_period="2024F",
+        layers=["NLayers4", "combinedBins"],
         dataset="dataset",
         sample="sample",
     )
@@ -69,5 +74,8 @@ def test_write_muon_latex_tables(tmp_path: Path):
     assert "Cut & Events" in cutflow_path.read_text()
     assert "run period & flavor" in pveto_path.read_text()
     assert "2024F" in pveto_path.read_text()
-    assert summary.denominator == 4.0
-    assert summary.numerator == 1.0
+    assert "N_{\\mathrm{layers}}=4" in pveto_path.read_text()
+    assert summaries["combinedBins"].denominator == 4.0
+    assert summaries["combinedBins"].numerator == 1.0
+    assert summaries["NLayers4"].denominator == 2.0
+    assert summaries["NLayers4"].numerator == 1.0

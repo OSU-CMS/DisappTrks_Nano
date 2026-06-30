@@ -46,6 +46,8 @@ SEARCH_DIAGNOSTIC_FIELDS = (
     EVENT_DIAGNOSTIC_FIELDS + TRACK_DIAGNOSTIC_FIELDS + COMBINED_DIAGNOSTIC_FIELDS
 )
 
+PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
+
 
 def _has_disappearing_track(events, params, **kwargs):
     return events.nIsoTrackSearch >= params["minimum"]
@@ -164,6 +166,29 @@ has_muon_pveto_ss_zwindow_pass_pair = Cut(
     params={"field": "nMuonPVetoTagProbePairSSZWindowPass", "minimum": 1},
     function=_has_count,
 )
+
+muon_pveto_layer_cuts = {}
+for layer in PVETO_LAYERS:
+    muon_pveto_layer_cuts[f"muon_veto_zwindow_{layer}"] = Cut(
+        name=f"has_muon_veto_zwindow_pair_{layer}",
+        params={"field": f"nMuonVetoTagProbePairZWindow_{layer}", "minimum": 1},
+        function=_has_count,
+    )
+    muon_pveto_layer_cuts[f"muon_pveto_zwindow_pass_{layer}"] = Cut(
+        name=f"has_muon_pveto_zwindow_pass_pair_{layer}",
+        params={"field": f"nMuonPVetoTagProbePairZWindowPass_{layer}", "minimum": 1},
+        function=_has_count,
+    )
+    muon_pveto_layer_cuts[f"muon_veto_ss_zwindow_{layer}"] = Cut(
+        name=f"has_muon_veto_ss_zwindow_pair_{layer}",
+        params={"field": f"nMuonVetoTagProbePairSSZWindow_{layer}", "minimum": 1},
+        function=_has_count,
+    )
+    muon_pveto_layer_cuts[f"muon_pveto_ss_zwindow_pass_{layer}"] = Cut(
+        name=f"has_muon_pveto_ss_zwindow_pass_pair_{layer}",
+        params={"field": f"nMuonPVetoTagProbePairSSZWindowPass_{layer}", "minimum": 1},
+        function=_has_count,
+    )
 
 search_kinematics = Cut(
     name="search_kinematics",

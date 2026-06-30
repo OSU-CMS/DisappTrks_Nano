@@ -14,6 +14,7 @@ from disapptrks.selections import (
     mass10_muon_probe_pair_mask,
     muon_tag_mask,
     muon_pveto_pair_pass_mask,
+    muon_probe_pair_layer_mask,
     muon_veto_probe_track_mask,
     muon_veto_pair_fail_mask,
     muon_veto_pair_pass_mask,
@@ -26,6 +27,8 @@ from disapptrks.selections import (
     ss_z_window_muon_probe_pair_mask,
     z_window_muon_probe_pair_mask,
 )
+
+PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
 
 
 class DisappTrksProcessor(BaseProcessorABC):
@@ -85,6 +88,24 @@ class DisappTrksProcessor(BaseProcessorABC):
             ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
             & muon_pveto_pair_pass_mask(muon_veto_pairs)
         ]
+        for layer in PVETO_LAYERS:
+            layer_mask = muon_probe_pair_layer_mask(muon_veto_pairs, layer)
+            self.events[f"MuonVetoTagProbePairZWindow_{layer}"] = muon_veto_pairs[
+                z_window_muon_probe_pair_mask(muon_veto_pairs) & layer_mask
+            ]
+            self.events[f"MuonPVetoTagProbePairZWindowPass_{layer}"] = muon_veto_pairs[
+                z_window_muon_probe_pair_mask(muon_veto_pairs)
+                & layer_mask
+                & muon_pveto_pair_pass_mask(muon_veto_pairs)
+            ]
+            self.events[f"MuonVetoTagProbePairSSZWindow_{layer}"] = muon_veto_pairs[
+                ss_z_window_muon_probe_pair_mask(muon_veto_pairs) & layer_mask
+            ]
+            self.events[f"MuonPVetoTagProbePairSSZWindowPass_{layer}"] = muon_veto_pairs[
+                ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                & layer_mask
+                & muon_pveto_pair_pass_mask(muon_veto_pairs)
+            ]
         search_diagnostic_masks = search_track_cutflow_masks(self.events.IsoTrack)
         self.events["IsoTrackSearchPreMissingOuter"] = self.events.IsoTrack[
             search_diagnostic_masks["track_calo10"]
@@ -140,6 +161,19 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["nMuonPVetoTagProbePairSSZWindowPass"] = ak.num(
             self.events.MuonPVetoTagProbePairSSZWindowPass
         )
+        for layer in PVETO_LAYERS:
+            self.events[f"nMuonVetoTagProbePairZWindow_{layer}"] = ak.num(
+                self.events[f"MuonVetoTagProbePairZWindow_{layer}"]
+            )
+            self.events[f"nMuonPVetoTagProbePairZWindowPass_{layer}"] = ak.num(
+                self.events[f"MuonPVetoTagProbePairZWindowPass_{layer}"]
+            )
+            self.events[f"nMuonVetoTagProbePairSSZWindow_{layer}"] = ak.num(
+                self.events[f"MuonVetoTagProbePairSSZWindow_{layer}"]
+            )
+            self.events[f"nMuonPVetoTagProbePairSSZWindowPass_{layer}"] = ak.num(
+                self.events[f"MuonPVetoTagProbePairSSZWindowPass_{layer}"]
+            )
         self.events["nIsoTrackSearchPreMissingOuter"] = ak.num(
             self.events.IsoTrackSearchPreMissingOuter
         )

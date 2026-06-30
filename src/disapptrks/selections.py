@@ -228,6 +228,11 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
             "probe_phi": probe.phi,
             "probe_dRMinMuon": probe.dRMinMuon,
             "probe_missingOuterHits": probe.missingOuterHits,
+            "probe_nLayers": (
+                probe.hp_trackerLayersWithMeasurement
+                if "hp_trackerLayersWithMeasurement" in probe.fields
+                else probe.hp_nValidTrackerHits
+            ),
             "probe_passMuonVeto": (probe.dRMinMuon < 0.0) | (probe.dRMinMuon > 0.15),
             "probe_passMuonPVetoNoFiducial": (
                 ((probe.dRMinMuon < 0.0) | (probe.dRMinMuon > 0.15))
@@ -283,6 +288,18 @@ def muon_pveto_pair_pass_mask(pairs):
     be layered on top of this once the maps are available in this repository.
     """
     return pairs.probe_passMuonPVetoNoFiducial
+
+
+def muon_probe_pair_layer_mask(pairs, layer: str):
+    if layer == "NLayers4":
+        return pairs.probe_nLayers == 4
+    if layer == "NLayers5":
+        return pairs.probe_nLayers == 5
+    if layer == "NLayers6plus":
+        return pairs.probe_nLayers >= 6
+    if layer == "combinedBins":
+        return pairs.probe_nLayers >= 4
+    raise ValueError(f"unknown layer bin: {layer}")
 
 
 def search_track_mask(tracks, *, layer: str = "combinedBins"):

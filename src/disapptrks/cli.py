@@ -119,12 +119,12 @@ def _make_pveto_tables_command(args: argparse.Namespace) -> int:
         variation=args.variation,
         include_table_env=args.table_env,
     )
-    summary = write_muon_pveto_latex(
+    summaries = write_muon_pveto_latex(
         cutflow,
         args.pveto_tex,
         run_period=args.run_period,
         flavor=args.flavor,
-        layer=args.layer,
+        layers=args.layers,
         dataset=args.dataset,
         sample=args.sample,
         variation=args.variation,
@@ -137,11 +137,12 @@ def _make_pveto_tables_command(args: argparse.Namespace) -> int:
 
     print(f"Wrote {args.cutflow_tex}")
     print(f"Wrote {args.pveto_tex}")
-    print(
-        "P_veto = "
-        f"{summary.central:.6g} +{summary.err_up:.6g} -{summary.err_down:.6g} "
-        f"(signed numerator={summary.numerator:g}, denominator={summary.denominator:g})"
-    )
+    for layer, summary in summaries.items():
+        print(
+            f"{layer}: P_veto = "
+            f"{summary.central:.6g} +{summary.err_up:.6g} -{summary.err_down:.6g} "
+            f"(signed numerator={summary.numerator:g}, denominator={summary.denominator:g})"
+        )
     return 0
 
 
@@ -207,7 +208,12 @@ def main():
     pveto_tables.add_argument("--variation", default="nominal")
     pveto_tables.add_argument("--run-period", required=True, help="Run-period label used in the Pveto table.")
     pveto_tables.add_argument("--flavor", default=r"$\mu$", help="Flavor label used in the Pveto table.")
-    pveto_tables.add_argument("--layer", default="combinedBins", help="Layer-bin label used in the Pveto table.")
+    pveto_tables.add_argument(
+        "--layers",
+        nargs="+",
+        default=["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"],
+        help="Layer-bin rows to include in the Pveto table.",
+    )
     pveto_tables.add_argument(
         "--cutflow-tex",
         type=Path,
