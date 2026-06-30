@@ -84,6 +84,18 @@ cfg = Configurator(
                 )
             ]
         ),
+        "nIsoTrackSearchPreMissingOuter": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nIsoTrackSearchPreMissingOuter",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(search tracks before missing outer hit cut)",
+                )
+            ]
+        ),
         "metNoMu_pt": HistConf(
             [
                 Axis(
@@ -189,6 +201,42 @@ cfg = Configurator(
                     start=-1,
                     stop=5,
                     label=r"Probe track min $\Delta R$(jet)",
+                )
+            ]
+        ),
+        "allTrack_missingOuterHits": HistConf(
+            [
+                Axis(
+                    coll="IsoTrack",
+                    field="missingOuterHits",
+                    bins=21,
+                    start=-0.5,
+                    stop=20.5,
+                    label="All isolated-track missing outer hits",
+                )
+            ]
+        ),
+        "probeTrack_missingOuterHits": HistConf(
+            [
+                Axis(
+                    coll="IsoTrackProbe",
+                    field="missingOuterHits",
+                    bins=21,
+                    start=-0.5,
+                    stop=20.5,
+                    label="Probe-track missing outer hits",
+                )
+            ]
+        ),
+        "preMissingOuterTrack_missingOuterHits": HistConf(
+            [
+                Axis(
+                    coll="IsoTrackSearchPreMissingOuter",
+                    field="missingOuterHits",
+                    bins=21,
+                    start=-0.5,
+                    stop=20.5,
+                    label="Search preselection track missing outer hits",
                 )
             ]
         ),

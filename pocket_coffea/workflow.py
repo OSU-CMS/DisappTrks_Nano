@@ -23,6 +23,10 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["IsoTrackProbe"] = self.events.IsoTrack[
             base_probe_track_mask(self.events.IsoTrack)
         ]
+        search_diagnostic_masks = search_track_cutflow_masks(self.events.IsoTrack)
+        self.events["IsoTrackSearchPreMissingOuter"] = self.events.IsoTrack[
+            search_diagnostic_masks["track_calo10"]
+        ]
         self.events["IsoTrackSearch"] = self.events.IsoTrack[
             search_track_mask(self.events.IsoTrack)
         ]
@@ -30,6 +34,9 @@ class DisappTrksProcessor(BaseProcessorABC):
     def count_objects(self, variation):
         self.events["nIsoTrack"] = ak.num(self.events.IsoTrack)
         self.events["nIsoTrackProbe"] = ak.num(self.events.IsoTrackProbe)
+        self.events["nIsoTrackSearchPreMissingOuter"] = ak.num(
+            self.events.IsoTrackSearchPreMissingOuter
+        )
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
 
         diagnostics = {}
