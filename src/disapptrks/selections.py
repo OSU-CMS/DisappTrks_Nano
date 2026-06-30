@@ -149,7 +149,9 @@ def base_probe_track_mask(
     return mask
 
 
-def muon_tag_mask(muons, *, pt_min: float = 26.0, eta_max: float = 2.1, iso_max: float = 0.15):
+def muon_tag_mask(
+    muons, *, pt_min: float = 26.0, eta_max: float = 2.1, iso_max: float = 0.15
+):
     """Tight, isolated muon tag used for the first tag-and-probe prototype."""
     return (
         (muons.pt > pt_min)
@@ -177,7 +179,9 @@ def muon_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
     )
 
 
-def invariant_mass(first, second, *, first_mass: float = 0.105658, second_mass: float = 0.105658):
+def invariant_mass(
+    first, second, *, first_mass: float = 0.105658, second_mass: float = 0.105658
+):
     """Compute invariant mass from NanoAOD-style pt/eta/phi records."""
     first_px = first.pt * np.cos(first.phi)
     first_py = first.pt * np.sin(first.phi)
@@ -219,8 +223,26 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
     )
 
 
-def z_window_muon_probe_pair_mask(pairs, *, z_mass: float = 91.1876, window: float = 10.0):
+def os_muon_probe_pair_mask(pairs):
+    return pairs.os
+
+
+def mass10_muon_probe_pair_mask(pairs):
+    return pairs.os & (pairs.mass > 10.0)
+
+
+def z_window_muon_probe_pair_mask(
+    pairs, *, z_mass: float = 91.1876, window: float = 10.0
+):
     return pairs.os & (pairs.mass > z_mass - window) & (pairs.mass < z_mass + window)
+
+
+def muon_veto_pair_pass_mask(pairs):
+    return pairs.probe_passMuonVeto
+
+
+def muon_veto_pair_fail_mask(pairs):
+    return ~pairs.probe_passMuonVeto
 
 
 def search_track_mask(tracks, *, layer: str = "combinedBins"):

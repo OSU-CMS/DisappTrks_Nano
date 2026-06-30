@@ -19,9 +19,12 @@ import cuts
 import workflow
 from cuts import has_disappearing_track, search_diagnostic_cuts, search_kinematics
 from cuts import (
+    has_muon_veto_os_mass10_pair,
+    has_muon_veto_os_pair,
     has_muon_tag,
     has_muon_veto_probe_track,
     has_muon_veto_tag_probe_pair,
+    has_muon_veto_zwindow_fail_pair,
     has_muon_veto_zwindow_pair,
     has_muon_veto_zwindow_pass_pair,
 )
@@ -61,8 +64,11 @@ cfg = Configurator(
         "muon_veto_tag": [has_muon_tag],
         "muon_veto_probe": [has_muon_tag, has_muon_veto_probe_track],
         "muon_veto_pair": [has_muon_veto_tag_probe_pair],
+        "muon_veto_pair_os": [has_muon_veto_os_pair],
+        "muon_veto_pair_os_mass10": [has_muon_veto_os_mass10_pair],
         "muon_veto_zwindow": [has_muon_veto_zwindow_pair],
         "muon_veto_zwindow_pass": [has_muon_veto_zwindow_pass_pair],
+        "muon_veto_zwindow_fail": [has_muon_veto_zwindow_fail_pair],
         **diagnostic_categories,
     },
     weights={"common": {"inclusive": []}, "bysample": {}},
@@ -129,6 +135,30 @@ cfg = Configurator(
                 )
             ]
         ),
+        "nMuonVetoTagProbePairOS": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePairOS",
+                    bins=20,
+                    start=0,
+                    stop=20,
+                    label="N(OS muon tag-probe pairs)",
+                )
+            ]
+        ),
+        "nMuonVetoTagProbePairOSMass10": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePairOSMass10",
+                    bins=20,
+                    start=0,
+                    stop=20,
+                    label="N(OS muon tag-probe pairs with mass > 10 GeV)",
+                )
+            ]
+        ),
         "nMuonVetoTagProbePairZWindow": HistConf(
             [
                 Axis(
@@ -150,6 +180,18 @@ cfg = Configurator(
                     start=0,
                     stop=10,
                     label="N(OS Z-window pairs passing muon veto)",
+                )
+            ]
+        ),
+        "nMuonVetoTagProbePairZWindowFail": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePairZWindowFail",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(OS Z-window pairs failing muon veto)",
                 )
             ]
         ),
@@ -369,6 +411,30 @@ cfg = Configurator(
                 )
             ]
         ),
+        "muonVetoTagProbePairOS_mass": HistConf(
+            [
+                Axis(
+                    coll="MuonVetoTagProbePairOS",
+                    field="mass",
+                    bins=80,
+                    start=0,
+                    stop=200,
+                    label="OS muon tag-probe mass [GeV]",
+                )
+            ]
+        ),
+        "muonVetoTagProbePairOSMass10_mass": HistConf(
+            [
+                Axis(
+                    coll="MuonVetoTagProbePairOSMass10",
+                    field="mass",
+                    bins=80,
+                    start=0,
+                    stop=200,
+                    label="OS muon tag-probe mass, mass > 10 GeV [GeV]",
+                )
+            ]
+        ),
         "muonVetoTagProbePairZWindow_mass": HistConf(
             [
                 Axis(
@@ -390,6 +456,30 @@ cfg = Configurator(
                     start=-1,
                     stop=5,
                     label=r"OS Z-window probe min $\Delta R$(muon)",
+                )
+            ]
+        ),
+        "muonVetoTagProbePairZWindowPass_probe_dRMinMuon": HistConf(
+            [
+                Axis(
+                    coll="MuonVetoTagProbePairZWindowPass",
+                    field="probe_dRMinMuon",
+                    bins=60,
+                    start=-1,
+                    stop=5,
+                    label=r"OS Z-window passing-probe min $\Delta R$(muon)",
+                )
+            ]
+        ),
+        "muonVetoTagProbePairZWindowFail_probe_dRMinMuon": HistConf(
+            [
+                Axis(
+                    coll="MuonVetoTagProbePairZWindowFail",
+                    field="probe_dRMinMuon",
+                    bins=60,
+                    start=-1,
+                    stop=5,
+                    label=r"OS Z-window failing-probe min $\Delta R$(muon)",
                 )
             ]
         ),
