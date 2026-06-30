@@ -38,12 +38,19 @@ ISOTRACK_BRANCHES = frozenset(
     }
 )
 
-JET_BRANCHES = frozenset(
+JET_BASE_BRANCHES = frozenset(
     {
         "nJet",
         "Jet_pt",
         "Jet_eta",
         "Jet_phi",
+    }
+)
+
+JET_ID_BRANCHES = frozenset({"Jet_jetId"})
+
+JET_ID_RECONSTRUCTION_BRANCHES = frozenset(
+    {
         "Jet_neHEF",
         "Jet_neEmEF",
         "Jet_chHEF",
@@ -53,6 +60,8 @@ JET_BRANCHES = frozenset(
         "Jet_neMultiplicity",
     }
 )
+
+JET_BRANCHES = JET_BASE_BRANCHES | JET_ID_BRANCHES
 
 TAG_AND_PROBE_BRANCHES = frozenset(
     {
@@ -96,8 +105,18 @@ def _has_no_mu_met(branches: frozenset[str]) -> bool:
     )
 
 
+def _missing_jet_branches(branches: frozenset[str]) -> frozenset[str]:
+    missing = set(JET_BASE_BRANCHES - branches)
+    has_stored_jet_id = JET_ID_BRANCHES <= branches
+    has_reconstructable_jet_id = JET_ID_RECONSTRUCTION_BRANCHES <= branches
+    if not (has_stored_jet_id or has_reconstructable_jet_id):
+        missing.update(JET_ID_BRANCHES - branches)
+        missing.update(JET_ID_RECONSTRUCTION_BRANCHES - branches)
+    return frozenset(missing)
+
+
 def required_branches(scope: str) -> frozenset[str]:
-    base = EVENT_ID_BRANCHES | ISOTRACK_BRANCHES | JET_BRANCHES
+    base = EVENT_ID_BRANCHES | ISOTRACK_BRANCHES | JET_BASE_BRANCHES
     if scope == "search":
         return base
     if scope in ("backgrounds", "fiducial-maps"):
@@ -131,10 +150,11 @@ class SchemaReport:
 
 def audit_branches(branches: Iterable[str], path: str = "<memory>") -> SchemaReport:
     branch_set = frozenset(branches)
-    missing = {
-        scope: tuple(sorted(required_branches(scope) - branch_set))
-        for scope in ("search", "backgrounds", "fiducial-maps")
-    }
+    missing = {}
+    for scope in ("search", "backgrounds", "fiducial-maps"):
+        missing_for_scope = set(required_branches(scope) - branch_set)
+        missing_for_scope.update(_missing_jet_branches(branch_set))
+        missing[scope] = tuple(sorted(missing_for_scope))
     return SchemaReport(
         path=path,
         branches=branch_set,

@@ -26,7 +26,17 @@ def minimum_delta_r(tracks, objects, object_mask=None):
 
 
 def run3_tight_lepton_veto_jet_mask(jets):
-    """Run-3 TightLepVeto jet ID reconstructed from NanoAOD fractions."""
+    """Run-3 TightLepVeto jet ID for NanoAOD jets.
+
+    Prefer the stored NanoAOD ``jetId`` bitmask when available.  Some OSUNano
+    productions do not keep the multiplicity branches needed to reconstruct the
+    ID from raw fractions, while ``jetId`` is exactly the compact branch meant
+    for this use case.  If ``jetId`` is unavailable, fall back to the explicit
+    Run-3 TightLepVeto reconstruction used by the first smoke-test files.
+    """
+    if "jetId" in jets.fields:
+        return (jets.jetId & 6) == 6
+
     abs_eta = abs(jets.eta)
     multiplicity = jets.chMultiplicity + jets.neMultiplicity
     central = (
