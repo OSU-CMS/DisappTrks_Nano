@@ -23,7 +23,6 @@ analysis = [
   "vector>=1",
 ]
 pocket-coffea = [
-  "pocket-coffea",
 ]
 test = ["pytest", "numpy>=1.24"]
 

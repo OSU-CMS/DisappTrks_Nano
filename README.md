@@ -20,7 +20,7 @@ The current local smoke-test file is expected outside this repository as
 productions before running:
 
 ```bash
-python -m pip install -e '.[analysis,test]'
+python3 -m pip install -e '.[analysis,test]'
 disapptrks audit-schema ../nano_99.root
 ```
 
@@ -31,8 +31,8 @@ The audit exits with status 2 if the requested scope is incomplete.
 Install the sibling checkout and this analysis in one environment:
 
 ```bash
-python -m pip install -e ./PocketCoffea
-python -m pip install -e '.[analysis,test]'
+python3 -m pip install -e ./PocketCoffea
+python3 -m pip install -e '.[analysis,test]'
 ```
 
 Once a file passes the schema audit:
@@ -56,6 +56,6 @@ validation sequence.
 Run unit tests with:
 
 ```bash
-python -m pip install -e '.[test]'
+python3 -m pip install -e '.[test]'
 pytest
 ```
