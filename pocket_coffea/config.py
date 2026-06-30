@@ -53,9 +53,14 @@ dataset_json = os.environ.get(
 )
 dataset_sample = os.environ.get("DISAPPTRKS_DATASET_SAMPLE", "DATA_Muon")
 dataset_year = os.environ.get("DISAPPTRKS_DATASET_YEAR", "2024")
-diagnostic_categories = {
-    f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()
-}
+enable_search_diagnostics = os.environ.get(
+    "DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", ""
+).lower() in ("1", "true", "yes", "on")
+diagnostic_categories = (
+    {f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()}
+    if enable_search_diagnostics
+    else {}
+)
 muon_pveto_layer_categories = {
     name: [cut] for name, cut in muon_pveto_layer_cuts.items()
 }
