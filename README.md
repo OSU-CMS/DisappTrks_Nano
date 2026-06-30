@@ -52,6 +52,17 @@ cd pocket_coffea
 pocket-coffea run --cfg config.py --test -lf 1 -lc 1 -c 50000 -e iterative -ps -o output_test_nano99
 ```
 
+Summarize the current muon-veto tag-and-probe prototype from a PocketCoffea
+output file:
+
+```bash
+disapptrks summarize-pveto output_test_nano99/output_Run2024F_Muon_OSUNano_local.coffea
+```
+
+By default this reports
+`muon_veto_zwindow_pass / muon_veto_zwindow` with a binomial statistical
+uncertainty.
+
 ## Physics-equivalence caveat
 
 For data, the observed `IsoTrack` missing-hit values can be used directly.
