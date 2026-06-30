@@ -28,6 +28,15 @@ parameters = defaults.get_default_parameters()
 diagnostic_categories = {
     f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()
 }
+outer_hit_variants = {
+    "missingOuterHits": "tracker layers without measurement",
+    "hp_nLostHitsOuter": "lost hits",
+    "hp_nLostTrackerHitsOuter": "lost tracker hits",
+    "hp_nLostPixelHitsOuter": "lost pixel hits",
+    "hp_nLostStripHitsOuter": "lost strip hits",
+    "hp_pixelLayersWithoutMeasurementOuter": "pixel layers without measurement",
+    "hp_stripLayersWithoutMeasurementOuter": "strip layers without measurement",
+}
 
 cfg = Configurator(
     parameters=parameters,
@@ -204,42 +213,51 @@ cfg = Configurator(
                 )
             ]
         ),
-        "allTrack_missingOuterHits": HistConf(
-            [
-                Axis(
-                    coll="IsoTrack",
-                    field="missingOuterHits",
-                    bins=21,
-                    start=-0.5,
-                    stop=20.5,
-                    label="All isolated-track missing outer hits",
-                )
-            ]
-        ),
-        "probeTrack_missingOuterHits": HistConf(
-            [
-                Axis(
-                    coll="IsoTrackProbe",
-                    field="missingOuterHits",
-                    bins=21,
-                    start=-0.5,
-                    stop=20.5,
-                    label="Probe-track missing outer hits",
-                )
-            ]
-        ),
-        "preMissingOuterTrack_missingOuterHits": HistConf(
-            [
-                Axis(
-                    coll="IsoTrackSearchPreMissingOuter",
-                    field="missingOuterHits",
-                    bins=21,
-                    start=-0.5,
-                    stop=20.5,
-                    label="Search preselection track missing outer hits",
-                )
-            ]
-        ),
+        **{
+            f"allTrack_{field}": HistConf(
+                [
+                    Axis(
+                        coll="IsoTrack",
+                        field=field,
+                        bins=21,
+                        start=-0.5,
+                        stop=20.5,
+                        label=f"All isolated-track outer {label}",
+                    )
+                ]
+            )
+            for field, label in outer_hit_variants.items()
+        },
+        **{
+            f"probeTrack_{field}": HistConf(
+                [
+                    Axis(
+                        coll="IsoTrackProbe",
+                        field=field,
+                        bins=21,
+                        start=-0.5,
+                        stop=20.5,
+                        label=f"Probe-track outer {label}",
+                    )
+                ]
+            )
+            for field, label in outer_hit_variants.items()
+        },
+        **{
+            f"preMissingOuterTrack_{field}": HistConf(
+                [
+                    Axis(
+                        coll="IsoTrackSearchPreMissingOuter",
+                        field=field,
+                        bins=21,
+                        start=-0.5,
+                        stop=20.5,
+                        label=f"Search preselection track outer {label}",
+                    )
+                ]
+            )
+            for field, label in outer_hit_variants.items()
+        },
         "searchTrack_pt": HistConf(
             [
                 Axis(
