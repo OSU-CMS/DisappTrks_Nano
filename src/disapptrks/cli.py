@@ -5,6 +5,12 @@ import json
 from pathlib import Path
 
 from . import greet
+from .datasets import (
+    build_dataset_definition,
+    list_eos_root_files,
+    root_files_from_lines,
+    write_dataset_definition,
+)
 from .schema import audit_root_file
 from .summaries import (
     summarize_ss_subtracted_veto_probability,
@@ -66,6 +72,38 @@ def _summarize_pveto_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _make_dataset_json_command(args: argparse.Namespace) -> int:
+    if args.filelist:
+        files = root_files_from_lines(args.filelist.read_text().splitlines())
+    else:
+        if not args.eos_path:
+            raise SystemExit("error: eos_path is required unless --filelist is used")
+        files = list_eos_root_files(
+            args.eos_path,
+            xrootd=args.xrootd,
+            recursive=args.recursive,
+        )
+
+    dataset = build_dataset_definition(
+        dataset_name=args.dataset_name,
+        files=files,
+        sample=args.sample,
+        year=args.year,
+        era=args.era,
+        primary_dataset=args.primary_dataset,
+        is_mc=args.is_mc,
+        nevents=args.nevents,
+        nano_version=args.nano_version,
+    )
+    write_dataset_definition(dataset, args.output)
+
+    print(f"Wrote {len(files)} ROOT files to {args.output}")
+    if not files:
+        print("Warning: no ROOT files found")
+        return 2
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(prog="disapptrks")
     subparsers = parser.add_subparsers(dest="command")
@@ -117,6 +155,38 @@ def main():
         help="SS cutflow category subtracted from the numerator.",
     )
     pveto.set_defaults(func=_summarize_pveto_command)
+
+    dataset_json = subparsers.add_parser(
+        "make-dataset-json",
+        help="Create a PocketCoffea dataset JSON from an EOS directory or filelist.",
+    )
+    dataset_json.add_argument("eos_path", nargs="?", help="EOS directory, e.g. /store/user/...")
+    dataset_json.add_argument("-o", "--output", type=Path, required=True)
+    dataset_json.add_argument("--dataset-name", required=True)
+    dataset_json.add_argument("--sample", default="DATA_Muon")
+    dataset_json.add_argument("--year", required=True)
+    dataset_json.add_argument("--era", required=True)
+    dataset_json.add_argument("--primary-dataset", default="Muon")
+    dataset_json.add_argument("--nevents", default="0")
+    dataset_json.add_argument("--nano-version", type=int, default=15)
+    dataset_json.add_argument("--is-mc", action="store_true")
+    dataset_json.add_argument(
+        "--xrootd",
+        default="root://cmseos.fnal.gov",
+        help="XRootD endpoint passed to xrdfs.",
+    )
+    dataset_json.add_argument(
+        "-R",
+        "--recursive",
+        action="store_true",
+        help="Use xrdfs ls -R -u to recurse through subdirectories.",
+    )
+    dataset_json.add_argument(
+        "--filelist",
+        type=Path,
+        help="Read ROOT file URLs from a text file instead of calling xrdfs.",
+    )
+    dataset_json.set_defaults(func=_make_dataset_json_command)
 
     args = parser.parse_args()
     if not hasattr(args, "func"):

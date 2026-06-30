@@ -26,6 +26,23 @@ disapptrks audit-schema ../nano_99.root
 
 The audit exits with status 2 if the requested scope is incomplete.
 
+Build a PocketCoffea dataset JSON directly from an EOS directory:
+
+```bash
+disapptrks make-dataset-json /store/user/YOUR_PATH \
+  --recursive \
+  --dataset-name Run2024G_Muon_OSUNano_EOS \
+  --sample DATA_Muon \
+  --year 2024 \
+  --era G \
+  --primary-dataset Muon \
+  -o pocket_coffea/datasets/eos_2024G_muon.json
+```
+
+The command uses `xrdfs root://cmseos.fnal.gov ls -u` so the output JSON gets
+full XRootD file URLs. If you already have a text filelist, pass it with
+`--filelist` instead of an EOS path.
+
 ## PocketCoffea setup
 
 Install this analysis and the recommended PocketCoffea release in one
