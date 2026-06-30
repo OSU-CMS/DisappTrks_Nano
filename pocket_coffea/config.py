@@ -21,9 +21,14 @@ from cuts import has_disappearing_track, search_diagnostic_cuts, search_kinemati
 from cuts import (
     has_muon_veto_os_mass10_pair,
     has_muon_veto_os_pair,
+    has_muon_veto_ss_mass10_pair,
+    has_muon_veto_ss_pair,
     has_muon_tag,
     has_muon_veto_probe_track,
     has_muon_veto_tag_probe_pair,
+    has_muon_veto_ss_zwindow_fail_pair,
+    has_muon_veto_ss_zwindow_pair,
+    has_muon_veto_ss_zwindow_pass_pair,
     has_muon_veto_zwindow_fail_pair,
     has_muon_veto_zwindow_pair,
     has_muon_veto_zwindow_pass_pair,
@@ -66,9 +71,14 @@ cfg = Configurator(
         "muon_veto_pair": [has_muon_veto_tag_probe_pair],
         "muon_veto_pair_os": [has_muon_veto_os_pair],
         "muon_veto_pair_os_mass10": [has_muon_veto_os_mass10_pair],
+        "muon_veto_pair_ss": [has_muon_veto_ss_pair],
+        "muon_veto_pair_ss_mass10": [has_muon_veto_ss_mass10_pair],
         "muon_veto_zwindow": [has_muon_veto_zwindow_pair],
         "muon_veto_zwindow_pass": [has_muon_veto_zwindow_pass_pair],
         "muon_veto_zwindow_fail": [has_muon_veto_zwindow_fail_pair],
+        "muon_veto_ss_zwindow": [has_muon_veto_ss_zwindow_pair],
+        "muon_veto_ss_zwindow_pass": [has_muon_veto_ss_zwindow_pass_pair],
+        "muon_veto_ss_zwindow_fail": [has_muon_veto_ss_zwindow_fail_pair],
         **diagnostic_categories,
     },
     weights={"common": {"inclusive": []}, "bysample": {}},
@@ -159,6 +169,30 @@ cfg = Configurator(
                 )
             ]
         ),
+        "nMuonVetoTagProbePairSS": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePairSS",
+                    bins=20,
+                    start=0,
+                    stop=20,
+                    label="N(SS muon tag-probe pairs)",
+                )
+            ]
+        ),
+        "nMuonVetoTagProbePairSSMass10": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePairSSMass10",
+                    bins=20,
+                    start=0,
+                    stop=20,
+                    label="N(SS muon tag-probe pairs with mass > 10 GeV)",
+                )
+            ]
+        ),
         "nMuonVetoTagProbePairZWindow": HistConf(
             [
                 Axis(
@@ -192,6 +226,42 @@ cfg = Configurator(
                     start=0,
                     stop=10,
                     label="N(OS Z-window pairs failing muon veto)",
+                )
+            ]
+        ),
+        "nMuonVetoTagProbePairSSZWindow": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePairSSZWindow",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(SS Z-window muon tag-probe pairs)",
+                )
+            ]
+        ),
+        "nMuonVetoTagProbePairSSZWindowPass": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePairSSZWindowPass",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(SS Z-window pairs passing muon veto)",
+                )
+            ]
+        ),
+        "nMuonVetoTagProbePairSSZWindowFail": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonVetoTagProbePairSSZWindowFail",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(SS Z-window pairs failing muon veto)",
                 )
             ]
         ),

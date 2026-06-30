@@ -1,4 +1,8 @@
-from disapptrks.summaries import cutflow_count, summarize_veto_probability
+from disapptrks.summaries import (
+    cutflow_count,
+    summarize_ss_subtracted_veto_probability,
+    summarize_veto_probability,
+)
 
 
 def test_cutflow_count_sums_nested_nominal_counts():
@@ -57,3 +61,26 @@ def test_summarize_veto_probability_handles_empty_denominator():
 
     assert summary.probability == 0.0
     assert summary.uncertainty == 0.0
+
+
+def test_summarize_ss_subtracted_veto_probability():
+    cutflow = {
+        "os_den": {"dataset": {"sample": {"nominal": 100.0}}},
+        "os_num": {"dataset": {"sample": {"nominal": 30.0}}},
+        "ss_den": {"dataset": {"sample": {"nominal": 20.0}}},
+        "ss_num": {"dataset": {"sample": {"nominal": 10.0}}},
+    }
+
+    summary = summarize_ss_subtracted_veto_probability(
+        cutflow,
+        os_denominator_name="os_den",
+        os_numerator_name="os_num",
+        ss_denominator_name="ss_den",
+        ss_numerator_name="ss_num",
+        dataset="dataset",
+        sample="sample",
+    )
+
+    assert summary.denominator == 80.0
+    assert summary.numerator == 20.0
+    assert summary.probability == 0.25

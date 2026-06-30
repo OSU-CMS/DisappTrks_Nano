@@ -63,6 +63,16 @@ By default this reports
 `muon_veto_zwindow_pass / muon_veto_zwindow` with a binomial statistical
 uncertainty.
 
+To apply the same-sign subtraction used to estimate the flat non-Z background
+under the opposite-sign Z peak:
+
+```bash
+disapptrks summarize-pveto output_test_nano99/output_Run2024F_Muon_OSUNano_local.coffea --ss-subtract
+```
+
+This reports
+`(muon_veto_zwindow_pass - muon_veto_ss_zwindow_pass) / (muon_veto_zwindow - muon_veto_ss_zwindow)`.
+
 ## Physics-equivalence caveat
 
 For data, the observed `IsoTrack` missing-hit values can be used directly.

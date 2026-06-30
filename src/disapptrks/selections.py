@@ -227,14 +227,28 @@ def os_muon_probe_pair_mask(pairs):
     return pairs.os
 
 
+def ss_muon_probe_pair_mask(pairs):
+    return pairs.ss
+
+
 def mass10_muon_probe_pair_mask(pairs):
     return pairs.os & (pairs.mass > 10.0)
+
+
+def ss_mass10_muon_probe_pair_mask(pairs):
+    return pairs.ss & (pairs.mass > 10.0)
 
 
 def z_window_muon_probe_pair_mask(
     pairs, *, z_mass: float = 91.1876, window: float = 10.0
 ):
     return pairs.os & (pairs.mass > z_mass - window) & (pairs.mass < z_mass + window)
+
+
+def ss_z_window_muon_probe_pair_mask(
+    pairs, *, z_mass: float = 91.1876, window: float = 10.0
+):
+    return pairs.ss & (pairs.mass > z_mass - window) & (pairs.mass < z_mass + window)
 
 
 def muon_veto_pair_pass_mask(pairs):

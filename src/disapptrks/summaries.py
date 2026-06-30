@@ -21,6 +21,25 @@ class VetoProbabilitySummary:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class SSSubtractedVetoProbabilitySummary:
+    os_denominator_name: str
+    os_numerator_name: str
+    ss_denominator_name: str
+    ss_numerator_name: str
+    os_denominator: float
+    os_numerator: float
+    ss_denominator: float
+    ss_numerator: float
+    denominator: float
+    numerator: float
+    probability: float
+    uncertainty: float
+
+    def as_dict(self) -> dict[str, float | str]:
+        return asdict(self)
+
+
 def _sum_numeric_leaves(value: Any) -> float:
     """Sum all numeric leaves in a nested PocketCoffea cutflow object."""
     if isinstance(value, Number):
@@ -92,6 +111,78 @@ def summarize_veto_probability(
     return VetoProbabilitySummary(
         denominator_name=denominator_name,
         numerator_name=numerator_name,
+        denominator=denominator,
+        numerator=numerator,
+        probability=probability,
+        uncertainty=uncertainty,
+    )
+
+
+def summarize_ss_subtracted_veto_probability(
+    cutflow: dict[str, Any],
+    *,
+    os_denominator_name: str,
+    os_numerator_name: str,
+    ss_denominator_name: str,
+    ss_numerator_name: str,
+    dataset: str | None = None,
+    sample: str | None = None,
+    variation: str = "nominal",
+) -> SSSubtractedVetoProbabilitySummary:
+    os_denominator = cutflow_count(
+        cutflow,
+        os_denominator_name,
+        dataset=dataset,
+        sample=sample,
+        variation=variation,
+    )
+    os_numerator = cutflow_count(
+        cutflow,
+        os_numerator_name,
+        dataset=dataset,
+        sample=sample,
+        variation=variation,
+    )
+    ss_denominator = cutflow_count(
+        cutflow,
+        ss_denominator_name,
+        dataset=dataset,
+        sample=sample,
+        variation=variation,
+    )
+    ss_numerator = cutflow_count(
+        cutflow,
+        ss_numerator_name,
+        dataset=dataset,
+        sample=sample,
+        variation=variation,
+    )
+
+    denominator = os_denominator - ss_denominator
+    numerator = os_numerator - ss_numerator
+    probability = numerator / denominator if denominator > 0.0 else 0.0
+
+    # First-pass statistical uncertainty: propagate Poisson variances for
+    # OS/SS numerator and denominator through p = (OS_num-SS_num)/(OS_den-SS_den).
+    if denominator > 0.0:
+        numerator_variance = os_numerator + ss_numerator
+        denominator_variance = os_denominator + ss_denominator
+        uncertainty = sqrt(
+            numerator_variance / denominator**2
+            + (numerator**2 * denominator_variance) / denominator**4
+        )
+    else:
+        uncertainty = 0.0
+
+    return SSSubtractedVetoProbabilitySummary(
+        os_denominator_name=os_denominator_name,
+        os_numerator_name=os_numerator_name,
+        ss_denominator_name=ss_denominator_name,
+        ss_numerator_name=ss_numerator_name,
+        os_denominator=os_denominator,
+        os_numerator=os_numerator,
+        ss_denominator=ss_denominator,
+        ss_numerator=ss_numerator,
         denominator=denominator,
         numerator=numerator,
         probability=probability,

@@ -20,6 +20,9 @@ from disapptrks.selections import (
     search_event_cutflow_masks,
     search_track_cutflow_masks,
     search_track_mask,
+    ss_mass10_muon_probe_pair_mask,
+    ss_muon_probe_pair_mask,
+    ss_z_window_muon_probe_pair_mask,
     z_window_muon_probe_pair_mask,
 )
 
@@ -45,6 +48,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["MuonVetoTagProbePairOSMass10"] = muon_veto_pairs[
             mass10_muon_probe_pair_mask(muon_veto_pairs)
         ]
+        self.events["MuonVetoTagProbePairSS"] = muon_veto_pairs[
+            ss_muon_probe_pair_mask(muon_veto_pairs)
+        ]
+        self.events["MuonVetoTagProbePairSSMass10"] = muon_veto_pairs[
+            ss_mass10_muon_probe_pair_mask(muon_veto_pairs)
+        ]
         self.events["MuonVetoTagProbePairZWindow"] = muon_veto_pairs[
             z_window_muon_probe_pair_mask(muon_veto_pairs)
         ]
@@ -54,6 +63,17 @@ class DisappTrksProcessor(BaseProcessorABC):
         ]
         self.events["MuonVetoTagProbePairZWindowFail"] = muon_veto_pairs[
             z_window_muon_probe_pair_mask(muon_veto_pairs)
+            & muon_veto_pair_fail_mask(muon_veto_pairs)
+        ]
+        self.events["MuonVetoTagProbePairSSZWindow"] = muon_veto_pairs[
+            ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
+        ]
+        self.events["MuonVetoTagProbePairSSZWindowPass"] = muon_veto_pairs[
+            ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
+            & muon_veto_pair_pass_mask(muon_veto_pairs)
+        ]
+        self.events["MuonVetoTagProbePairSSZWindowFail"] = muon_veto_pairs[
+            ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
             & muon_veto_pair_fail_mask(muon_veto_pairs)
         ]
         search_diagnostic_masks = search_track_cutflow_masks(self.events.IsoTrack)
@@ -81,6 +101,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["nMuonVetoTagProbePairOSMass10"] = ak.num(
             self.events.MuonVetoTagProbePairOSMass10
         )
+        self.events["nMuonVetoTagProbePairSS"] = ak.num(
+            self.events.MuonVetoTagProbePairSS
+        )
+        self.events["nMuonVetoTagProbePairSSMass10"] = ak.num(
+            self.events.MuonVetoTagProbePairSSMass10
+        )
         self.events["nMuonVetoTagProbePairZWindow"] = ak.num(
             self.events.MuonVetoTagProbePairZWindow
         )
@@ -89,6 +115,15 @@ class DisappTrksProcessor(BaseProcessorABC):
         )
         self.events["nMuonVetoTagProbePairZWindowFail"] = ak.num(
             self.events.MuonVetoTagProbePairZWindowFail
+        )
+        self.events["nMuonVetoTagProbePairSSZWindow"] = ak.num(
+            self.events.MuonVetoTagProbePairSSZWindow
+        )
+        self.events["nMuonVetoTagProbePairSSZWindowPass"] = ak.num(
+            self.events.MuonVetoTagProbePairSSZWindowPass
+        )
+        self.events["nMuonVetoTagProbePairSSZWindowFail"] = ak.num(
+            self.events.MuonVetoTagProbePairSSZWindowFail
         )
         self.events["nIsoTrackSearchPreMissingOuter"] = ak.num(
             self.events.IsoTrackSearchPreMissingOuter
