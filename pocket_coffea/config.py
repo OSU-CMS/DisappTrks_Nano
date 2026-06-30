@@ -40,6 +40,12 @@ cloudpickle.register_pickle_by_value(workflow)
 
 localdir = os.path.dirname(os.path.abspath(__file__))
 parameters = defaults.get_default_parameters()
+dataset_json = os.environ.get(
+    "DISAPPTRKS_DATASET_JSON",
+    f"{localdir}/datasets/local_2024F_muon.json",
+)
+dataset_sample = os.environ.get("DISAPPTRKS_DATASET_SAMPLE", "DATA_Muon")
+dataset_year = os.environ.get("DISAPPTRKS_DATASET_YEAR", "2024")
 diagnostic_categories = {
     f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()
 }
@@ -56,8 +62,8 @@ outer_hit_variants = {
 cfg = Configurator(
     parameters=parameters,
     datasets={
-        "jsons": [f"{localdir}/datasets/local_2024F_muon.json"],
-        "filter": {"samples": ["DATA_Muon"], "year": ["2024"]},
+        "jsons": [dataset_json],
+        "filter": {"samples": [dataset_sample], "year": [dataset_year]},
     },
     workflow=DisappTrksProcessor,
     calibrators=[],
