@@ -11,6 +11,9 @@ htmlcov/
 *.coffea
 output*/
 plots*/
+pocket_coffea/analysis_output/
+pocket_coffea/logs/
+pocket_coffea/python_env/
 
 *.root
 !tests/data/*.root

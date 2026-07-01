@@ -69,6 +69,38 @@ cd pocket_coffea
 pocket-coffea run --cfg config.py --test -lf 1 -lc 1 -c 50000 -e iterative -ps -o output_test_nano99
 ```
 
+## LPC Condor submission
+
+For larger EOS samples on the LPC, use the v2-style wrapper in
+`pocket_coffea/scripts`.  The Condor worker runs in a sandbox, so it does not
+depend on `/uscms` or `/uscms_data` paths being mounted inside the job.
+
+Build a relocatable Python target directory once from the repository root:
+
+```bash
+python3 -m pip install --target pocket_coffea/python_env '.[analysis,pocket-coffea]'
+```
+
+Then submit from `pocket_coffea`:
+
+```bash
+cd pocket_coffea
+FILES_PER_JOB=5 CHUNKSIZE=50000 \
+  scripts/submit_lpc_dataset.sh datasets/eos_2023C_muon.json 2023C_muon_pveto DATA_Muon 2023
+```
+
+The wrapper transfers `config.py`, `cuts.py`, `workflow.py`, `../src`, the
+dataset JSON, your X509 proxy, and `python_env` into the Condor sandbox.  Each
+job makes a per-job dataset JSON, runs PocketCoffea iterative over its file
+slice, and returns outputs under `analysis_output/<tag>/`.
+
+After the jobs finish, merge the per-job outputs:
+
+```bash
+pocket-coffea merge-outputs analysis_output/2023C_muon_pveto/*.coffea \
+  -o analysis_output/2023C_muon_pveto/output_Run2023C_Muon_OSUNano_EOS.coffea
+```
+
 Summarize the current muon-veto tag-and-probe prototype from a PocketCoffea
 output file:
 
