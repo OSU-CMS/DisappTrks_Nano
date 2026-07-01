@@ -48,6 +48,37 @@ SEARCH_DIAGNOSTIC_FIELDS = (
 
 PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
 
+MUON_TABLE16_FIELDS = [
+    "event_singlemu_trigger",
+    "muon_pt26",
+    "muon_eta2p1",
+    "muon_tight_id",
+    "muon_selected_tag",
+    "track_pt30",
+    "track_eta2p1",
+    "track_noDTWheelGap",
+    "track_noECALCrack",
+    "track_noCSCTransition",
+    "track_fiducialECAL",
+    "track_dzOrLambda",
+    "track_pixelHits4",
+    "track_noMissingInner",
+    "track_noMissingMiddle",
+    "track_chargedIso0p05",
+    "track_dxy0p02",
+    "track_dz0p5",
+    "track_dRJet0p5",
+    "pair_mass10",
+    "track_electronVeto",
+    "track_tauVeto",
+    "track_calo10",
+    "pair_zwindow",
+    "pair_os",
+    "layer_NLayers4",
+    "layer_NLayers5",
+    "layer_NLayers6plus",
+]
+
 
 def _has_disappearing_track(events, params, **kwargs):
     return events.nIsoTrackSearch >= params["minimum"]
@@ -59,6 +90,10 @@ def _has_count(events, params, **kwargs):
 
 def _search_diagnostic(events, params, **kwargs):
     return events.SearchDiag[params["field"]]
+
+
+def _muon_table16_diagnostic(events, params, **kwargs):
+    return events.MuonTable16Diag[params["field"]]
 
 
 def _search_kinematics(events, params, **kwargs):
@@ -208,4 +243,13 @@ search_diagnostic_cuts = {
         function=_search_diagnostic,
     )
     for field in SEARCH_DIAGNOSTIC_FIELDS
+}
+
+muon_table16_cuts = {
+    field: Cut(
+        name=f"muon_table16_{field}",
+        params={"field": field},
+        function=_muon_table16_diagnostic,
+    )
+    for field in MUON_TABLE16_FIELDS
 }

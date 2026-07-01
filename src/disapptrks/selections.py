@@ -25,6 +25,73 @@ def minimum_delta_r(tracks, objects, object_mask=None):
     return ak.fill_none(ak.min(dr, axis=2, mask_identity=True), -1.0)
 
 
+def isomu24_trigger_object_mask(
+    trigobjs,
+    *,
+    iso_bit: int = 1 << 1,
+    single_muon_bit: int = 1 << 2,
+):
+    """NanoAOD trigger objects corresponding to the isolated SingleMuon leg.
+
+    The legacy unversioned DisappTrks muon tag-and-probe path configured
+    ``EventMuonTPProducer`` to use PAT trigger objects from
+    ``hltIterL3MuonCandidates::HLT`` with the
+    ``hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered`` filter.  NanoAOD
+    stores the trigger-object collection/filter information as compact
+    ``TrigObj`` IDs and filter bits.  For ``HLT_IsoMu24``, the closest NanoAOD
+    equivalent is a muon trigger object carrying both the isolated-muon and
+    SingleMuon filter bits.
+    """
+
+    return (
+        (trigobjs.id == 13)
+        & ((trigobjs.filterBits & iso_bit) != 0)
+        & ((trigobjs.filterBits & single_muon_bit) != 0)
+    )
+
+
+def add_muon_derived_fields(events, *, trigger_match_dr: float = 0.3):
+    """Attach muon quantities needed for the tag-and-probe selections."""
+    import awkward as ak
+
+    muons = events.Muon
+    isomu24_objects = isomu24_trigger_object_mask(events.TrigObj)
+    d_r_min_isomu24 = minimum_delta_r(muons, events.TrigObj, isomu24_objects)
+    matched_isomu24 = (
+        events.HLT.IsoMu24
+        & (d_r_min_isomu24 >= 0.0)
+        & (d_r_min_isomu24 < trigger_match_dr)
+    )
+    muons = ak.with_field(muons, d_r_min_isomu24, "dRMinIsoMu24TrigObj")
+    muons = ak.with_field(muons, matched_isomu24, "matchedIsoMu24")
+    return muons
+
+
+def muon_tag_progression_masks(
+    muons, *, pt_min: float = 26.0, eta_max: float = 2.1, iso_max: float = 0.15
+):
+    """Cumulative muon-tag masks following the Table 16 row order.
+
+    The AN Table 16 labels the object-ID row as "passing tight muon ID".  The
+    unversioned DisappTrks ``MuonTagSkim`` also includes tight PF isolation, so
+    the final tag mask used for the Nano implementation keeps the isolation and
+    trigger-object match as part of the selected tag definition.
+    """
+    masks = {}
+    mask = muons.pt > pt_min
+    masks["muon_pt26"] = mask
+
+    mask = mask & (abs(muons.eta) < eta_max)
+    masks["muon_eta2p1"] = mask
+
+    mask = mask & muons.tightId
+    masks["muon_tight_id"] = mask
+
+    mask = mask & (muons.pfRelIso04_all < iso_max) & muons.matchedIsoMu24
+    masks["muon_selected_tag"] = mask
+    return masks
+
+
 def run3_tight_lepton_veto_jet_mask(jets):
     """Run-3 TightLepVeto jet ID for NanoAOD jets.
 
@@ -74,6 +141,31 @@ def run3_tight_lepton_veto_jet_mask(jets):
     return central | transition | forward | very_forward
 
 
+def hadronic_tau_veto_object_mask(
+    taus,
+    *,
+    vsjet_vvvloose: float = 0.4083,
+    vse_vvvloose: float = 0.099,
+    vsmu_vloose: float = 0.2949,
+):
+    """Tau objects used for the disappearing-track tau veto.
+
+    The veto follows the tau-expert DeepTau 2018v2p5 loosest working points:
+    VVVLoose vs jet, VVVLoose vs electron, and VLoose vs muon.  The decay-mode
+    requirement keeps the new-DM decay-mode finding flag and excludes decay
+    modes 5 and 6, matching the legacy disappearing-track tau-veto convention.
+    """
+
+    return (
+        taus.idDecayModeNewDMs
+        & (taus.decayMode != 5)
+        & (taus.decayMode != 6)
+        & (taus.rawDeepTau2018v2p5VSjet > vsjet_vvvloose)
+        & (taus.rawDeepTau2018v2p5VSe > vse_vvvloose)
+        & (taus.rawDeepTau2018v2p5VSmu > vsmu_vloose)
+    )
+
+
 def layer_mask(tracks, layer: str):
     layers = tracks.hp_nValidTrackerHits
     # Prefer the explicit layer count when supplied by the custom extension.
@@ -101,7 +193,12 @@ def add_isotrack_derived_fields(events):
     tracks = ak.with_field(tracks, (abs_eta >= 1.55) & (abs_eta <= 1.85), "inCSCTransition")
     tracks = ak.with_field(
         tracks,
-        (abs(tracks.dz) < 0.5) & (abs(np.pi / 2.0 - tracks.theta) < 1.0e-3),
+        (abs(tracks.dz) > 0.5) | (abs(np.pi / 2.0 - tracks.theta) > 1.0e-3),
+        "passesTOBDzOrLambda",
+    )
+    tracks = ak.with_field(
+        tracks,
+        ~tracks.passesTOBDzOrLambda,
         "inTOBCrack",
     )
     tracks = ak.with_field(tracks, tracks.caloEm + tracks.caloHad, "caloEnergy")
@@ -120,8 +217,9 @@ def add_isotrack_derived_fields(events):
     tracks = ak.with_field(
         tracks, minimum_delta_r(tracks, events.Muon), "dRMinMuon"
     )
+    good_taus = hadronic_tau_veto_object_mask(events.Tau)
     tracks = ak.with_field(
-        tracks, minimum_delta_r(tracks, events.Tau), "dRMinTauHad"
+        tracks, minimum_delta_r(tracks, events.Tau, good_taus), "dRMinTauHad"
     )
     return tracks
 
@@ -159,16 +257,81 @@ def base_probe_track_mask(
     return mask
 
 
+def muon_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+    """Cumulative probe-track masks in the AN Table 16 order.
+
+    These are used for the displayed muon-Pveto cutflow.  The implementation
+    follows the legacy ``ZtoMuProbeTrk`` probe definition: the valid-hit
+    requirement from ``isoTrkCuts`` is kept together with the pixel-hit row even
+    though Table 16 only prints the pixel-hit label.
+    """
+    masks = {}
+    mask = tracks.pt > 30.0
+    masks["track_pt30"] = mask
+
+    mask = mask & (abs(tracks.eta) < 2.1)
+    masks["track_eta2p1"] = mask
+
+    mask = mask & ~tracks.inDTWheelGap
+    masks["track_noDTWheelGap"] = mask
+
+    mask = mask & ~tracks.inECALCrack
+    masks["track_noECALCrack"] = mask
+
+    mask = mask & ~tracks.inCSCTransition
+    masks["track_noCSCTransition"] = mask
+
+    mask = mask & tracks.isFiducialECALTrack
+    masks["track_fiducialECAL"] = mask
+
+    mask = mask & tracks.passesTOBDzOrLambda
+    masks["track_dzOrLambda"] = mask
+
+    mask = mask & (tracks.hp_nValidPixelHits >= 4) & (tracks.hp_nValidHits >= 4)
+    masks["track_pixelHits4"] = mask
+
+    mask = mask & (tracks.missingInnerHits == 0)
+    masks["track_noMissingInner"] = mask
+
+    mask = mask & (tracks.missingMiddleHits == 0)
+    masks["track_noMissingMiddle"] = mask
+
+    mask = mask & (tracks.pfRelIso03_chg < 0.05)
+    masks["track_chargedIso0p05"] = mask
+
+    mask = mask & (abs(tracks.dxy) < 0.02)
+    masks["track_dxy0p02"] = mask
+
+    mask = mask & (abs(tracks.dz) < 0.5)
+    masks["track_dz0p5"] = mask
+
+    mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
+    masks["track_dRJet0p5"] = mask
+
+    mask = mask & (
+        ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+    )
+    masks["track_electronVeto"] = mask
+
+    mask = mask & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+    masks["track_tauVeto"] = mask
+
+    mask = mask & (tracks.caloEnergy < 10.0)
+    masks["track_calo10"] = mask
+
+    mask = mask & layer_mask(tracks, layer)
+    masks["track_layers4plus"] = mask
+
+    return masks
+
+
 def muon_tag_mask(
     muons, *, pt_min: float = 26.0, eta_max: float = 2.1, iso_max: float = 0.15
 ):
     """Tight, isolated muon tag used for the first tag-and-probe prototype."""
-    return (
-        (muons.pt > pt_min)
-        & (abs(muons.eta) < eta_max)
-        & muons.tightId
-        & (muons.pfRelIso04_all < iso_max)
-    )
+    return muon_tag_progression_masks(
+        muons, pt_min=pt_min, eta_max=eta_max, iso_max=iso_max
+    )["muon_selected_tag"]
 
 
 def muon_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
@@ -251,7 +414,11 @@ def ss_muon_probe_pair_mask(pairs):
 
 
 def mass10_muon_probe_pair_mask(pairs):
-    return pairs.os & (pairs.mass > 10.0)
+    return pairs.mass > 10.0
+
+
+def os_mass10_muon_probe_pair_mask(pairs):
+    return pairs.os & mass10_muon_probe_pair_mask(pairs)
 
 
 def ss_mass10_muon_probe_pair_mask(pairs):
@@ -261,7 +428,15 @@ def ss_mass10_muon_probe_pair_mask(pairs):
 def z_window_muon_probe_pair_mask(
     pairs, *, z_mass: float = 91.1876, window: float = 10.0
 ):
-    return pairs.os & (pairs.mass > z_mass - window) & (pairs.mass < z_mass + window)
+    return (pairs.mass > z_mass - window) & (pairs.mass < z_mass + window)
+
+
+def os_z_window_muon_probe_pair_mask(
+    pairs, *, z_mass: float = 91.1876, window: float = 10.0
+):
+    return pairs.os & z_window_muon_probe_pair_mask(
+        pairs, z_mass=z_mass, window=window
+    )
 
 
 def ss_z_window_muon_probe_pair_mask(

@@ -26,19 +26,90 @@ class AsymmetricVetoProbability:
 
 
 MUON_CUTFLOW_ROWS = [
-    ("inclusive", r"Events processed"),
-    ("muon_veto_tag", r"$\geq 1$ muon tag"),
-    ("muon_veto_probe", r"$\geq 1$ muon tag and $\geq 1$ probe track"),
-    ("muon_veto_pair", r"$\geq 1$ track--muon pair"),
+    ("muon_table16_event_singlemu_trigger", r"event passes SingleMuon triggers"),
+    ("muon_table16_muon_pt26", r"$\geq 1$ muons $p_T > 26~\mathrm{GeV}$"),
+    ("muon_table16_muon_eta2p1", r"$\geq 1$ muons $|\eta| < 2.1$"),
+    ("muon_table16_muon_tight_id", r"$\geq 1$ muons passing tight muon ID"),
     (
-        "muon_veto_pair_os_mass10",
-        r"$\geq 1$ opposite-sign track--muon pair with "
-        r"$M_{\mathrm{track},\mu}>10~\mathrm{GeV}$",
+        "muon_table16_muon_selected_tag",
+        r"exactly one passing muon chosen randomly",
+    ),
+    ("muon_table16_track_pt30", r"$\geq 1$ tracks $p_T > 30~\mathrm{GeV}$"),
+    ("muon_table16_track_eta2p1", r"$\geq 1$ tracks $|\eta| < 2.1$"),
+    (
+        "muon_table16_track_noDTWheelGap",
+        r"$\geq 1$ tracks $|\eta| < 0.15$ OR $|\eta| > 0.35$",
     ),
     (
-        "muon_veto_zwindow",
-        r"$\geq 1$ opposite-sign track--muon pair with "
-        r"$|M_{\mathrm{track},\mu}-M_Z|<10~\mathrm{GeV}$",
+        "muon_table16_track_noECALCrack",
+        r"$\geq 1$ tracks $|\eta| < 1.42$ OR $|\eta| > 1.65$",
+    ),
+    (
+        "muon_table16_track_noCSCTransition",
+        r"$\geq 1$ tracks $|\eta| < 1.55$ OR $|\eta| > 1.85$",
+    ),
+    (
+        "muon_table16_track_fiducialECAL",
+        r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,noisy/dead~ECAL~ch.}}>0.05$",
+    ),
+    (
+        "muon_table16_track_dzOrLambda",
+        r"$\geq 1$ tracks $|d_z| > 0.5~\mathrm{cm}$ OR $|\lambda|>10^{-3}$",
+    ),
+    (
+        "muon_table16_track_pixelHits4",
+        r"$\geq 1$ tracks number of pixel hits $\geq 4$",
+    ),
+    (
+        "muon_table16_track_noMissingInner",
+        r"$\geq 1$ tracks missing inner hits $=0$",
+    ),
+    (
+        "muon_table16_track_noMissingMiddle",
+        r"$\geq 1$ tracks missing middle hits $=0$",
+    ),
+    (
+        "muon_table16_track_chargedIso0p05",
+        r"$\geq 1$ tracks rel. PF-based iso. $<0.05$",
+    ),
+    ("muon_table16_track_dxy0p02", r"$\geq 1$ tracks $|d_{xy}|<0.02~\mathrm{cm}$"),
+    ("muon_table16_track_dz0p5", r"$\geq 1$ tracks $|d_z|<0.5~\mathrm{cm}$"),
+    (
+        "muon_table16_track_dRJet0p5",
+        r"$\geq 1$ track--jet pairs $\Delta R_{\mathrm{track,jet}}>0.5$",
+    ),
+    (
+        "muon_table16_pair_mass10",
+        r"$\geq 1$ track--muon pairs $M_{\mathrm{track},\mu}>10~\mathrm{GeV}$",
+    ),
+    (
+        "muon_table16_track_electronVeto",
+        r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,electron}}>0.15$",
+    ),
+    (
+        "muon_table16_track_tauVeto",
+        r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,had.~tau}}>0.15$",
+    ),
+    ("muon_table16_track_calo10", r"$\geq 1$ tracks $E_{\mathrm{calo}}<10~\mathrm{GeV}$"),
+    (
+        "muon_table16_pair_zwindow",
+        r"$=1$ track--muon pairs $|M_{\mathrm{track},\mu}-M_Z|<10~\mathrm{GeV}$",
+    ),
+    (
+        "muon_table16_pair_os",
+        r"$=1$ track--muon pairs $q_{\mathrm{track}}\cdot q_{\mu}<0$",
+    ),
+    (
+        "muon_table16_layer_NLayers4",
+        r"$\geq 1$ track $n_{\mathrm{layers}}=4$",
+    ),
+    (
+        "muon_table16_layer_NLayers5",
+        r"$\geq 1$ track $n_{\mathrm{layers}}=5$",
+    ),
+    (
+        "muon_table16_layer_NLayers6plus",
+        r"$\geq 1$ track $n_{\mathrm{layers}}\geq 6$",
     ),
 ]
 

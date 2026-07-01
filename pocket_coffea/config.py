@@ -19,6 +19,7 @@ import cuts
 import workflow
 from cuts import (
     has_disappearing_track,
+    muon_table16_cuts,
     muon_pveto_layer_cuts,
     search_diagnostic_cuts,
     search_kinematics,
@@ -64,6 +65,9 @@ diagnostic_categories = (
 muon_pveto_layer_categories = {
     name: [cut] for name, cut in muon_pveto_layer_cuts.items()
 }
+muon_table16_categories = {
+    f"muon_table16_{name}": [cut] for name, cut in muon_table16_cuts.items()
+}
 pveto_layers = ("NLayers4", "NLayers5", "NLayers6plus")
 outer_hit_variants = {
     "missingOuterHits": "tracker layers without measurement",
@@ -103,6 +107,7 @@ cfg = Configurator(
         "muon_veto_ss_zwindow_pass": [has_muon_veto_ss_zwindow_pass_pair],
         "muon_veto_ss_zwindow_fail": [has_muon_veto_ss_zwindow_fail_pair],
         "muon_pveto_ss_zwindow_pass": [has_muon_pveto_ss_zwindow_pass_pair],
+        **muon_table16_categories,
         **muon_pveto_layer_categories,
         **diagnostic_categories,
     },
