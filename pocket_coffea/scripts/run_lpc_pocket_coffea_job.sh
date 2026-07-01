@@ -59,12 +59,17 @@ export DISAPPTRKS_DATASET_SAMPLE="${SAMPLE}"
 export DISAPPTRKS_DATASET_YEAR="${YEAR}"
 unset DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS
 
+cat > lpc_inner_run_options.yaml <<'YAML'
+ignore-grid-certificate: true
+YAML
+
 JOB_OUTPUT="job_output_${JOBID}"
 python3 -m pocket_coffea.scripts.runner \
     --cfg config.py \
     --process-separately \
     --executor iterative \
     --chunksize "${CHUNKSIZE}" \
+    --custom-run-options lpc_inner_run_options.yaml \
     -o "${JOB_OUTPUT}"
 
 shopt -s nullglob
