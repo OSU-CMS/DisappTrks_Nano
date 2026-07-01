@@ -206,26 +206,56 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events[f"n{name[0].upper()}{name[1:]}"] = ak.num(
                 self.events.Muon[mask]
             )
-            muon_table16_diagnostics[name] = self.events[
-                f"n{name[0].upper()}{name[1:]}"
-            ] >= 1
+            muon_table16_diagnostics[name] = (
+                muon_table16_diagnostics["event_singlemu_trigger"]
+                & (self.events[f"n{name[0].upper()}{name[1:]}"] >= 1)
+            )
 
         has_selected_muon_tag = muon_table16_diagnostics["muon_selected_tag"]
         table16_track_masks = muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+        pre_pair_track_fields = {
+            "track_pt30",
+            "track_eta2p1",
+            "track_noDTWheelGap",
+            "track_noECALCrack",
+            "track_noCSCTransition",
+            "track_fiducialECAL",
+            "track_dzOrLambda",
+            "track_pixelHits4",
+            "track_noMissingInner",
+            "track_noMissingMiddle",
+            "track_chargedIso0p05",
+            "track_dxy0p02",
+            "track_dz0p5",
+            "track_dRJet0p5",
+        }
         for name, mask in table16_track_masks.items():
             self.events[f"n{name[0].upper()}{name[1:]}Table16"] = ak.num(
                 self.events.IsoTrack[mask]
             )
-            muon_table16_diagnostics[name] = (
-                has_selected_muon_tag
-                & (self.events[f"n{name[0].upper()}{name[1:]}Table16"] >= 1)
-            )
+            if name in pre_pair_track_fields:
+                muon_table16_diagnostics[name] = (
+                    has_selected_muon_tag
+                    & (self.events[f"n{name[0].upper()}{name[1:]}Table16"] >= 1)
+                )
 
         table16_mass_probe_tracks = self.events.IsoTrack[
             table16_track_masks["track_dRJet0p5"]
         ]
         table16_mass_pairs = build_muon_veto_tag_probe_pairs(
             self.events.MuonTag, table16_mass_probe_tracks
+        )
+        table16_electron_probe_tracks = self.events.IsoTrack[
+            table16_track_masks["track_electronVeto"]
+        ]
+        table16_electron_pairs = build_muon_veto_tag_probe_pairs(
+            self.events.MuonTag, table16_electron_probe_tracks
+        )
+        table16_tau_probe_tracks = self.events.IsoTrack[
+            table16_track_masks["track_tauVeto"]
+        ]
+        table16_tau_pairs = build_muon_veto_tag_probe_pairs(
+            self.events.MuonTag, table16_tau_probe_tracks
         )
         table16_probe_tracks = self.events.IsoTrack[table16_track_masks["track_calo10"]]
         table16_pairs = build_muon_veto_tag_probe_pairs(
@@ -236,6 +266,24 @@ class DisappTrksProcessor(BaseProcessorABC):
                 "pair_mass10": ak.num(
                     table16_mass_pairs[
                         mass10_muon_probe_pair_mask(table16_mass_pairs)
+                    ]
+                )
+                >= 1,
+                "track_electronVeto": ak.num(
+                    table16_electron_pairs[
+                        mass10_muon_probe_pair_mask(table16_electron_pairs)
+                    ]
+                )
+                >= 1,
+                "track_tauVeto": ak.num(
+                    table16_tau_pairs[
+                        mass10_muon_probe_pair_mask(table16_tau_pairs)
+                    ]
+                )
+                >= 1,
+                "track_calo10": ak.num(
+                    table16_pairs[
+                        mass10_muon_probe_pair_mask(table16_pairs)
                     ]
                 )
                 >= 1,
