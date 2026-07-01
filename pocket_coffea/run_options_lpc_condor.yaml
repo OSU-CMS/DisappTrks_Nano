@@ -1,0 +1,30 @@
+# LPC-native manual Condor options for PocketCoffea.
+#
+# This file is intended to be used with:
+#   --executor condor --executor-custom-setup lpc_condor_executor.py
+#
+# Start with dry-run: true to inspect the generated job.sh and .sub files.  Set
+# dry-run: false, or override with --dry-run false if supported by your
+# PocketCoffea command line, when ready to submit.
+
+job-name: "disapptrks_lpc_condor"
+jobs-dir: "jobs_lpc_condor"
+
+scaleout: 20
+chunksize: 50000
+cores-per-worker: 1
+mem-per-worker: "4GB"
+disk-per-worker: "2GB"
+local-virtualenv: true
+conda-env: false
+split-by-category: false
+eos-prefix: "root://cmseos.fnal.gov/"
+max-retries: 3
+dry-run: true
+
+custom-setup-commands:
+  - "source /cvmfs/cms.cern.ch/cmsset_default.sh"
+  - "cd /uscms_data/d3/mjoyce/DisTrks/CMSSW_15_0_10/src"
+  - "cmsenv"
+  - "cd /uscms_data/d3/mjoyce/DisTrks/CMSSW_15_0_10/src/DisappTrks_Nano"
+  - "source .venv/bin/activate"
