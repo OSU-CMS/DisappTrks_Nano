@@ -81,6 +81,13 @@ Build a relocatable Python target directory once from the repository root:
 python3 -m pip install --target pocket_coffea/python_env '.[analysis,pocket-coffea]'
 ```
 
+If the target environment already exists and EOS reads fail with
+`No module named 'XRootD'`, add the XRootD Python bindings to it:
+
+```bash
+python3 -m pip install --target pocket_coffea/python_env --upgrade xrootd
+```
+
 Then submit from `pocket_coffea`:
 
 ```bash

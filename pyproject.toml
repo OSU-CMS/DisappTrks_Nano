@@ -21,6 +21,7 @@ analysis = [
   "numpy>=1.22.0",
   "uproot>=4,<5",
   "vector<1.5.0",
+  "xrootd>=5,<6",
 ]
 pocket-coffea = [
   "pocket-coffea==0.9.12",
