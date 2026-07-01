@@ -13,6 +13,8 @@ Example:
 Environment overrides:
   FILES_PER_JOB    default: 5
   CHUNKSIZE        default: 50000
+  JOB_TIMEOUT      default: 2h
+  MAX_JOBS         default: all jobs
   REQUEST_MEMORY   default: 4GB
   REQUEST_DISK     default: 2GB
 USAGE
@@ -26,6 +28,8 @@ YEAR="$4"
 
 FILES_PER_JOB="${FILES_PER_JOB:-5}"
 CHUNKSIZE="${CHUNKSIZE:-50000}"
+JOB_TIMEOUT="${JOB_TIMEOUT:-2h}"
+MAX_JOBS="${MAX_JOBS:-}"
 REQUEST_MEMORY="${REQUEST_MEMORY:-4GB}"
 REQUEST_DISK="${REQUEST_DISK:-2GB}"
 X509_PROXY="${X509_USER_PROXY:-}"
@@ -86,6 +90,15 @@ if [ "${NFILES}" -le 0 ]; then
 fi
 
 NJOBS=$(( (NFILES + FILES_PER_JOB - 1) / FILES_PER_JOB ))
+if [ -n "${MAX_JOBS}" ]; then
+    if [ "${MAX_JOBS}" -le 0 ]; then
+        echo "MAX_JOBS must be positive if set: ${MAX_JOBS}" >&2
+        exit 1
+    fi
+    if [ "${MAX_JOBS}" -lt "${NJOBS}" ]; then
+        NJOBS="${MAX_JOBS}"
+    fi
+fi
 DATASET_JSON_ABS="$(python3 - "${DATASET_JSON}" <<'PY'
 from pathlib import Path
 import sys
@@ -108,7 +121,11 @@ echo "  dataset:       ${DATASET_JSON_ABS}"
 echo "  tag:           ${TAG}"
 echo "  sample/year:   ${SAMPLE} / ${YEAR}"
 echo "  files/job:     ${FILES_PER_JOB}"
+if [ -n "${MAX_JOBS}" ]; then
+    echo "  max jobs:      ${MAX_JOBS}"
+fi
 echo "  chunksize:     ${CHUNKSIZE}"
+echo "  job timeout:   ${JOB_TIMEOUT}"
 echo "  memory/disk:   ${REQUEST_MEMORY} / ${REQUEST_DISK}"
 echo "  proxy:         ${X509_PROXY_ABS}"
 
@@ -122,6 +139,7 @@ condor_submit \
     -append "year=${YEAR}" \
     -append "files_per_job=${FILES_PER_JOB}" \
     -append "chunksize=${CHUNKSIZE}" \
+    -append "job_timeout=${JOB_TIMEOUT}" \
     -append "request_memory=${REQUEST_MEMORY}" \
     -append "request_disk=${REQUEST_DISK}" \
     -append "n_jobs=${NJOBS}" \

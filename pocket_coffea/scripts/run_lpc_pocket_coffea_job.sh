@@ -9,6 +9,7 @@ SAMPLE="$5"
 YEAR="$6"
 TAG="$7"
 X509_BASENAME="${8:-}"
+JOB_TIMEOUT="${9:-2h}"
 
 export XRD_RUNFORKHANDLER=1
 export MALLOC_TRIM_THRESHOLD_=0
@@ -45,6 +46,7 @@ echo "Sandbox: $PWD"
 echo "Dataset JSON: ${DATASET_JSON}"
 echo "Files per job: ${FILES_PER_JOB}"
 echo "Chunksize: ${CHUNKSIZE}"
+echo "Job timeout: ${JOB_TIMEOUT}"
 echo "Sample/year/tag: ${SAMPLE} ${YEAR} ${TAG}"
 echo "X509_USER_PROXY: ${X509_USER_PROXY:-unset}"
 python3 --version
@@ -80,13 +82,22 @@ ignore-grid-certificate: true
 YAML
 
 JOB_OUTPUT="job_output_${JOBID}"
-python3 -m pocket_coffea.scripts.runner \
-    --cfg config.py \
-    --process-separately \
-    --executor iterative \
-    --chunksize "${CHUNKSIZE}" \
-    --custom-run-options lpc_inner_run_options.yaml \
+runner_cmd=(
+    python3 -m pocket_coffea.scripts.runner
+    --cfg config.py
+    --process-separately
+    --executor iterative
+    --chunksize "${CHUNKSIZE}"
+    --custom-run-options lpc_inner_run_options.yaml
     -o "${JOB_OUTPUT}"
+)
+
+if command -v timeout >/dev/null 2>&1; then
+    timeout --preserve-status "${JOB_TIMEOUT}" "${runner_cmd[@]}"
+else
+    echo "WARNING: timeout command not found; running without a walltime guard"
+    "${runner_cmd[@]}"
+fi
 
 echo "PocketCoffea output tree:"
 find "${JOB_OUTPUT}" -maxdepth 4 -type f -print || true
