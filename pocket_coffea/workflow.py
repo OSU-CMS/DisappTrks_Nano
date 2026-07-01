@@ -297,11 +297,12 @@ class DisappTrksProcessor(BaseProcessorABC):
                 >= 1,
             }
         )
-        for layer in PVETO_LAYERS:
-            layer_mask = muon_probe_pair_layer_mask(table16_pairs, layer)
-            muon_table16_diagnostics[f"layer_{layer}"] = ak.num(
-                table16_pairs[os_z_window_muon_probe_pair_mask(table16_pairs) & layer_mask]
-            ) >= 1
+        muon_table16_diagnostics["layer_combinedBins"] = ak.num(
+            table16_pairs[
+                os_z_window_muon_probe_pair_mask(table16_pairs)
+                & muon_probe_pair_layer_mask(table16_pairs, "combinedBins")
+            ]
+        ) >= 1
         self.events["MuonTable16Diag"] = ak.zip(muon_table16_diagnostics)
 
         track_diagnostics = {}

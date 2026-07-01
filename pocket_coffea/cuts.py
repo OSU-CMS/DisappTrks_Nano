@@ -74,9 +74,7 @@ MUON_TABLE16_FIELDS = [
     "track_calo10",
     "pair_zwindow",
     "pair_os",
-    "layer_NLayers4",
-    "layer_NLayers5",
-    "layer_NLayers6plus",
+    "layer_combinedBins",
 ]
 
 

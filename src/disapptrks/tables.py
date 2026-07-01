@@ -100,16 +100,8 @@ MUON_CUTFLOW_ROWS = [
         r"$=1$ track--muon pairs $q_{\mathrm{track}}\cdot q_{\mu}<0$",
     ),
     (
-        "muon_table16_layer_NLayers4",
-        r"$\geq 1$ track $n_{\mathrm{layers}}=4$",
-    ),
-    (
-        "muon_table16_layer_NLayers5",
-        r"$\geq 1$ track $n_{\mathrm{layers}}=5$",
-    ),
-    (
-        "muon_table16_layer_NLayers6plus",
-        r"$\geq 1$ track $n_{\mathrm{layers}}\geq 6$",
+        "muon_table16_layer_combinedBins",
+        r"$\geq 1$ track $n_{\mathrm{layers}}\geq 4$ (three signal region bins)",
     ),
 ]
 
