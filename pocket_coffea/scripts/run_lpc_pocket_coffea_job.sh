@@ -21,6 +21,25 @@ elif [ -n "${X509_USER_PROXY:-}" ] && [ -f "$X509_USER_PROXY" ]; then
     export X509_USER_PROXY="$X509_USER_PROXY"
 fi
 
+# Create the transfer-output directory before doing anything fragile.  If the
+# job fails during environment setup or imports, Condor can still transfer this
+# directory and leave the real failure in this debug log instead of holding the
+# job because ``analysis_output`` does not exist.
+mkdir -p "analysis_output/${TAG}"
+exec > >(tee -a "analysis_output/${TAG}/job_${JOBID}.debug.log") 2>&1
+
+on_error() {
+    local status="$?"
+    echo "Job ${JOBID} failed with exit code ${status}"
+    echo "PWD: $PWD"
+    echo "Directory listing:"
+    ls -la
+    echo "analysis_output listing:"
+    find analysis_output -maxdepth 3 -type f -print || true
+    exit "${status}"
+}
+trap on_error ERR
+
 echo "Starting LPC PocketCoffea job ${JOBID} on $(hostname)"
 echo "Sandbox: $PWD"
 echo "Dataset JSON: ${DATASET_JSON}"
@@ -29,12 +48,8 @@ echo "Chunksize: ${CHUNKSIZE}"
 echo "Sample/year/tag: ${SAMPLE} ${YEAR} ${TAG}"
 echo "X509_USER_PROXY: ${X509_USER_PROXY:-unset}"
 python3 --version
-
-# Create the transfer-output directory before doing anything fragile.  If the
-# job fails during environment setup or imports, Condor can still transfer this
-# directory and leave the real failure in the .err/.out logs instead of holding
-# the job because ``analysis_output`` does not exist.
-mkdir -p "analysis_output/${TAG}"
+echo "Initial sandbox contents:"
+ls -la
 
 export PYTHONPATH="$PWD/python_env:$PWD/src:$PWD:${PYTHONPATH:-}"
 export PATH="$PWD/python_env/bin:${PATH}"
@@ -52,7 +67,8 @@ python3 make_lpc_job_dataset.py \
     --input "${DATASET_JSON}" \
     --output "${JOB_DATASET_JSON}" \
     --job-id "${JOBID}" \
-    --files-per-job "${FILES_PER_JOB}"
+    --files-per-job "${FILES_PER_JOB}" \
+    --fallback-events-per-file "${CHUNKSIZE}"
 
 export DISAPPTRKS_DATASET_JSON="$PWD/${JOB_DATASET_JSON}"
 export DISAPPTRKS_DATASET_SAMPLE="${SAMPLE}"
@@ -72,8 +88,22 @@ python3 -m pocket_coffea.scripts.runner \
     --custom-run-options lpc_inner_run_options.yaml \
     -o "${JOB_OUTPUT}"
 
+echo "PocketCoffea output tree:"
+find "${JOB_OUTPUT}" -maxdepth 4 -type f -print || true
+
+if [ -f "${JOB_OUTPUT}/logfile.log" ]; then
+    cp "${JOB_OUTPUT}/logfile.log" "analysis_output/${TAG}/job_${JOBID}.pocket_coffea.log"
+fi
+if [ -d "${JOB_OUTPUT}/error" ]; then
+    mkdir -p "analysis_output/${TAG}/job_${JOBID}.error"
+    cp -r "${JOB_OUTPUT}/error/." "analysis_output/${TAG}/job_${JOBID}.error/"
+fi
+if [ -f "${JOB_OUTPUT}/failed_jobs.json" ]; then
+    cp "${JOB_OUTPUT}/failed_jobs.json" "analysis_output/${TAG}/job_${JOBID}.failed_jobs.json"
+fi
+
 shopt -s nullglob
-outputs=("${JOB_OUTPUT}"/*.coffea)
+mapfile -t outputs < <(find "${JOB_OUTPUT}" -name '*.coffea' -type f -print)
 if [ "${#outputs[@]}" -eq 0 ]; then
     echo "No .coffea outputs found in ${JOB_OUTPUT}" >&2
     exit 1

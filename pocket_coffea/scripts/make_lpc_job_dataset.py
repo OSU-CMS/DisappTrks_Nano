@@ -19,7 +19,12 @@ def count_files(dataset: dict) -> int:
     return sum(len(definition.get("files", [])) for definition in dataset.values())
 
 
-def slice_dataset(dataset: dict, job_id: int, files_per_job: int) -> dict:
+def slice_dataset(
+    dataset: dict,
+    job_id: int,
+    files_per_job: int,
+    fallback_events_per_file: int,
+) -> dict:
     start = job_id * files_per_job
     stop = start + files_per_job
 
@@ -37,7 +42,13 @@ def slice_dataset(dataset: dict, job_id: int, files_per_job: int) -> dict:
             new_definition = copy.deepcopy(definition)
             new_definition["files"] = selected
             metadata = dict(new_definition.get("metadata", {}))
-            metadata["nevents"] = str(metadata.get("nevents", "0"))
+            try:
+                nevents = int(metadata.get("nevents", "0"))
+            except (TypeError, ValueError):
+                nevents = 0
+            if nevents <= 0:
+                nevents = max(len(selected) * fallback_events_per_file, 1)
+            metadata["nevents"] = str(nevents)
             new_definition["metadata"] = metadata
             output[name] = new_definition
 
@@ -52,6 +63,7 @@ def main() -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--job-id", required=True, type=int)
     parser.add_argument("--files-per-job", required=True, type=int)
+    parser.add_argument("--fallback-events-per-file", type=int, default=50000)
     args = parser.parse_args()
 
     if args.files_per_job <= 0:
@@ -61,7 +73,12 @@ def main() -> int:
     n_files = count_files(dataset)
     n_jobs = math.ceil(n_files / args.files_per_job) if n_files else 0
 
-    selected = slice_dataset(dataset, args.job_id, args.files_per_job)
+    selected = slice_dataset(
+        dataset,
+        args.job_id,
+        args.files_per_job,
+        args.fallback_events_per_file,
+    )
     if not selected:
         raise SystemExit(
             f"job {args.job_id} has no files; dataset has {n_files} files "
