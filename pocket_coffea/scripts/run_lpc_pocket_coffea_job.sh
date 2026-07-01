@@ -30,6 +30,12 @@ echo "Sample/year/tag: ${SAMPLE} ${YEAR} ${TAG}"
 echo "X509_USER_PROXY: ${X509_USER_PROXY:-unset}"
 python3 --version
 
+# Create the transfer-output directory before doing anything fragile.  If the
+# job fails during environment setup or imports, Condor can still transfer this
+# directory and leave the real failure in the .err/.out logs instead of holding
+# the job because ``analysis_output`` does not exist.
+mkdir -p "analysis_output/${TAG}"
+
 export PYTHONPATH="$PWD/python_env:$PWD/src:$PWD:${PYTHONPATH:-}"
 export PATH="$PWD/python_env/bin:${PATH}"
 
@@ -61,7 +67,6 @@ python3 -m pocket_coffea.scripts.runner \
     --chunksize "${CHUNKSIZE}" \
     -o "${JOB_OUTPUT}"
 
-mkdir -p "analysis_output/${TAG}"
 shopt -s nullglob
 outputs=("${JOB_OUTPUT}"/*.coffea)
 if [ "${#outputs[@]}" -eq 0 ]; then
