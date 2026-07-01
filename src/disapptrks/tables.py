@@ -9,6 +9,8 @@ from typing import Any, Sequence
 
 from .summaries import cutflow_count
 
+POISSON_ZERO_UPPER_68 = 1.1394342831883648
+
 
 @dataclass(frozen=True)
 class CountWithVariance:
@@ -141,8 +143,10 @@ def pveto_with_asymmetric_uncertainty(
 
     ``P_veto = (N_veto_OS - N_veto_SS)/(N_OS - N_SS)``.
 
-    If the signed numerator is negative, the central value is set to zero and
-    only an upward one-sigma uncertainty is quoted.
+    If the signed numerator is non-positive, the central value is set to zero
+    and only an upward one-sigma uncertainty is quoted.  For exactly zero
+    numerator variance, use the legacy 68% Poisson upper interval,
+    ``0.5 * ChiSquareQuantile(0.68, 2)``.
     """
     numerator = num_os.value - num_ss.value
     denominator = den_os.value - den_ss.value
@@ -155,11 +159,12 @@ def pveto_with_asymmetric_uncertainty(
     sigma_numerator = sqrt(numerator_variance)
     sigma_denominator = sqrt(denominator_variance)
 
-    if numerator < 0.0:
+    if numerator <= 0.0:
+        upper_numerator = max(sigma_numerator, POISSON_ZERO_UPPER_68)
         return AsymmetricVetoProbability(
             0.0,
             0.0,
-            sigma_numerator / denominator,
+            upper_numerator / denominator,
             numerator,
             denominator,
         )

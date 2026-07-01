@@ -37,6 +37,21 @@ def test_pveto_with_negative_subtracted_numerator_quotes_upward_only():
     assert summary.err_up > 0.0
 
 
+def test_pveto_with_zero_subtracted_numerator_quotes_poisson_upper():
+    summary = pveto_with_asymmetric_uncertainty(
+        den_os=CountWithVariance(100.0, 100.0),
+        num_os=CountWithVariance(0.0, 0.0),
+        den_ss=CountWithVariance(0.0, 0.0),
+        num_ss=CountWithVariance(0.0, 0.0),
+    )
+
+    assert summary.numerator == 0.0
+    assert summary.denominator == 100.0
+    assert summary.central == 0.0
+    assert summary.err_down == 0.0
+    assert summary.err_up > 0.0
+
+
 def test_write_muon_latex_tables(tmp_path: Path):
     cutflow = {
         "inclusive": {"dataset": {"sample": {"nominal": 100.0}}},
