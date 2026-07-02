@@ -11,8 +11,15 @@ from disapptrks.selections import (
     add_isotrack_derived_fields,
     add_muon_derived_fields,
     base_probe_track_mask,
+    build_lepton_veto_tag_probe_pairs,
     build_muon_veto_tag_probe_pairs,
+    electron_pveto_pair_pass_mask,
+    electron_tag_mask,
+    generic_probe_pair_layer_mask,
+    lepton_veto_probe_track_mask,
+    low_mt_mask,
     mass10_muon_probe_pair_mask,
+    mass_window_pair_mask,
     muon_tag_progression_masks,
     muon_tag_mask,
     muon_pveto_pair_pass_mask,
@@ -23,30 +30,105 @@ from disapptrks.selections import (
     muon_veto_pair_pass_mask,
     os_mass10_muon_probe_pair_mask,
     os_muon_probe_pair_mask,
+    os_mass_window_pair_mask,
     os_z_window_muon_probe_pair_mask,
     search_event_cutflow_masks,
     search_track_cutflow_masks,
     search_track_mask,
     ss_mass10_muon_probe_pair_mask,
     ss_muon_probe_pair_mask,
+    ss_mass_window_pair_mask,
     ss_z_window_muon_probe_pair_mask,
+    tau_pveto_pair_pass_mask,
     z_window_muon_probe_pair_mask,
 )
 
 PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
+ELECTRON_MASS = 0.000511
+MUON_MASS = 0.105658
 
 
 class DisappTrksProcessor(BaseProcessorABC):
+    def _store_lepton_pveto_pairs(
+        self,
+        *,
+        prefix,
+        tags,
+        probes,
+        tag_mass,
+        probe_mass,
+        window_low,
+        window_high,
+        pass_mask_function,
+    ):
+        pairs = build_lepton_veto_tag_probe_pairs(
+            tags,
+            probes,
+            tag_mass=tag_mass,
+            probe_mass=probe_mass,
+        )
+        self.events[f"{prefix}TagProbePair"] = pairs
+        self.events[f"{prefix}TagProbePairMassWindow"] = pairs[
+            mass_window_pair_mask(pairs, window_low, window_high)
+        ]
+        self.events[f"{prefix}TagProbePairOSMassWindow"] = pairs[
+            os_mass_window_pair_mask(pairs, window_low, window_high)
+        ]
+        self.events[f"{prefix}TagProbePairSSMassWindow"] = pairs[
+            ss_mass_window_pair_mask(pairs, window_low, window_high)
+        ]
+        self.events[f"{prefix}PVetoTagProbePairMassWindowPass"] = pairs[
+            os_mass_window_pair_mask(pairs, window_low, window_high)
+            & pass_mask_function(pairs)
+        ]
+        self.events[f"{prefix}PVetoTagProbePairSSMassWindowPass"] = pairs[
+            ss_mass_window_pair_mask(pairs, window_low, window_high)
+            & pass_mask_function(pairs)
+        ]
+        for layer in PVETO_LAYERS:
+            layer_mask = generic_probe_pair_layer_mask(pairs, layer)
+            self.events[f"{prefix}TagProbePairMassWindow_{layer}"] = pairs[
+                os_mass_window_pair_mask(pairs, window_low, window_high) & layer_mask
+            ]
+            self.events[f"{prefix}PVetoTagProbePairMassWindowPass_{layer}"] = pairs[
+                os_mass_window_pair_mask(pairs, window_low, window_high)
+                & layer_mask
+                & pass_mask_function(pairs)
+            ]
+            self.events[f"{prefix}TagProbePairSSMassWindow_{layer}"] = pairs[
+                ss_mass_window_pair_mask(pairs, window_low, window_high) & layer_mask
+            ]
+            self.events[f"{prefix}PVetoTagProbePairSSMassWindowPass_{layer}"] = pairs[
+                ss_mass_window_pair_mask(pairs, window_low, window_high)
+                & layer_mask
+                & pass_mask_function(pairs)
+            ]
+
     def apply_object_preselection(self, variation):
         self.events["Muon"] = add_muon_derived_fields(self.events)
         self.events["IsoTrack"] = add_isotrack_derived_fields(self.events)
         self.events["AnalysisEvent"] = add_event_derived_fields(self.events)
         self.events["MuonTag"] = self.events.Muon[muon_tag_mask(self.events.Muon)]
+        self.events["MuonLowMTTag"] = self.events.MuonTag[
+            low_mt_mask(self.events.MuonTag, self.events.MET)
+        ]
+        self.events["ElectronTag"] = self.events.Electron[
+            electron_tag_mask(self.events.Electron, self.events)
+        ]
+        self.events["ElectronLowMTTag"] = self.events.ElectronTag[
+            low_mt_mask(self.events.ElectronTag, self.events.MET)
+        ]
         self.events["IsoTrackProbe"] = self.events.IsoTrack[
             base_probe_track_mask(self.events.IsoTrack)
         ]
         self.events["MuonVetoProbeTrack"] = self.events.IsoTrack[
             muon_veto_probe_track_mask(self.events.IsoTrack)
+        ]
+        self.events["ElectronVetoProbeTrack"] = self.events.IsoTrack[
+            lepton_veto_probe_track_mask(self.events.IsoTrack, measured_veto="electron")
+        ]
+        self.events["TauVetoProbeTrack"] = self.events.IsoTrack[
+            lepton_veto_probe_track_mask(self.events.IsoTrack, measured_veto="tau")
         ]
         muon_veto_pairs = build_muon_veto_tag_probe_pairs(
             self.events.MuonTag, self.events.MuonVetoProbeTrack
@@ -118,6 +200,36 @@ class DisappTrksProcessor(BaseProcessorABC):
                 & layer_mask
                 & muon_pveto_pair_pass_mask(muon_veto_pairs)
             ]
+        self._store_lepton_pveto_pairs(
+            prefix="Electron",
+            tags=self.events.ElectronTag,
+            probes=self.events.ElectronVetoProbeTrack,
+            tag_mass=ELECTRON_MASS,
+            probe_mass=ELECTRON_MASS,
+            window_low=91.1876 - 10.0,
+            window_high=91.1876 + 10.0,
+            pass_mask_function=electron_pveto_pair_pass_mask,
+        )
+        self._store_lepton_pveto_pairs(
+            prefix="TauMu",
+            tags=self.events.MuonLowMTTag,
+            probes=self.events.TauVetoProbeTrack,
+            tag_mass=MUON_MASS,
+            probe_mass=MUON_MASS,
+            window_low=91.1876 - 50.0,
+            window_high=91.1876 - 15.0,
+            pass_mask_function=tau_pveto_pair_pass_mask,
+        )
+        self._store_lepton_pveto_pairs(
+            prefix="TauEle",
+            tags=self.events.ElectronLowMTTag,
+            probes=self.events.TauVetoProbeTrack,
+            tag_mass=ELECTRON_MASS,
+            probe_mass=ELECTRON_MASS,
+            window_low=91.1876 - 50.0,
+            window_high=91.1876 - 15.0,
+            pass_mask_function=tau_pveto_pair_pass_mask,
+        )
         search_diagnostic_masks = search_track_cutflow_masks(self.events.IsoTrack)
         self.events["IsoTrackSearchPreMissingOuter"] = self.events.IsoTrack[
             search_diagnostic_masks["track_calo10"]
@@ -133,7 +245,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["nIsoTrack"] = ak.num(self.events.IsoTrack)
         self.events["nMuonTag"] = ak.num(self.events.MuonTag)
         self.events["nIsoTrackProbe"] = ak.num(self.events.IsoTrackProbe)
+        self.events["nElectronTag"] = ak.num(self.events.ElectronTag)
+        self.events["nMuonLowMTTag"] = ak.num(self.events.MuonLowMTTag)
+        self.events["nElectronLowMTTag"] = ak.num(self.events.ElectronLowMTTag)
         self.events["nMuonVetoProbeTrack"] = ak.num(self.events.MuonVetoProbeTrack)
+        self.events["nElectronVetoProbeTrack"] = ak.num(self.events.ElectronVetoProbeTrack)
+        self.events["nTauVetoProbeTrack"] = ak.num(self.events.TauVetoProbeTrack)
         self.events["nMuonVetoTagProbePair"] = ak.num(
             self.events.MuonVetoTagProbePair
         )
@@ -192,6 +309,38 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events[f"nMuonPVetoTagProbePairSSZWindowPass_{layer}"] = ak.num(
                 self.events[f"MuonPVetoTagProbePairSSZWindowPass_{layer}"]
             )
+        for prefix in ("Electron", "TauMu", "TauEle"):
+            self.events[f"n{prefix}TagProbePair"] = ak.num(
+                self.events[f"{prefix}TagProbePair"]
+            )
+            self.events[f"n{prefix}TagProbePairMassWindow"] = ak.num(
+                self.events[f"{prefix}TagProbePairMassWindow"]
+            )
+            self.events[f"n{prefix}TagProbePairOSMassWindow"] = ak.num(
+                self.events[f"{prefix}TagProbePairOSMassWindow"]
+            )
+            self.events[f"n{prefix}TagProbePairSSMassWindow"] = ak.num(
+                self.events[f"{prefix}TagProbePairSSMassWindow"]
+            )
+            self.events[f"n{prefix}PVetoTagProbePairMassWindowPass"] = ak.num(
+                self.events[f"{prefix}PVetoTagProbePairMassWindowPass"]
+            )
+            self.events[f"n{prefix}PVetoTagProbePairSSMassWindowPass"] = ak.num(
+                self.events[f"{prefix}PVetoTagProbePairSSMassWindowPass"]
+            )
+            for layer in PVETO_LAYERS:
+                self.events[f"n{prefix}TagProbePairMassWindow_{layer}"] = ak.num(
+                    self.events[f"{prefix}TagProbePairMassWindow_{layer}"]
+                )
+                self.events[f"n{prefix}PVetoTagProbePairMassWindowPass_{layer}"] = ak.num(
+                    self.events[f"{prefix}PVetoTagProbePairMassWindowPass_{layer}"]
+                )
+                self.events[f"n{prefix}TagProbePairSSMassWindow_{layer}"] = ak.num(
+                    self.events[f"{prefix}TagProbePairSSMassWindow_{layer}"]
+                )
+                self.events[f"n{prefix}PVetoTagProbePairSSMassWindowPass_{layer}"] = ak.num(
+                    self.events[f"{prefix}PVetoTagProbePairSSMassWindowPass_{layer}"]
+                )
         self.events["nIsoTrackSearchPreMissingOuter"] = ak.num(
             self.events.IsoTrackSearchPreMissingOuter
         )

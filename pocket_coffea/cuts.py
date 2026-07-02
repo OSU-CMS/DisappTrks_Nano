@@ -223,6 +223,114 @@ for layer in PVETO_LAYERS:
         function=_has_count,
     )
 
+
+def _make_count_cut(name, field):
+    return Cut(
+        name=f"has_{name}",
+        params={"field": field, "minimum": 1},
+        function=_has_count,
+    )
+
+
+lepton_pveto_cuts = {
+    "electron_veto_tag": _make_count_cut("electron_veto_tag", "nElectronTag"),
+    "electron_veto_probe": _make_count_cut(
+        "electron_veto_probe", "nElectronVetoProbeTrack"
+    ),
+    "electron_veto_pair": _make_count_cut(
+        "electron_veto_pair", "nElectronTagProbePair"
+    ),
+    "electron_veto_zwindow": _make_count_cut(
+        "electron_veto_zwindow", "nElectronTagProbePairOSMassWindow"
+    ),
+    "electron_pveto_zwindow_pass": _make_count_cut(
+        "electron_pveto_zwindow_pass", "nElectronPVetoTagProbePairMassWindowPass"
+    ),
+    "electron_veto_ss_zwindow": _make_count_cut(
+        "electron_veto_ss_zwindow", "nElectronTagProbePairSSMassWindow"
+    ),
+    "electron_pveto_ss_zwindow_pass": _make_count_cut(
+        "electron_pveto_ss_zwindow_pass",
+        "nElectronPVetoTagProbePairSSMassWindowPass",
+    ),
+    "tau_mu_veto_tag": _make_count_cut("tau_mu_veto_tag", "nMuonLowMTTag"),
+    "tau_mu_veto_probe": _make_count_cut("tau_mu_veto_probe", "nTauVetoProbeTrack"),
+    "tau_mu_veto_pair": _make_count_cut("tau_mu_veto_pair", "nTauMuTagProbePair"),
+    "tau_mu_veto_masswindow": _make_count_cut(
+        "tau_mu_veto_masswindow", "nTauMuTagProbePairOSMassWindow"
+    ),
+    "tau_mu_pveto_masswindow_pass": _make_count_cut(
+        "tau_mu_pveto_masswindow_pass", "nTauMuPVetoTagProbePairMassWindowPass"
+    ),
+    "tau_mu_veto_ss_masswindow": _make_count_cut(
+        "tau_mu_veto_ss_masswindow", "nTauMuTagProbePairSSMassWindow"
+    ),
+    "tau_mu_pveto_ss_masswindow_pass": _make_count_cut(
+        "tau_mu_pveto_ss_masswindow_pass",
+        "nTauMuPVetoTagProbePairSSMassWindowPass",
+    ),
+    "tau_ele_veto_tag": _make_count_cut("tau_ele_veto_tag", "nElectronLowMTTag"),
+    "tau_ele_veto_probe": _make_count_cut("tau_ele_veto_probe", "nTauVetoProbeTrack"),
+    "tau_ele_veto_pair": _make_count_cut("tau_ele_veto_pair", "nTauEleTagProbePair"),
+    "tau_ele_veto_masswindow": _make_count_cut(
+        "tau_ele_veto_masswindow", "nTauEleTagProbePairOSMassWindow"
+    ),
+    "tau_ele_pveto_masswindow_pass": _make_count_cut(
+        "tau_ele_pveto_masswindow_pass", "nTauElePVetoTagProbePairMassWindowPass"
+    ),
+    "tau_ele_veto_ss_masswindow": _make_count_cut(
+        "tau_ele_veto_ss_masswindow", "nTauEleTagProbePairSSMassWindow"
+    ),
+    "tau_ele_pveto_ss_masswindow_pass": _make_count_cut(
+        "tau_ele_pveto_ss_masswindow_pass",
+        "nTauElePVetoTagProbePairSSMassWindowPass",
+    ),
+}
+
+for layer in PVETO_LAYERS:
+    lepton_pveto_cuts[f"electron_veto_zwindow_{layer}"] = _make_count_cut(
+        f"electron_veto_zwindow_{layer}",
+        f"nElectronTagProbePairMassWindow_{layer}",
+    )
+    lepton_pveto_cuts[f"electron_pveto_zwindow_pass_{layer}"] = _make_count_cut(
+        f"electron_pveto_zwindow_pass_{layer}",
+        f"nElectronPVetoTagProbePairMassWindowPass_{layer}",
+    )
+    lepton_pveto_cuts[f"electron_veto_ss_zwindow_{layer}"] = _make_count_cut(
+        f"electron_veto_ss_zwindow_{layer}",
+        f"nElectronTagProbePairSSMassWindow_{layer}",
+    )
+    lepton_pveto_cuts[f"electron_pveto_ss_zwindow_pass_{layer}"] = _make_count_cut(
+        f"electron_pveto_ss_zwindow_pass_{layer}",
+        f"nElectronPVetoTagProbePairSSMassWindowPass_{layer}",
+    )
+    for tau_prefix, field_prefix, category_prefix in (
+        ("tau_mu", "TauMu", "tau_mu"),
+        ("tau_ele", "TauEle", "tau_ele"),
+    ):
+        lepton_pveto_cuts[f"{category_prefix}_veto_masswindow_{layer}"] = _make_count_cut(
+            f"{category_prefix}_veto_masswindow_{layer}",
+            f"n{field_prefix}TagProbePairMassWindow_{layer}",
+        )
+        lepton_pveto_cuts[f"{category_prefix}_pveto_masswindow_pass_{layer}"] = (
+            _make_count_cut(
+                f"{category_prefix}_pveto_masswindow_pass_{layer}",
+                f"n{field_prefix}PVetoTagProbePairMassWindowPass_{layer}",
+            )
+        )
+        lepton_pveto_cuts[f"{category_prefix}_veto_ss_masswindow_{layer}"] = (
+            _make_count_cut(
+                f"{category_prefix}_veto_ss_masswindow_{layer}",
+                f"n{field_prefix}TagProbePairSSMassWindow_{layer}",
+            )
+        )
+        lepton_pveto_cuts[f"{category_prefix}_pveto_ss_masswindow_pass_{layer}"] = (
+            _make_count_cut(
+                f"{category_prefix}_pveto_ss_masswindow_pass_{layer}",
+                f"n{field_prefix}PVetoTagProbePairSSMassWindowPass_{layer}",
+            )
+        )
+
 search_kinematics = Cut(
     name="search_kinematics",
     params={

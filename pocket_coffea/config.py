@@ -19,6 +19,7 @@ import cuts
 import workflow
 from cuts import (
     has_disappearing_track,
+    lepton_pveto_cuts,
     muon_table16_cuts,
     muon_pveto_layer_cuts,
     search_diagnostic_cuts,
@@ -65,6 +66,7 @@ diagnostic_categories = (
 muon_pveto_layer_categories = {
     name: [cut] for name, cut in muon_pveto_layer_cuts.items()
 }
+lepton_pveto_categories = {name: [cut] for name, cut in lepton_pveto_cuts.items()}
 muon_table16_categories = {
     f"muon_table16_{name}": [cut] for name, cut in muon_table16_cuts.items()
 }
@@ -107,6 +109,7 @@ cfg = Configurator(
         "muon_veto_ss_zwindow_pass": [has_muon_veto_ss_zwindow_pass_pair],
         "muon_veto_ss_zwindow_fail": [has_muon_veto_ss_zwindow_fail_pair],
         "muon_pveto_ss_zwindow_pass": [has_muon_pveto_ss_zwindow_pass_pair],
+        **lepton_pveto_categories,
         **muon_table16_categories,
         **muon_pveto_layer_categories,
         **diagnostic_categories,

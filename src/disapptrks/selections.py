@@ -92,6 +92,47 @@ def muon_tag_progression_masks(
     return masks
 
 
+def transverse_mass(lepton, met):
+    """Transverse mass between a lepton-like object and MET."""
+    return np.sqrt(
+        2.0
+        * lepton.pt
+        * met.pt
+        * (1.0 - np.cos(delta_phi(lepton.phi, met.phi)))
+    )
+
+
+def electron_tag_mask(
+    electrons,
+    events,
+    *,
+    pt_min: float = 32.0,
+    eta_max: float = 2.1,
+):
+    """Run-3 tight electron tag for the electron/tau-to-electron T&P paths."""
+    abs_sc_eta = abs(electrons.eta + electrons.deltaEtaSC)
+    barrel = abs_sc_eta <= 1.479
+    endcap = abs_sc_eta > 1.479
+    dxy_ok = (barrel & (abs(electrons.dxy) < 0.05)) | (
+        endcap & (abs(electrons.dxy) < 0.10)
+    )
+    dz_ok = (barrel & (abs(electrons.dz) < 0.10)) | (
+        endcap & (abs(electrons.dz) < 0.20)
+    )
+    return (
+        events.HLT.Ele32_WPTight_Gsf
+        & (electrons.pt > pt_min)
+        & (abs(electrons.eta) < eta_max)
+        & (electrons.cutBased >= 4)
+        & dxy_ok
+        & dz_ok
+    )
+
+
+def low_mt_mask(leptons, met, *, mt_max: float = 40.0):
+    return transverse_mass(leptons, met) < mt_max
+
+
 def run3_tight_lepton_veto_jet_mask(jets):
     """Run-3 TightLepVeto jet ID for NanoAOD jets.
 
@@ -352,6 +393,29 @@ def muon_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
     )
 
 
+def lepton_veto_probe_track_mask(
+    tracks,
+    *,
+    measured_veto: str,
+    layer: str = "combinedBins",
+):
+    """Probe-track denominator with the measured lepton veto intentionally open."""
+    mask = base_probe_track_mask(
+        tracks,
+        pt_min=30.0,
+        layer=layer,
+        apply_calo_cut=True,
+        apply_outer_hits_cut=False,
+    )
+    if measured_veto != "electron":
+        mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+    if measured_veto != "muon":
+        mask = mask & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+    if measured_veto != "tau":
+        mask = mask & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+    return mask
+
+
 def invariant_mass(
     first, second, *, first_mass: float = 0.105658, second_mass: float = 0.105658
 ):
@@ -405,6 +469,50 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
     )
 
 
+def build_lepton_veto_tag_probe_pairs(
+    tags,
+    probes,
+    *,
+    tag_mass: float,
+    probe_mass: float,
+):
+    """Build generic lepton-tag/probe-track pairs for electron/tau Pveto."""
+    import awkward as ak
+
+    tag, probe = ak.unzip(ak.cartesian([tags, probes], axis=1))
+    mass = invariant_mass(tag, probe, first_mass=tag_mass, second_mass=probe_mass)
+    return ak.zip(
+        {
+            "mass": mass,
+            "os": tag.charge * probe.charge < 0,
+            "ss": tag.charge * probe.charge > 0,
+            "probe_dRMinElectron": probe.dRMinElectron,
+            "probe_dRMinMuon": probe.dRMinMuon,
+            "probe_dRMinTauHad": probe.dRMinTauHad,
+            "probe_missingOuterHits": probe.missingOuterHits,
+            "probe_nLayers": (
+                probe.hp_trackerLayersWithMeasurement
+                if "hp_trackerLayersWithMeasurement" in probe.fields
+                else probe.hp_nValidTrackerHits
+            ),
+            "probe_passElectronVeto": (
+                (probe.dRMinElectron < 0.0) | (probe.dRMinElectron > 0.15)
+            ),
+            "probe_passTauVeto": (
+                (probe.dRMinTauHad < 0.0) | (probe.dRMinTauHad > 0.15)
+            ),
+            "probe_passElectronPVetoNoFiducial": (
+                ((probe.dRMinElectron < 0.0) | (probe.dRMinElectron > 0.15))
+                & (probe.missingOuterHits >= 3)
+            ),
+            "probe_passTauPVetoNoFiducial": (
+                ((probe.dRMinTauHad < 0.0) | (probe.dRMinTauHad > 0.15))
+                & (probe.missingOuterHits >= 3)
+            ),
+        }
+    )
+
+
 def os_muon_probe_pair_mask(pairs):
     return pairs.os
 
@@ -443,6 +551,46 @@ def ss_z_window_muon_probe_pair_mask(
     pairs, *, z_mass: float = 91.1876, window: float = 10.0
 ):
     return pairs.ss & (pairs.mass > z_mass - window) & (pairs.mass < z_mass + window)
+
+
+def os_pair_mask(pairs):
+    return pairs.os
+
+
+def ss_pair_mask(pairs):
+    return pairs.ss
+
+
+def mass_window_pair_mask(pairs, low: float, high: float):
+    return (pairs.mass > low) & (pairs.mass < high)
+
+
+def os_mass_window_pair_mask(pairs, low: float, high: float):
+    return pairs.os & mass_window_pair_mask(pairs, low, high)
+
+
+def ss_mass_window_pair_mask(pairs, low: float, high: float):
+    return pairs.ss & mass_window_pair_mask(pairs, low, high)
+
+
+def electron_pveto_pair_pass_mask(pairs):
+    return pairs.probe_passElectronPVetoNoFiducial
+
+
+def tau_pveto_pair_pass_mask(pairs):
+    return pairs.probe_passTauPVetoNoFiducial
+
+
+def generic_probe_pair_layer_mask(pairs, layer: str):
+    if layer == "NLayers4":
+        return pairs.probe_nLayers == 4
+    if layer == "NLayers5":
+        return pairs.probe_nLayers == 5
+    if layer == "NLayers6plus":
+        return pairs.probe_nLayers >= 6
+    if layer == "combinedBins":
+        return pairs.probe_nLayers >= 4
+    raise ValueError(f"unknown layer bin: {layer}")
 
 
 def muon_veto_pair_pass_mask(pairs):
