@@ -83,10 +83,11 @@ def _met_filters_mask(events):
 
 
 def _jet_veto_map_mask(events):
-    # NanoAOD stores the JME jet-veto-map decision as Flag_jetVeto2022 in the
-    # campaigns where it is available.  Some current OSUNano test files do not
-    # carry this branch, so keep the row as pass-through rather than making old
-    # validation samples unusable.
+    # The JME jet-veto-map decision is not guaranteed to exist in central
+    # NanoAOD.  Legacy DisappTrks computed and saved it as ``jetVeto2022``; some
+    # custom NanoAOD productions may store the same decision under Flag.  Current
+    # OSUNano validation files can lack it, so keep the row as pass-through
+    # rather than making those samples unusable.
     return _event_flag(events, "jetVeto2022", default=True)
 
 
