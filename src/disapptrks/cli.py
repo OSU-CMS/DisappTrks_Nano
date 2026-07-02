@@ -502,8 +502,8 @@ def main():
     era_filelists.add_argument(
         "--prod-version-policy",
         choices=("latest", "all"),
-        default="latest",
-        help="For prod directories with *_vN suffixes, keep only latest per stream/run-era by default.",
+        default="all",
+        help="How to handle prod directories with *_vN suffixes. Default treats versions as literal names and keeps all.",
     )
     era_filelists.add_argument("--nano-version", type=int, default=15)
     era_filelists.add_argument(

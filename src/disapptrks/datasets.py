@@ -80,6 +80,45 @@ YEAR_ERA_TO_GROUP = {
     year_era: group.label for group in ERA_GROUPS for year_era in group.years_eras
 }
 PRIMARY_DATASETS = ("Muon", "EGamma")
+ALLOWED_DEV_DIRS = (
+    "EGamma0",
+    "EGamma1",
+    "EGamma2",
+    "EGamma22",
+    "EGamma3",
+    "Muon",
+    "Muon0",
+    "Muon1",
+)
+ALLOWED_PROD_DIRS = (
+    "Muon0_Run2023C_v1",
+    "Muon0_Run2023C_v2",
+    "Muon0_Run2023C_v3",
+    "Muon0_Run2023C_v4",
+    "Muon0_Run2023D_v1",
+    "Muon0_Run2023D_v2",
+    "Muon0_Run2024C",
+    "Muon0_Run2024D",
+    "Muon0_Run2024E",
+    "Muon0_Run2024F",
+    "Muon0_Run2024G",
+    "Muon0_Run2024H",
+    "Muon0_Run2024I",
+    "Muon0_Run2024I_v2",
+    "Muon1_Run2023C_v1",
+    "Muon1_Run2023C_v2",
+    "Muon1_Run2023C_v3",
+    "Muon1_Run2023D_v1",
+    "Muon1_Run2023D_v2",
+    "Muon1_Run2024C",
+    "Muon1_Run2024D",
+    "Muon1_Run2024E",
+    "Muon1_Run2024F",
+    "Muon_Run2022C",
+    "Muon_Run2022D",
+    "Muon_Run2022F",
+    "Muon_Run2022G",
+)
 RUN_RE = re.compile(r"Run(20\d{2})([A-Z])")
 PROD_DATASET_DIR_RE = re.compile(
     r"^(?P<primary>Muon\d*|EGamma\d*)_Run(?P<year>20\d{2})(?P<era>[A-Z])(?:_v(?P<version>\d+))?$"
@@ -109,6 +148,35 @@ def era_group_label_from_path(path: str) -> str | None:
     if year_era is None:
         return None
     return YEAR_ERA_TO_GROUP.get(year_era)
+
+
+def osunano_area_and_top_dir(path: str) -> tuple[str, str] | None:
+    """Return ``(dev|prod, top_dir)`` for files under the OSUNano EOS areas."""
+    parts = Path(path).parts
+    for area in ("dev", "prod"):
+        if area in parts:
+            index = parts.index(area)
+            if index + 1 < len(parts):
+                return area, parts[index + 1]
+    return None
+
+
+def is_allowed_osunano_path(
+    path: str,
+    *,
+    allowed_dev_dirs: tuple[str, ...] = ALLOWED_DEV_DIRS,
+    allowed_prod_dirs: tuple[str, ...] = ALLOWED_PROD_DIRS,
+) -> bool:
+    """Keep only files from the explicitly listed case-sensitive EOS dirs."""
+    area_top = osunano_area_and_top_dir(path)
+    if area_top is None:
+        return False
+    area, top_dir = area_top
+    if area == "dev":
+        return top_dir in allowed_dev_dirs
+    if area == "prod":
+        return top_dir in allowed_prod_dirs
+    return False
 
 
 def _prod_dataset_component(path: str) -> str | None:
@@ -158,11 +226,12 @@ def group_osunano_files(
     *,
     primary_datasets: tuple[str, ...] = PRIMARY_DATASETS,
     group_labels: tuple[str, ...] = tuple(group.label for group in ERA_GROUPS),
-    prod_version_policy: str = "latest",
+    prod_version_policy: str = "all",
 ) -> dict[tuple[str, str], list[str]]:
     """Group OSUNano ROOT files by ``(primary_dataset, era_group_label)``."""
     if prod_version_policy not in ("latest", "all"):
         raise ValueError("prod_version_policy must be 'latest' or 'all'")
+    files = [path for path in files if is_allowed_osunano_path(path)]
     if prod_version_policy == "latest":
         files = filter_latest_prod_versions(files)
 

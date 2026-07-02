@@ -2,6 +2,8 @@ from disapptrks.datasets import (
     build_dataset_definition,
     filter_latest_prod_versions,
     group_osunano_files,
+    is_allowed_osunano_path,
+    osunano_area_and_top_dir,
     primary_dataset_from_path,
     root_files_from_lines,
     run_year_era_from_path,
@@ -51,9 +53,11 @@ def test_osunano_path_classification():
 
     assert primary_dataset_from_path(path) == "Muon"
     assert run_year_era_from_path(path) == ("2023", "C")
+    assert osunano_area_and_top_dir(path) == ("prod", "Muon1_Run2023C_v3")
+    assert is_allowed_osunano_path(path)
 
 
-def test_filter_latest_prod_versions_keeps_latest_per_stream_and_dev_files():
+def test_filter_latest_prod_versions_is_only_for_explicit_override():
     files = [
         "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon0_Run2023C_v1/nano_1.root",
         "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon0_Run2023C_v4/nano_1.root",
@@ -69,11 +73,34 @@ def test_filter_latest_prod_versions_keeps_latest_per_stream_and_dev_files():
     assert files[3] in filtered
 
 
+def test_group_osunano_files_keeps_all_versions_by_default():
+    files = [
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon0_Run2023C_v1/nano_1.root",
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon0_Run2023C_v4/nano_1.root",
+    ]
+
+    grouped = group_osunano_files(files)
+
+    assert grouped[("Muon", "2023C")] == files
+
+
+def test_group_osunano_files_rejects_unlisted_and_case_mismatched_top_dirs():
+    files = [
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon0_Run2023C_v4/nano.root",
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/muon0_Run2023C_v4/nano.root",
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon2_Run2023C_v4/nano.root",
+    ]
+
+    grouped = group_osunano_files(files)
+
+    assert grouped[("Muon", "2023C")] == [files[0]]
+
+
 def test_group_osunano_files_splits_primary_and_era_groups():
     files = [
         "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon_Run2022C/nano.root",
         "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon_Run2022F/nano.root",
-        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/EGamma0_Run2024G/nano.root",
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev/EGamma0/a/Run2024G_nano.root",
         "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev/EGamma0/a/Run2025C_nano.root",
     ]
 
