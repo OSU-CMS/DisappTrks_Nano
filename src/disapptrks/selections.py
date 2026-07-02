@@ -203,11 +203,11 @@ def add_isotrack_derived_fields(events):
     )
     tracks = ak.with_field(tracks, tracks.caloEm + tracks.caloHad, "caloEnergy")
 
-    # Match the legacy tag-and-probe track--jet isolation definition: jets are
-    # considered for the nearest-jet ΔR if they have pT > 30 GeV and |eta| <
-    # 4.5.  Keep this separate from the event-level leading-jet selection below,
-    # which still uses the Run-3 TightLepVeto jet ID.
-    good_jets = (events.Jet.pt > 30.0) & (abs(events.Jet.eta) < 4.5)
+    good_jets = (
+        (events.Jet.pt > 30.0)
+        & (abs(events.Jet.eta) < 4.5)
+        & run3_tight_lepton_veto_jet_mask(events.Jet)
+    )
     tracks = ak.with_field(
         tracks, minimum_delta_r(tracks, events.Jet, good_jets), "dRMinJet"
     )
