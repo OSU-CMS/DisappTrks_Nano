@@ -29,6 +29,8 @@ class AsymmetricVetoProbability:
 
 MUON_CUTFLOW_ROWS = [
     ("muon_table16_event_singlemu_trigger", r"event passes SingleMuon triggers"),
+    ("muon_table16_event_met_filters", r"event passes MET filters"),
+    ("muon_table16_event_jet_veto_map", r"event passes jet veto map filter"),
     ("muon_table16_muon_pt26", r"$\geq 1$ muons $p_T > 26~\mathrm{GeV}$"),
     ("muon_table16_muon_eta2p1", r"$\geq 1$ muons $|\eta| < 2.1$"),
     ("muon_table16_muon_tight_id", r"$\geq 1$ muons passing tight muon ID"),
@@ -93,6 +95,10 @@ MUON_CUTFLOW_ROWS = [
         r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,had.~tau}}>0.15$",
     ),
     ("muon_table16_track_calo10", r"$\geq 1$ tracks $E_{\mathrm{calo}}<10~\mathrm{GeV}$"),
+    (
+        "muon_table16_track_probe_before_layer",
+        r"$\geq 1$ passing probe tracks before layer selection",
+    ),
     (
         "muon_table16_pair_zwindow",
         r"$=1$ track--muon pairs $|M_{\mathrm{track},\mu}-M_Z|<10~\mathrm{GeV}$",

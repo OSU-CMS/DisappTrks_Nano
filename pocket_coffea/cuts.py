@@ -50,6 +50,8 @@ PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
 
 MUON_TABLE16_FIELDS = [
     "event_singlemu_trigger",
+    "event_met_filters",
+    "event_jet_veto_map",
     "muon_pt26",
     "muon_eta2p1",
     "muon_tight_id",
@@ -72,6 +74,7 @@ MUON_TABLE16_FIELDS = [
     "track_electronVeto",
     "track_tauVeto",
     "track_calo10",
+    "track_probe_before_layer",
     "pair_zwindow",
     "pair_os",
     "layer_combinedBins",

@@ -48,6 +48,48 @@ ELECTRON_MASS = 0.000511
 MUON_MASS = 0.105658
 
 
+def _all_true_like(events):
+    return ak.ones_like(events.HLT.IsoMu24, dtype=bool)
+
+
+def _event_flag(events, name: str, *, default: bool = True):
+    if "Flag" in events.fields and name in events.Flag.fields:
+        return events.Flag[name]
+    if name in events.fields:
+        return events[name]
+    return _all_true_like(events) if default else ~_all_true_like(events)
+
+
+def _met_filters_mask(events):
+    if "Flag" in events.fields and "METFilters" in events.Flag.fields:
+        return events.Flag.METFilters
+    if "METFilters" in events.fields:
+        return events.METFilters
+
+    filters = [
+        "goodVertices",
+        "globalSuperTightHalo2016Filter",
+        "EcalDeadCellTriggerPrimitiveFilter",
+        "BadPFMuonFilter",
+        "BadPFMuonDzFilter",
+        "hfNoisyHitsFilter",
+        "eeBadScFilter",
+        "ecalBadCalibFilter",
+    ]
+    mask = _all_true_like(events)
+    for name in filters:
+        mask = mask & _event_flag(events, name, default=True)
+    return mask
+
+
+def _jet_veto_map_mask(events):
+    # NanoAOD stores the JME jet-veto-map decision as Flag_jetVeto2022 in the
+    # campaigns where it is available.  Some current OSUNano test files do not
+    # carry this branch, so keep the row as pass-through rather than making old
+    # validation samples unusable.
+    return _event_flag(events, "jetVeto2022", default=True)
+
+
 class DisappTrksProcessor(BaseProcessorABC):
     def _store_lepton_pveto_pairs(
         self,
@@ -349,14 +391,21 @@ class DisappTrksProcessor(BaseProcessorABC):
         )
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
 
-        muon_table16_diagnostics = {"event_singlemu_trigger": self.events.HLT.IsoMu24}
+        event_singlemu_trigger = self.events.HLT.IsoMu24
+        event_met_filters = event_singlemu_trigger & _met_filters_mask(self.events)
+        event_jet_veto_map = event_met_filters & _jet_veto_map_mask(self.events)
+        muon_table16_diagnostics = {
+            "event_singlemu_trigger": event_singlemu_trigger,
+            "event_met_filters": event_met_filters,
+            "event_jet_veto_map": event_jet_veto_map,
+        }
         muon_tag_masks = muon_tag_progression_masks(self.events.Muon)
         for name, mask in muon_tag_masks.items():
             self.events[f"n{name[0].upper()}{name[1:]}"] = ak.num(
                 self.events.Muon[mask]
             )
             muon_table16_diagnostics[name] = (
-                muon_table16_diagnostics["event_singlemu_trigger"]
+                event_jet_veto_map
                 & (self.events[f"n{name[0].upper()}{name[1:]}"] >= 1)
             )
 
@@ -436,6 +485,9 @@ class DisappTrksProcessor(BaseProcessorABC):
                     ]
                 )
                 >= 1,
+                "track_probe_before_layer": (
+                    muon_table16_diagnostics["track_calo10"]
+                ),
                 "pair_zwindow": ak.num(
                     table16_pairs[z_window_muon_probe_pair_mask(table16_pairs)]
                 )
