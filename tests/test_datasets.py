@@ -1,4 +1,12 @@
-from disapptrks.datasets import build_dataset_definition, root_files_from_lines
+from disapptrks.datasets import (
+    build_dataset_definition,
+    filter_latest_prod_versions,
+    group_osunano_files,
+    primary_dataset_from_path,
+    root_files_from_lines,
+    run_year_era_from_path,
+    write_grouped_filelists,
+)
 
 
 def test_root_files_from_lines_filters_comments_and_non_root_files():
@@ -36,3 +44,63 @@ def test_build_dataset_definition_includes_required_metadata():
     assert entry["metadata"]["era"] == "G"
     assert entry["metadata"]["nevents"] == "0"
     assert entry["metadata"]["isMC"] == "False"
+
+
+def test_osunano_path_classification():
+    path = "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon1_Run2023C_v3/nano_9.root"
+
+    assert primary_dataset_from_path(path) == "Muon"
+    assert run_year_era_from_path(path) == ("2023", "C")
+
+
+def test_filter_latest_prod_versions_keeps_latest_per_stream_and_dev_files():
+    files = [
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon0_Run2023C_v1/nano_1.root",
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon0_Run2023C_v4/nano_1.root",
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon1_Run2023C_v2/nano_1.root",
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev/Muon/nested/Run2023C_file.root",
+    ]
+
+    filtered = filter_latest_prod_versions(files)
+
+    assert files[0] not in filtered
+    assert files[1] in filtered
+    assert files[2] in filtered
+    assert files[3] in filtered
+
+
+def test_group_osunano_files_splits_primary_and_era_groups():
+    files = [
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon_Run2022C/nano.root",
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon_Run2022F/nano.root",
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/EGamma0_Run2024G/nano.root",
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev/EGamma0/a/Run2025C_nano.root",
+    ]
+
+    grouped = group_osunano_files(files)
+
+    assert grouped[("Muon", "2022CD")] == [files[0]]
+    assert grouped[("Muon", "2022EFG")] == [files[1]]
+    assert grouped[("EGamma", "2024")] == [files[2]]
+    assert grouped[("EGamma", "2025")] == [files[3]]
+
+
+def test_write_grouped_filelists_can_also_write_dataset_jsons(tmp_path):
+    grouped = {
+        ("Muon", "2023C"): [
+            "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon0_Run2023C_v4/nano.root"
+        ]
+    }
+
+    outputs = write_grouped_filelists(
+        grouped,
+        output_dir=tmp_path / "filelists",
+        dataset_json_dir=tmp_path / "datasets",
+    )
+
+    entry = outputs["Muon_2023C"]
+    assert entry["n_files"] == 1
+    assert entry["year"] == "2023_preBPix"
+    assert entry["sample"] == "DATA_Muon"
+    assert entry["filelist"].read_text().count(".root") == 1
+    assert "Run2023C_Muon_OSUNano_EOS" in entry["dataset_json"].read_text()

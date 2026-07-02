@@ -18,7 +18,11 @@ from pocket_coffea.utils.configurator import Configurator
 import cuts
 import workflow
 from cuts import (
+    event_flags,
+    fake_track_cuts,
+    golden_json_lumi,
     has_disappearing_track,
+    jet_veto_map,
     lepton_pveto_cuts,
     muon_table16_cuts,
     muon_pveto_layer_cuts,
@@ -58,6 +62,7 @@ dataset_year = os.environ.get("DISAPPTRKS_DATASET_YEAR", "2024")
 enable_search_diagnostics = os.environ.get(
     "DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", ""
 ).lower() in ("1", "true", "yes", "on")
+data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 diagnostic_categories = (
     {f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()}
     if enable_search_diagnostics
@@ -67,6 +72,7 @@ muon_pveto_layer_categories = {
     name: [cut] for name, cut in muon_pveto_layer_cuts.items()
 }
 lepton_pveto_categories = {name: [cut] for name, cut in lepton_pveto_cuts.items()}
+fake_track_categories = {name: [cut] for name, cut in fake_track_cuts.items()}
 muon_table16_categories = {
     f"muon_table16_{name}": [cut] for name, cut in muon_table16_cuts.items()
 }
@@ -90,7 +96,7 @@ cfg = Configurator(
     workflow=DisappTrksProcessor,
     calibrators=[],
     skim=[],
-    preselections=[],
+    preselections=data_quality_cuts,
     categories={
         "inclusive": [passthrough],
         "search": [search_kinematics, has_disappearing_track],
@@ -110,6 +116,7 @@ cfg = Configurator(
         "muon_veto_ss_zwindow_fail": [has_muon_veto_ss_zwindow_fail_pair],
         "muon_pveto_ss_zwindow_pass": [has_muon_pveto_ss_zwindow_pass_pair],
         **lepton_pveto_categories,
+        **fake_track_categories,
         **muon_table16_categories,
         **muon_pveto_layer_categories,
         **diagnostic_categories,

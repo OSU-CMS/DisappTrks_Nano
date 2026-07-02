@@ -15,6 +15,7 @@ from disapptrks.selections import (
     build_muon_veto_tag_probe_pairs,
     electron_pveto_pair_pass_mask,
     electron_tag_mask,
+    fake_track_no_d0_mask,
     generic_probe_pair_layer_mask,
     lepton_veto_probe_track_mask,
     low_mt_mask,
@@ -82,13 +83,89 @@ def _met_filters_mask(events):
     return mask
 
 
-def _jet_veto_map_mask(events):
+def _jet_veto_map_parameter_year(year, era, processor_params):
+    year = str(year)
+    for container in (
+        processor_params.jet_scale_factors.vetomaps,
+        processor_params.lumi.goldenJSON,
+        processor_params.event_flags,
+    ):
+        if year in container:
+            return year
+
+    if year == "2022":
+        return "2022_preEE" if era in ("C", "D") else "2022_postEE"
+    if year == "2023":
+        return "2023_preBPix" if era == "C" else "2023_postBPix"
+    return year
+
+
+def _golden_json_mask(
+    events,
+    *,
+    processor_params=None,
+    year=None,
+    era=None,
+    sample=None,
+    is_mc=False,
+):
+    if is_mc or processor_params is None or year is None:
+        return _all_true_like(events)
+
+    if "run" not in events.fields or "luminosityBlock" not in events.fields:
+        return _all_true_like(events)
+
+    from pocket_coffea.lib.cut_functions import apply_golden_json
+
+    golden_json_year = _jet_veto_map_parameter_year(year, era, processor_params)
+    return apply_golden_json(
+        events,
+        params={},
+        year=golden_json_year,
+        processor_params=processor_params,
+        sample=sample,
+        isMC=is_mc,
+    )
+
+
+def _jet_veto_map_mask(
+    events,
+    *,
+    processor_params=None,
+    year=None,
+    era=None,
+    sample=None,
+    is_mc=False,
+):
     # The JME jet-veto-map decision is not guaranteed to exist in central
     # NanoAOD.  Legacy DisappTrks computed and saved it as ``jetVeto2022``; some
-    # custom NanoAOD productions may store the same decision under Flag.  Current
-    # OSUNano validation files can lack it, so keep the row as pass-through
-    # rather than making those samples unusable.
-    return _event_flag(events, "jetVeto2022", default=True)
+    # custom NanoAOD productions may store the same decision under Flag.  When
+    # it is absent, use PocketCoffea's correctionlib-based Run-3 jet-veto-map
+    # evaluator.  If the map payload is unavailable in a lightweight local test
+    # environment, keep the row as pass-through rather than making old validation
+    # samples unusable.
+    if "Flag" in events.fields and "jetVeto2022" in events.Flag.fields:
+        return events.Flag.jetVeto2022
+    if "jetVeto2022" in events.fields:
+        return events.jetVeto2022
+
+    if processor_params is None or year is None:
+        return _all_true_like(events)
+
+    try:
+        from pocket_coffea.lib.cut_functions import get_JetVetoMap_Mask
+
+        veto_map_year = _jet_veto_map_parameter_year(year, era, processor_params)
+        return get_JetVetoMap_Mask(
+            events,
+            params={},
+            year=veto_map_year,
+            processor_params=processor_params,
+            sample=sample,
+            isMC=is_mc,
+        )
+    except Exception:
+        return _all_true_like(events)
 
 
 class DisappTrksProcessor(BaseProcessorABC):
@@ -392,9 +469,51 @@ class DisappTrksProcessor(BaseProcessorABC):
         )
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
 
-        event_singlemu_trigger = self.events.HLT.IsoMu24
+        fake_basic3hits_d0_signal = self.events.IsoTrack[
+            fake_track_no_d0_mask(
+                self.events.IsoTrack,
+                layer="NLayers4",
+                d0_region="signal",
+            )
+        ]
+        fake_basic3hits_d0_sideband = self.events.IsoTrack[
+            fake_track_no_d0_mask(
+                self.events.IsoTrack,
+                layer="NLayers4",
+                d0_region="sideband",
+            )
+        ]
+        self.events["nFakeBasic3HitsD0Signal"] = ak.num(fake_basic3hits_d0_signal)
+        self.events["nFakeBasic3HitsD0Sideband"] = ak.num(fake_basic3hits_d0_sideband)
+        for layer in (*PVETO_LAYERS, "combinedBins"):
+            self.events[f"nFakeControl_{layer}"] = ak.num(
+                self.events.IsoTrack[
+                    fake_track_no_d0_mask(
+                        self.events.IsoTrack,
+                        layer=layer,
+                        d0_region="sideband",
+                    )
+                ]
+            )
+
+        event_golden_json = _golden_json_mask(
+            self.events,
+            processor_params=self.params,
+            year=self._year,
+            era=self._era,
+            sample=self._sample,
+            is_mc=self._isMC,
+        )
+        event_singlemu_trigger = event_golden_json & self.events.HLT.IsoMu24
         event_met_filters = event_singlemu_trigger & _met_filters_mask(self.events)
-        event_jet_veto_map = event_met_filters & _jet_veto_map_mask(self.events)
+        event_jet_veto_map = event_met_filters & _jet_veto_map_mask(
+            self.events,
+            processor_params=self.params,
+            year=self._year,
+            era=self._era,
+            sample=self._sample,
+            is_mc=self._isMC,
+        )
         muon_table16_diagnostics = {
             "event_singlemu_trigger": event_singlemu_trigger,
             "event_met_filters": event_met_filters,

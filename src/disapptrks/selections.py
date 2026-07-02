@@ -639,6 +639,56 @@ def search_track_mask(tracks, *, layer: str = "combinedBins"):
     )
 
 
+def fake_track_no_d0_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    d0_region: str = "sideband",
+    pt_min: float = 55.0,
+    sideband_min: float = 0.05,
+    sideband_max: float = 0.50,
+):
+    """Fake-track control selection with the d0 requirement replaced.
+
+    The fake-track estimate uses disappearing-track-like candidates with the
+    nominal d0 requirement removed.  The transfer factor uses the ratio of the
+    signal d0 window to the sideband, while the target-layer control yield is
+    counted in the sideband.
+    """
+
+    abs_dxy = abs(tracks.dxy)
+    if d0_region == "signal":
+        d0_mask = abs_dxy < 0.02
+    elif d0_region == "sideband":
+        d0_mask = (abs_dxy >= sideband_min) & (abs_dxy < sideband_max)
+    else:
+        raise ValueError(f"unknown fake-track d0 region: {d0_region}")
+
+    return (
+        (tracks.pt > pt_min)
+        & (abs(tracks.eta) < 2.1)
+        & ~tracks.inECALCrack
+        & ~tracks.inDTWheelGap
+        & ~tracks.inCSCTransition
+        & ~tracks.inTOBCrack
+        & tracks.isFiducialECALTrack
+        & (tracks.hp_nValidPixelHits >= 4)
+        & (tracks.hp_nValidHits >= 4)
+        & (tracks.missingInnerHits == 0)
+        & (tracks.missingMiddleHits == 0)
+        & (tracks.pfRelIso03_chg < 0.05)
+        & (abs(tracks.dz) < 0.5)
+        & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
+        & layer_mask(tracks, layer)
+        & (tracks.caloEnergy < 10.0)
+        & (tracks.missingOuterHits >= 3)
+        & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+        & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+        & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+        & d0_mask
+    )
+
+
 def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     """Return cumulative track masks for debugging the search-track selection."""
     masks = {}

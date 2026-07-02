@@ -7,16 +7,41 @@ from pathlib import Path
 from . import greet
 from .datasets import (
     build_dataset_definition,
+    group_osunano_files,
     list_eos_root_files,
     root_files_from_lines,
+    scan_eos_bases_for_root_files,
     write_dataset_definition,
+    write_grouped_filelists,
 )
+from .fake_tracks import estimate_fake_track_background, write_fake_track_latex
 from .schema import audit_root_file
 from .summaries import (
     summarize_ss_subtracted_veto_probability,
     summarize_veto_probability,
 )
 from .tables import write_muon_cutflow_latex, write_muon_pveto_latex
+
+
+def _sum_nested_numeric(left, right):
+    if isinstance(left, dict) and isinstance(right, dict):
+        out = dict(left)
+        for key, value in right.items():
+            out[key] = _sum_nested_numeric(out[key], value) if key in out else value
+        return out
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return left + right
+    return right
+
+
+def _load_merged_cutflow(files: list[Path]) -> dict:
+    from coffea.util import load
+
+    merged = {}
+    for path in files:
+        output = load(path)
+        merged = _sum_nested_numeric(merged, output["cutflow"])
+    return merged
 
 
 def _audit_command(args: argparse.Namespace) -> int:
@@ -73,6 +98,58 @@ def _summarize_pveto_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
+    if args.counts_json:
+        source = json.loads(args.counts_json.read_text())
+        source_is_cutflow = False
+    else:
+        if not args.files:
+            raise SystemExit("error: at least one coffea file is required unless --counts-json is used")
+        source = _load_merged_cutflow(args.files)
+        source_is_cutflow = True
+
+    estimates = [
+        estimate_fake_track_background(
+            source,
+            layer=layer,
+            transfer_signal_category=args.transfer_signal_category,
+            transfer_sideband_category=args.transfer_sideband_category,
+            control_category=args.control_category,
+            basic_yield_category=args.basic_yield_category,
+            z_to_ll_yield_category=args.z_to_ll_yield_category,
+            dataset=args.dataset,
+            sample=args.sample,
+            variation=args.variation,
+            source_is_cutflow=source_is_cutflow,
+            prescale=args.prescale,
+        )
+        for layer in args.layers
+    ]
+
+    if args.output_json:
+        args.output_json.parent.mkdir(parents=True, exist_ok=True)
+        args.output_json.write_text(json.dumps([e.as_dict() for e in estimates], indent=2, sort_keys=True))
+        print(f"Wrote {args.output_json}")
+
+    if args.output_tex:
+        write_fake_track_latex(
+            estimates,
+            args.output_tex,
+            run_period=args.run_period,
+            include_table_env=args.table_env,
+        )
+        print(f"Wrote {args.output_tex}")
+
+    for estimate in estimates:
+        print(
+            f"{estimate.layer}: "
+            f"xi={estimate.transfer_factor.value:.6g} ± {estimate.transfer_factor.error:.6g}, "
+            f"N_ctrl={estimate.control.value:.6g} ± {estimate.control.error:.6g}, "
+            f"N_fake={estimate.estimate.value:.6g} ± {estimate.estimate.error:.6g}"
+        )
+    return 0
+
+
 def _make_dataset_json_command(args: argparse.Namespace) -> int:
     if args.filelist:
         files = root_files_from_lines(args.filelist.read_text().splitlines())
@@ -102,6 +179,37 @@ def _make_dataset_json_command(args: argparse.Namespace) -> int:
     if not files:
         print("Warning: no ROOT files found")
         return 2
+    return 0
+
+
+def _make_era_filelists_command(args: argparse.Namespace) -> int:
+    if args.filelist:
+        files = root_files_from_lines(args.filelist.read_text().splitlines())
+    else:
+        files = scan_eos_bases_for_root_files(args.eos_paths, xrootd=args.xrootd)
+
+    grouped = group_osunano_files(
+        files,
+        prod_version_policy=args.prod_version_policy,
+    )
+    outputs = write_grouped_filelists(
+        grouped,
+        output_dir=args.output_dir,
+        dataset_json_dir=args.dataset_json_dir,
+        nano_version=args.nano_version,
+    )
+
+    print(f"Scanned {len(files)} ROOT file(s)")
+    for key, entry in outputs.items():
+        suffix = ""
+        if "dataset_json" in entry:
+            suffix = f", json={entry['dataset_json']}"
+        print(f"{key:18s} {entry['n_files']:6d} files -> {entry['filelist']}{suffix}")
+
+    empty = [key for key, entry in outputs.items() if entry["n_files"] == 0]
+    if empty:
+        print("Warning: empty groups: " + ", ".join(empty))
+        return 2 if args.fail_on_empty else 0
     return 0
 
 
@@ -253,6 +361,77 @@ def main():
     )
     pveto_tables.set_defaults(func=_make_pveto_tables_command)
 
+    fake_tracks = subparsers.add_parser(
+        "estimate-fake-tracks",
+        help="Compute the AN-style fake-track estimate from coffea cutflow counts.",
+    )
+    fake_tracks.add_argument(
+        "files",
+        nargs="*",
+        type=Path,
+        help="PocketCoffea output files. Their cutflows are summed before estimating.",
+    )
+    fake_tracks.add_argument(
+        "--counts-json",
+        type=Path,
+        help="Use a flat JSON mapping of category names to counts instead of coffea files.",
+    )
+    fake_tracks.add_argument("--dataset", help="Restrict to one dataset key for coffea input.")
+    fake_tracks.add_argument("--sample", help="Restrict to one sample key for coffea input.")
+    fake_tracks.add_argument("--variation", default="nominal")
+    fake_tracks.add_argument("--run-period", required=True, help="Run-period label used in the LaTeX table.")
+    fake_tracks.add_argument(
+        "--layers",
+        nargs="+",
+        default=["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"],
+        help="Layer-bin rows to estimate. Category patterns may use {layer}.",
+    )
+    fake_tracks.add_argument(
+        "--transfer-signal-category",
+        default="fake_basic3hits_d0_signal",
+        help="Category/count for the transfer-factor numerator, usually |d0| < 0.02 in the 3-hit/basic sample.",
+    )
+    fake_tracks.add_argument(
+        "--transfer-sideband-category",
+        default="fake_basic3hits_d0_sideband",
+        help="Category/count for the transfer-factor denominator, usually the sideband 0.05 < |d0| < 0.5.",
+    )
+    fake_tracks.add_argument(
+        "--control-category",
+        default="fake_control_{layer}",
+        help="Category/count for the target-layer inverted-d0 control yield. May use {layer}.",
+    )
+    fake_tracks.add_argument(
+        "--basic-yield-category",
+        help="Optional BasicSelection yield category for normalizing Z->ll to the search sample.",
+    )
+    fake_tracks.add_argument(
+        "--z-to-ll-yield-category",
+        help="Optional inclusive Z->ll yield category for normalizing Z->ll to the search sample.",
+    )
+    fake_tracks.add_argument(
+        "--prescale",
+        type=float,
+        default=1.0,
+        help="Optional prescale/completion factor applied to N_ctrl.",
+    )
+    fake_tracks.add_argument(
+        "--output-json",
+        type=Path,
+        help="Write detailed estimate components to JSON.",
+    )
+    fake_tracks.add_argument(
+        "--output-tex",
+        type=Path,
+        help="Write an AN-style LaTeX summary table.",
+    )
+    fake_tracks.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap the LaTeX tabular in a table environment.",
+    )
+    fake_tracks.set_defaults(func=_estimate_fake_tracks_command)
+
     dataset_json = subparsers.add_parser(
         "make-dataset-json",
         help="Create a PocketCoffea dataset JSON from an EOS directory or filelist.",
@@ -284,6 +463,55 @@ def main():
         help="Read ROOT file URLs from a text file instead of calling xrdfs.",
     )
     dataset_json.set_defaults(func=_make_dataset_json_command)
+
+    era_filelists = subparsers.add_parser(
+        "make-era-filelists",
+        help="Scan OSUNano EOS areas and write Muon/EGamma filelists split by Run-3 era group.",
+    )
+    era_filelists.add_argument(
+        "eos_paths",
+        nargs="*",
+        default=[
+            "/store/group/lpcdisapptrks/nano/dev",
+            "/store/group/lpcdisapptrks/nano/prod",
+        ],
+        help="EOS base directories to scan recursively.",
+    )
+    era_filelists.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=Path("filelists"),
+        help="Directory where .txt filelists are written.",
+    )
+    era_filelists.add_argument(
+        "--dataset-json-dir",
+        type=Path,
+        help="Also write PocketCoffea dataset JSONs to this directory.",
+    )
+    era_filelists.add_argument(
+        "--filelist",
+        type=Path,
+        help="Classify ROOT files from an existing text file instead of querying EOS.",
+    )
+    era_filelists.add_argument(
+        "--xrootd",
+        default="root://cmseos.fnal.gov",
+        help="XRootD endpoint passed to xrdfs.",
+    )
+    era_filelists.add_argument(
+        "--prod-version-policy",
+        choices=("latest", "all"),
+        default="latest",
+        help="For prod directories with *_vN suffixes, keep only latest per stream/run-era by default.",
+    )
+    era_filelists.add_argument("--nano-version", type=int, default=15)
+    era_filelists.add_argument(
+        "--fail-on-empty",
+        action="store_true",
+        help="Return nonzero if any primary/year group has zero files.",
+    )
+    era_filelists.set_defaults(func=_make_era_filelists_command)
 
     args = parser.parse_args()
     if not hasattr(args, "func"):

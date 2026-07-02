@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import os
+
 import awkward as ak
+import numpy as np
 
 from pocket_coffea.lib.cut_definition import Cut
+from pocket_coffea.lib.cut_functions import apply_golden_json, get_JetVetoMap_Mask
 
 
 EVENT_DIAGNOSTIC_FIELDS = [
@@ -81,6 +85,111 @@ MUON_TABLE16_FIELDS = [
 ]
 
 
+def _all_true(events):
+    return np.ones(len(events), dtype=bool)
+
+
+def _metadata_era(events):
+    return str(getattr(events, "metadata", {}).get("era", ""))
+
+
+def _pocketcoffea_run3_year_key(year, events=None, processor_params=None):
+    """Map our plain Run-3 year metadata onto PocketCoffea parameter keys."""
+    year = str(year)
+    available = ()
+    if processor_params is not None:
+        for container_name in ("lumi", "event_flags", "jet_scale_factors"):
+            container = getattr(processor_params, container_name, None)
+            if container is None:
+                continue
+            if container_name == "lumi":
+                maybe = getattr(container, "goldenJSON", {})
+            elif container_name == "jet_scale_factors":
+                maybe = getattr(container, "vetomaps", {})
+            else:
+                maybe = container
+            try:
+                available = tuple(maybe.keys())
+                break
+            except AttributeError:
+                pass
+
+    if year in available:
+        return year
+
+    era = _metadata_era(events)
+    if year == "2022":
+        return "2022_preEE" if era in ("C", "D") else "2022_postEE"
+    if year == "2023":
+        return "2023_preBPix" if era == "C" else "2023_postBPix"
+    return year
+
+
+def _golden_json_lumi(events, params, year, processor_params, sample, isMC, **kwargs):
+    return apply_golden_json(
+        events,
+        params=params,
+        year=_pocketcoffea_run3_year_key(year, events, processor_params),
+        processor_params=processor_params,
+        sample=sample,
+        isMC=isMC,
+        **kwargs,
+    )
+
+
+def _event_flags(events, params, year, processor_params, sample, isMC, **kwargs):
+    if "Flag" in events.fields and "METFilters" in events.Flag.fields:
+        return events.Flag.METFilters
+    if "METFilters" in events.fields:
+        return events.METFilters
+
+    mapped_year = _pocketcoffea_run3_year_key(year, events, processor_params)
+    flags = list(processor_params.event_flags[mapped_year])
+    if not isMC:
+        flags += list(processor_params.event_flags_data[mapped_year])
+
+    mask = _all_true(events)
+    for flag in flags:
+        if "Flag" in events.fields and flag in events.Flag.fields:
+            mask = mask & events.Flag[flag].to_numpy()
+        elif flag in events.fields:
+            mask = mask & events[flag].to_numpy()
+        else:
+            # Some custom NanoAODs only persist the combined METFilters bit.  If
+            # that was absent too, keep missing optional flags as pass-through
+            # so lightweight local files remain usable.
+            continue
+    return mask
+
+
+def _jet_veto_map(events, params, year, processor_params, sample, isMC, **kwargs):
+    if "Flag" in events.fields and "jetVeto2022" in events.Flag.fields:
+        return events.Flag.jetVeto2022
+    if "jetVeto2022" in events.fields:
+        return events.jetVeto2022
+
+    mapped_year = _pocketcoffea_run3_year_key(year, events, processor_params)
+    try:
+        return get_JetVetoMap_Mask(
+            events,
+            params=params,
+            year=mapped_year,
+            processor_params=processor_params,
+            sample=sample,
+            isMC=isMC,
+            **kwargs,
+        )
+    except Exception:
+        if os.environ.get("DISAPPTRKS_STRICT_JET_VETO_MAP", "").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            raise
+        return _all_true(events)
+
+
 def _has_disappearing_track(events, params, **kwargs):
     return events.nIsoTrackSearch >= params["minimum"]
 
@@ -111,6 +220,24 @@ has_disappearing_track = Cut(
     name="has_disappearing_track",
     params={"minimum": 1},
     function=_has_disappearing_track,
+)
+
+golden_json_lumi = Cut(
+    name="golden_json_lumi",
+    params={},
+    function=_golden_json_lumi,
+)
+
+event_flags = Cut(
+    name="event_flags",
+    params={},
+    function=_event_flags,
+)
+
+jet_veto_map = Cut(
+    name="jet_veto_map",
+    params={},
+    function=_jet_veto_map,
 )
 
 has_muon_tag = Cut(
@@ -289,6 +416,23 @@ lepton_pveto_cuts = {
         "nTauElePVetoTagProbePairSSMassWindowPass",
     ),
 }
+
+fake_track_cuts = {
+    "fake_basic3hits_d0_signal": _make_count_cut(
+        "fake_basic3hits_d0_signal",
+        "nFakeBasic3HitsD0Signal",
+    ),
+    "fake_basic3hits_d0_sideband": _make_count_cut(
+        "fake_basic3hits_d0_sideband",
+        "nFakeBasic3HitsD0Sideband",
+    ),
+}
+
+for layer in (*PVETO_LAYERS, "combinedBins"):
+    fake_track_cuts[f"fake_control_{layer}"] = _make_count_cut(
+        f"fake_control_{layer}",
+        f"nFakeControl_{layer}",
+    )
 
 for layer in PVETO_LAYERS:
     lepton_pveto_cuts[f"electron_veto_zwindow_{layer}"] = _make_count_cut(
