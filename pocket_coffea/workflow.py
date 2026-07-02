@@ -605,9 +605,6 @@ class DisappTrksProcessor(BaseProcessorABC):
                     ]
                 )
                 >= 1,
-                "track_probe_before_layer": (
-                    muon_table16_diagnostics["track_calo10"]
-                ),
                 "pair_zwindow": ak.num(
                     table16_pairs[z_window_muon_probe_pair_mask(table16_pairs)]
                 )
@@ -617,6 +614,9 @@ class DisappTrksProcessor(BaseProcessorABC):
                 )
                 >= 1,
             }
+        )
+        muon_table16_diagnostics["track_probe_before_layer"] = (
+            muon_table16_diagnostics["track_calo10"]
         )
         muon_table16_diagnostics["layer_combinedBins"] = ak.num(
             table16_pairs[
