@@ -130,4 +130,24 @@ def test_write_grouped_filelists_can_also_write_dataset_jsons(tmp_path):
     assert entry["year"] == "2023_preBPix"
     assert entry["sample"] == "DATA_Muon"
     assert entry["filelist"].read_text().count(".root") == 1
-    assert "Run2023C_Muon_OSUNano_EOS" in entry["dataset_json"].read_text()
+    dataset_json = entry["dataset_json"].read_text()
+    assert "Run2023C_Muon_OSUNano_EOS" in dataset_json
+    assert '"nano_version": 12' in dataset_json
+
+
+def test_write_grouped_filelists_uses_2024_nano_v15_metadata(tmp_path):
+    grouped = {
+        ("Muon", "2024"): [
+            "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon0_Run2024G/nano.root"
+        ]
+    }
+
+    outputs = write_grouped_filelists(
+        grouped,
+        output_dir=tmp_path / "filelists",
+        dataset_json_dir=tmp_path / "datasets",
+    )
+
+    dataset_json = outputs["Muon_2024"]["dataset_json"].read_text()
+    assert '"year": "2024"' in dataset_json
+    assert '"nano_version": 15' in dataset_json

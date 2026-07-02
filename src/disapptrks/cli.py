@@ -505,7 +505,15 @@ def main():
         default="all",
         help="How to handle prod directories with *_vN suffixes. Default treats versions as literal names and keeps all.",
     )
-    era_filelists.add_argument("--nano-version", type=int, default=15)
+    era_filelists.add_argument(
+        "--nano-version",
+        type=int,
+        default=None,
+        help=(
+            "Override the per-era NanoAOD version metadata. "
+            "By default this uses 12 for 2022/2023 and 15 for 2024/2025."
+        ),
+    )
     era_filelists.add_argument(
         "--fail-on-empty",
         action="store_true",

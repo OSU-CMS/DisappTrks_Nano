@@ -49,29 +49,33 @@ class EraGroup:
     years_eras: tuple[tuple[str, str], ...]
     metadata_year: str
     metadata_era: str
+    nano_version: int
 
 
 ERA_GROUPS = (
-    EraGroup("2022CD", (("2022", "C"), ("2022", "D")), "2022_preEE", "CD"),
+    EraGroup("2022CD", (("2022", "C"), ("2022", "D")), "2022_preEE", "CD", 12),
     EraGroup(
         "2022EFG",
         (("2022", "E"), ("2022", "F"), ("2022", "G")),
         "2022_postEE",
         "EFG",
+        12,
     ),
-    EraGroup("2023C", (("2023", "C"),), "2023_preBPix", "C"),
-    EraGroup("2023D", (("2023", "D"),), "2023_postBPix", "D"),
+    EraGroup("2023C", (("2023", "C"),), "2023_preBPix", "C", 12),
+    EraGroup("2023D", (("2023", "D"),), "2023_postBPix", "D", 12),
     EraGroup(
         "2024",
         tuple(("2024", era) for era in "ABCDEFGHI"),
         "2024",
         "all",
+        15,
     ),
     EraGroup(
         "2025",
         tuple(("2025", era) for era in "ABCDEFGHI"),
         "2025",
         "all",
+        15,
     ),
 )
 
@@ -270,7 +274,7 @@ def write_grouped_filelists(
     *,
     output_dir: Path,
     dataset_json_dir: Path | None = None,
-    nano_version: int = 15,
+    nano_version: int | None = None,
 ) -> dict[str, dict[str, Path | int | str]]:
     """Write grouped filelists and optionally matching PocketCoffea JSONs."""
     outputs: dict[str, dict[str, Path | int | str]] = {}
@@ -298,7 +302,7 @@ def write_grouped_filelists(
                 primary_dataset=primary,
                 is_mc=False,
                 nevents="0",
-                nano_version=nano_version,
+                nano_version=group.nano_version if nano_version is None else nano_version,
             )
             write_dataset_definition(dataset, dataset_path)
             entry["dataset_json"] = dataset_path
