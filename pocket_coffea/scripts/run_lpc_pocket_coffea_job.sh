@@ -10,6 +10,7 @@ YEAR="$6"
 TAG="$7"
 X509_BASENAME="${8:-}"
 JOB_TIMEOUT="${9:-2h}"
+CATEGORY_MODE="${10:-muon_pveto}"
 
 export XRD_RUNFORKHANDLER=1
 export MALLOC_TRIM_THRESHOLD_=0
@@ -48,6 +49,7 @@ echo "Files per job: ${FILES_PER_JOB}"
 echo "Chunksize: ${CHUNKSIZE}"
 echo "Job timeout: ${JOB_TIMEOUT}"
 echo "Sample/year/tag: ${SAMPLE} ${YEAR} ${TAG}"
+echo "Category mode: ${CATEGORY_MODE}"
 echo "X509_USER_PROXY: ${X509_USER_PROXY:-unset}"
 python3 --version
 echo "Initial sandbox contents:"
@@ -79,6 +81,7 @@ python3 make_lpc_job_dataset.py \
 export DISAPPTRKS_DATASET_JSON="$PWD/${JOB_DATASET_JSON}"
 export DISAPPTRKS_DATASET_SAMPLE="${SAMPLE}"
 export DISAPPTRKS_DATASET_YEAR="${YEAR}"
+export DISAPPTRKS_CATEGORY_MODE="${CATEGORY_MODE}"
 unset DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS
 
 cat > lpc_inner_run_options.yaml <<'YAML'

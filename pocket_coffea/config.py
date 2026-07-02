@@ -62,6 +62,7 @@ dataset_year = os.environ.get("DISAPPTRKS_DATASET_YEAR", "2024")
 enable_search_diagnostics = os.environ.get(
     "DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", ""
 ).lower() in ("1", "true", "yes", "on")
+category_mode = os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
 data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 diagnostic_categories = (
     {f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()}
@@ -76,6 +77,86 @@ fake_track_categories = {name: [cut] for name, cut in fake_track_cuts.items()}
 muon_table16_categories = {
     f"muon_table16_{name}": [cut] for name, cut in muon_table16_cuts.items()
 }
+
+common_categories = {
+    "inclusive": [passthrough],
+    "search": [search_kinematics, has_disappearing_track],
+}
+muon_pveto_categories = {
+    "muon_veto_tag": [has_muon_tag],
+    "muon_veto_probe": [has_muon_tag, has_muon_veto_probe_track],
+    "muon_veto_pair": [has_muon_veto_tag_probe_pair],
+    "muon_veto_pair_os": [has_muon_veto_os_pair],
+    "muon_veto_pair_os_mass10": [has_muon_veto_os_mass10_pair],
+    "muon_veto_pair_ss": [has_muon_veto_ss_pair],
+    "muon_veto_pair_ss_mass10": [has_muon_veto_ss_mass10_pair],
+    "muon_veto_zwindow": [has_muon_veto_zwindow_pair],
+    "muon_veto_zwindow_pass": [has_muon_veto_zwindow_pass_pair],
+    "muon_veto_zwindow_fail": [has_muon_veto_zwindow_fail_pair],
+    "muon_pveto_zwindow_pass": [has_muon_pveto_zwindow_pass_pair],
+    "muon_veto_ss_zwindow": [has_muon_veto_ss_zwindow_pair],
+    "muon_veto_ss_zwindow_pass": [has_muon_veto_ss_zwindow_pass_pair],
+    "muon_veto_ss_zwindow_fail": [has_muon_veto_ss_zwindow_fail_pair],
+    "muon_pveto_ss_zwindow_pass": [has_muon_pveto_ss_zwindow_pass_pair],
+}
+
+
+def _categories_with_prefix(categories, *prefixes):
+    return {
+        name: cut
+        for name, cut in categories.items()
+        if any(name.startswith(prefix) for prefix in prefixes)
+    }
+
+
+if category_mode == "muon_pveto":
+    selected_categories = {
+        **common_categories,
+        **muon_pveto_categories,
+        **muon_table16_categories,
+        **muon_pveto_layer_categories,
+    }
+elif category_mode == "electron_pveto":
+    selected_categories = {
+        **common_categories,
+        **_categories_with_prefix(lepton_pveto_categories, "electron_"),
+    }
+elif category_mode == "tau_mu_pveto":
+    selected_categories = {
+        **common_categories,
+        **_categories_with_prefix(lepton_pveto_categories, "tau_mu_"),
+    }
+elif category_mode == "tau_ele_pveto":
+    selected_categories = {
+        **common_categories,
+        **_categories_with_prefix(lepton_pveto_categories, "tau_ele_"),
+    }
+elif category_mode == "fake_tracks":
+    selected_categories = {
+        **common_categories,
+        **fake_track_categories,
+    }
+elif category_mode == "all":
+    selected_categories = {
+        **common_categories,
+        **muon_pveto_categories,
+        **lepton_pveto_categories,
+        **fake_track_categories,
+        **muon_table16_categories,
+        **muon_pveto_layer_categories,
+    }
+else:
+    raise ValueError(
+        "Unknown DISAPPTRKS_CATEGORY_MODE="
+        f"{category_mode!r}. Expected one of muon_pveto, electron_pveto, "
+        "tau_mu_pveto, tau_ele_pveto, fake_tracks, all."
+    )
+
+selected_categories = {
+    **selected_categories,
+    **diagnostic_categories,
+}
+
 pveto_layers = ("NLayers4", "NLayers5", "NLayers6plus")
 outer_hit_variants = {
     "missingOuterHits": "tracker layers without measurement",
@@ -97,30 +178,7 @@ cfg = Configurator(
     calibrators=[],
     skim=[],
     preselections=data_quality_cuts,
-    categories={
-        "inclusive": [passthrough],
-        "search": [search_kinematics, has_disappearing_track],
-        "muon_veto_tag": [has_muon_tag],
-        "muon_veto_probe": [has_muon_tag, has_muon_veto_probe_track],
-        "muon_veto_pair": [has_muon_veto_tag_probe_pair],
-        "muon_veto_pair_os": [has_muon_veto_os_pair],
-        "muon_veto_pair_os_mass10": [has_muon_veto_os_mass10_pair],
-        "muon_veto_pair_ss": [has_muon_veto_ss_pair],
-        "muon_veto_pair_ss_mass10": [has_muon_veto_ss_mass10_pair],
-        "muon_veto_zwindow": [has_muon_veto_zwindow_pair],
-        "muon_veto_zwindow_pass": [has_muon_veto_zwindow_pass_pair],
-        "muon_veto_zwindow_fail": [has_muon_veto_zwindow_fail_pair],
-        "muon_pveto_zwindow_pass": [has_muon_pveto_zwindow_pass_pair],
-        "muon_veto_ss_zwindow": [has_muon_veto_ss_zwindow_pair],
-        "muon_veto_ss_zwindow_pass": [has_muon_veto_ss_zwindow_pass_pair],
-        "muon_veto_ss_zwindow_fail": [has_muon_veto_ss_zwindow_fail_pair],
-        "muon_pveto_ss_zwindow_pass": [has_muon_pveto_ss_zwindow_pass_pair],
-        **lepton_pveto_categories,
-        **fake_track_categories,
-        **muon_table16_categories,
-        **muon_pveto_layer_categories,
-        **diagnostic_categories,
-    },
+    categories=selected_categories,
     weights={"common": {"inclusive": []}, "bysample": {}},
     weights_classes=[],
     variations={"weights": {"common": {"inclusive": []}}},

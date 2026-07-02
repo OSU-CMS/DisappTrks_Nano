@@ -17,6 +17,7 @@ Environment overrides:
   MAX_JOBS         default: all jobs
   REQUEST_MEMORY   default: 4GB
   REQUEST_DISK     default: 2GB
+  CATEGORY_MODE    default: muon_pveto
 USAGE
     exit 2
 fi
@@ -32,6 +33,7 @@ JOB_TIMEOUT="${JOB_TIMEOUT:-2h}"
 MAX_JOBS="${MAX_JOBS:-}"
 REQUEST_MEMORY="${REQUEST_MEMORY:-4GB}"
 REQUEST_DISK="${REQUEST_DISK:-2GB}"
+CATEGORY_MODE="${CATEGORY_MODE:-muon_pveto}"
 X509_PROXY="${X509_USER_PROXY:-}"
 
 if [ -z "${X509_PROXY}" ] && command -v voms-proxy-info >/dev/null 2>&1; then
@@ -127,6 +129,7 @@ fi
 echo "  chunksize:     ${CHUNKSIZE}"
 echo "  job timeout:   ${JOB_TIMEOUT}"
 echo "  memory/disk:   ${REQUEST_MEMORY} / ${REQUEST_DISK}"
+echo "  category mode: ${CATEGORY_MODE}"
 echo "  proxy:         ${X509_PROXY_ABS}"
 
 condor_submit \
@@ -142,5 +145,6 @@ condor_submit \
     -append "job_timeout=${JOB_TIMEOUT}" \
     -append "request_memory=${REQUEST_MEMORY}" \
     -append "request_disk=${REQUEST_DISK}" \
+    -append "category_mode=${CATEGORY_MODE}" \
     -append "n_jobs=${NJOBS}" \
     scripts/submit_lpc_pocket_coffea.jdl
