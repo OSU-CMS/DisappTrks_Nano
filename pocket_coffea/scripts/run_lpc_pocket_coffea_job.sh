@@ -53,7 +53,11 @@ python3 --version
 echo "Initial sandbox contents:"
 ls -la
 
-export PYTHONPATH="$PWD/python_env:$PWD/src:$PWD:${PYTHONPATH:-}"
+# Prefer the freshly transferred repository source over any editable/stale copy
+# of disapptrks that might already live inside python_env.  The overnight test
+# failed when python_env/disapptrks shadowed src/disapptrks and missed newer
+# helpers such as add_muon_derived_fields.
+export PYTHONPATH="$PWD/src:$PWD:$PWD/python_env:${PYTHONPATH:-}"
 export PATH="$PWD/python_env/bin:${PATH}"
 
 python3 - <<'PY'
