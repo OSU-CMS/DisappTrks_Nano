@@ -254,6 +254,62 @@ def _make_pveto_tables_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _make_lepton_pveto_table_command(args: argparse.Namespace) -> int:
+    cutflow = _load_merged_cutflow(args.files)
+
+    if args.mode == "tau_mu":
+        defaults = {
+            "os_denominator_name": "tau_mu_veto_masswindow",
+            "os_numerator_name": "tau_mu_pveto_masswindow_pass",
+            "ss_denominator_name": "tau_mu_veto_ss_masswindow",
+            "ss_numerator_name": "tau_mu_pveto_ss_masswindow_pass",
+            "flavor": r"$\tau_{\mu}$",
+        }
+    elif args.mode == "tau_ele":
+        defaults = {
+            "os_denominator_name": "tau_ele_veto_masswindow",
+            "os_numerator_name": "tau_ele_pveto_masswindow_pass",
+            "ss_denominator_name": "tau_ele_veto_ss_masswindow",
+            "ss_numerator_name": "tau_ele_pveto_ss_masswindow_pass",
+            "flavor": r"$\tau_{e}$",
+        }
+    elif args.mode == "electron":
+        defaults = {
+            "os_denominator_name": "electron_veto_zwindow",
+            "os_numerator_name": "electron_pveto_zwindow_pass",
+            "ss_denominator_name": "electron_veto_ss_zwindow",
+            "ss_numerator_name": "electron_pveto_ss_zwindow_pass",
+            "flavor": r"$e$",
+        }
+    else:
+        raise ValueError(f"unknown lepton Pveto mode: {args.mode}")
+
+    summaries = write_muon_pveto_latex(
+        cutflow,
+        args.output,
+        run_period=args.run_period,
+        flavor=args.flavor or defaults["flavor"],
+        layers=args.layers,
+        dataset=args.dataset,
+        sample=args.sample,
+        variation=args.variation,
+        os_denominator_name=args.denominator or defaults["os_denominator_name"],
+        os_numerator_name=args.numerator or defaults["os_numerator_name"],
+        ss_denominator_name=args.ss_denominator or defaults["ss_denominator_name"],
+        ss_numerator_name=args.ss_numerator or defaults["ss_numerator_name"],
+        include_table_env=args.table_env,
+    )
+
+    print(f"Wrote {args.output}")
+    for layer, summary in summaries.items():
+        print(
+            f"{layer}: P_veto = "
+            f"{summary.central:.6g} +{summary.err_up:.6g} -{summary.err_down:.6g} "
+            f"(signed numerator={summary.numerator:g}, denominator={summary.denominator:g})"
+        )
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(prog="disapptrks")
     subparsers = parser.add_subparsers(dest="command")
@@ -360,6 +416,68 @@ def main():
         help="SS cutflow category subtracted from the numerator.",
     )
     pveto_tables.set_defaults(func=_make_pveto_tables_command)
+
+    lepton_pveto_table = subparsers.add_parser(
+        "make-lepton-pveto-table",
+        help=(
+            "Write an AN-style Pveto probability table for electron or tau "
+            "tag-and-probe outputs, merging one or more coffea files."
+        ),
+    )
+    lepton_pveto_table.add_argument("files", nargs="+", type=Path)
+    lepton_pveto_table.add_argument(
+        "--mode",
+        required=True,
+        choices=("electron", "tau_mu", "tau_ele"),
+        help="Category-name preset to use.",
+    )
+    lepton_pveto_table.add_argument("--dataset", help="Restrict to one dataset key.")
+    lepton_pveto_table.add_argument("--sample", help="Restrict to one sample key.")
+    lepton_pveto_table.add_argument("--variation", default="nominal")
+    lepton_pveto_table.add_argument(
+        "--run-period",
+        required=True,
+        help="Run-period label used in the Pveto table.",
+    )
+    lepton_pveto_table.add_argument(
+        "--flavor",
+        help="Override the flavor label used in the Pveto table.",
+    )
+    lepton_pveto_table.add_argument(
+        "--layers",
+        nargs="+",
+        default=["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"],
+        help="Layer-bin rows to include in the Pveto table.",
+    )
+    lepton_pveto_table.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        required=True,
+        help="Output path for the Pveto LaTeX table.",
+    )
+    lepton_pveto_table.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap the tabular in a LaTeX table environment.",
+    )
+    lepton_pveto_table.add_argument(
+        "--denominator",
+        help="Override the OS cutflow category used as denominator.",
+    )
+    lepton_pveto_table.add_argument(
+        "--numerator",
+        help="Override the OS cutflow category used as numerator.",
+    )
+    lepton_pveto_table.add_argument(
+        "--ss-denominator",
+        help="Override the SS cutflow category subtracted from the denominator.",
+    )
+    lepton_pveto_table.add_argument(
+        "--ss-numerator",
+        help="Override the SS cutflow category subtracted from the numerator.",
+    )
+    lepton_pveto_table.set_defaults(func=_make_lepton_pveto_table_command)
 
     fake_tracks = subparsers.add_parser(
         "estimate-fake-tracks",
