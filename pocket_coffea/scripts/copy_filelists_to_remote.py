@@ -2,10 +2,11 @@
 """Copy ROOT files listed in OSUNano filelists to another cluster.
 
 Each input text file creates one destination directory named after the filelist
-stem.  Files are first copied from XRootD to a local staging area with ``xrdcp``
-and then synchronized to the destination with ``rsync``.  The EOS path below a
-configurable prefix is preserved to avoid collisions between many files named
-``nano_1.root``.
+stem.  For local destinations, files are copied directly into the destination.
+For remote destinations, files are first copied from XRootD to a local staging
+area with ``xrdcp`` and then synchronized to the destination with ``rsync``.
+The EOS path below a configurable prefix is preserved to avoid collisions
+between many files named ``nano_1.root``.
 
 Example
 -------
@@ -147,12 +148,17 @@ def process_filelist(
         sources = sources[:max_files]
 
     name = filelist.stem
-    stage_dir = stage_base / name
-    if stage_dir.exists() and overwrite:
+    is_remote_destination = split_remote(dest_base) is not None
+    stage_dir = stage_base / name if is_remote_destination else Path(dest_base) / name
+    if is_remote_destination and stage_dir.exists() and overwrite:
         shutil.rmtree(stage_dir)
     stage_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n== {filelist} -> {dest_base}/{name} ({len(sources)} file(s)) ==", flush=True)
+    mode = "stage+rsync" if is_remote_destination else "direct local copy"
+    print(
+        f"\n== {filelist} -> {dest_base}/{name} ({len(sources)} file(s), {mode}) ==",
+        flush=True,
+    )
 
     failures = 0
 
@@ -187,9 +193,10 @@ def process_filelist(
                     if not continue_on_error:
                         raise
 
-    sync_stage(stage_dir, f"{dest_base}/{name}", dry_run=dry_run)
+    if is_remote_destination:
+        sync_stage(stage_dir, f"{dest_base}/{name}", dry_run=dry_run)
 
-    if not keep_stage and not dry_run:
+    if is_remote_destination and not keep_stage and not dry_run:
         shutil.rmtree(stage_dir)
 
     return failures
