@@ -7,8 +7,10 @@ PocketCoffea checkout.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import cloudpickle
+from omegaconf import OmegaConf
 
 from pocket_coffea.parameters import defaults
 from pocket_coffea.parameters.cuts import passthrough
@@ -53,6 +55,58 @@ cloudpickle.register_pickle_by_value(cuts)
 cloudpickle.register_pickle_by_value(workflow)
 
 localdir = os.path.dirname(os.path.abspath(__file__))
+
+
+def _install_cvmfs_resolver_fallback():
+    """Let PocketCoffea load defaults on workers without cms-griddata CVMFS.
+
+    PocketCoffea's default resolver inspects
+    ``/cvmfs/cms-griddata.cern.ch/cat/metadata`` while building the analysis
+    parameters.  Some OSU Condor workers do not mount that path.  For this
+    analysis we only need the Run-3 JME jet-veto-map payloads, which are
+    transferred with the job into ``data/jet_veto_maps``.  This fallback keeps
+    parameter resolution alive in that environment while preserving the normal
+    PocketCoffea behavior anywhere CVMFS is available.
+    """
+
+    original_setup = defaults.setup_cvmfs_resolver
+    metadata_root = Path("/cvmfs/cms-griddata.cern.ch/cat/metadata")
+
+    def setup_cvmfs_resolver(group_tags=None):
+        if metadata_root.exists():
+            return original_setup(group_tags)
+
+        def cvmfs_path_resolver(period: str, group: str, file: str, tag=None) -> str:
+            if group == "JME" and file == "jetvetomaps.json.gz":
+                search_dirs = []
+                env_dir = os.environ.get("DISAPPTRKS_JET_VETO_MAP_DIR")
+                if env_dir:
+                    search_dirs.append(Path(env_dir))
+                search_dirs.append(Path(localdir) / "data" / "jet_veto_maps")
+                search_dirs.append(Path.cwd() / "data" / "jet_veto_maps")
+
+                for directory in search_dirs:
+                    candidates = [
+                        directory / f"{period}_jetvetomaps.json.gz",
+                        directory / period / "jetvetomaps.json.gz",
+                    ]
+                    for candidate in candidates:
+                        if candidate.exists():
+                            return str(candidate)
+
+            resolved_tag = tag
+            if resolved_tag is None and group_tags and group in group_tags:
+                resolved_tag = group_tags[group].get(period)
+            if resolved_tag is None:
+                resolved_tag = "latest"
+            return str(metadata_root / group / period / resolved_tag / file)
+
+        OmegaConf.register_new_resolver("cvmfs", cvmfs_path_resolver, replace=True)
+
+    defaults.setup_cvmfs_resolver = setup_cvmfs_resolver
+
+
+_install_cvmfs_resolver_fallback()
 parameters = defaults.get_default_parameters()
 dataset_json = os.environ.get(
     "DISAPPTRKS_DATASET_JSON",
