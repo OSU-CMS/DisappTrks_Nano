@@ -15,7 +15,7 @@ CATEGORY_MODE="${10:-muon_pveto}"
 export XRD_RUNFORKHANDLER=1
 export MALLOC_TRIM_THRESHOLD_=0
 
-if [ -n "${X509_BASENAME}" ] && [ -f "${X509_BASENAME}" ]; then
+if [ -n "${X509_BASENAME}" ] && [ "${X509_BASENAME}" != "__none__" ] && [ -f "${X509_BASENAME}" ]; then
     export X509_USER_PROXY="$PWD/${X509_BASENAME}"
 elif [ -n "${X509_USER_PROXY:-}" ] && [ -f "${X509_USER_PROXY}" ]; then
     export X509_USER_PROXY="$X509_USER_PROXY"

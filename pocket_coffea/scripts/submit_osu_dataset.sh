@@ -94,7 +94,7 @@ PY
 DATASET_BASENAME="$(basename "${DATASET_JSON_ABS}")"
 
 TRANSFER_INPUTS="config.py,cuts.py,workflow.py,../src,python_env,${DATASET_JSON_ABS},scripts/make_lpc_job_dataset.py"
-X509_BASENAME=""
+X509_BASENAME="__none__"
 if [ -n "${X509_PROXY}" ] && [ -f "${X509_PROXY}" ]; then
     X509_PROXY_ABS="$(python3 - "${X509_PROXY}" <<'PY'
 from pathlib import Path
@@ -120,14 +120,13 @@ echo "  chunksize:     ${CHUNKSIZE}"
 echo "  job timeout:   ${JOB_TIMEOUT}"
 echo "  memory/disk:   ${REQUEST_MEMORY} / ${REQUEST_DISK}"
 echo "  category mode: ${CATEGORY_MODE}"
-if [ -n "${X509_BASENAME}" ]; then
+if [ "${X509_BASENAME}" != "__none__" ]; then
     echo "  proxy:         ${X509_PROXY_ABS}"
 else
     echo "  proxy:         none"
 fi
 
 condor_submit \
-    -append "dataset_json=${DATASET_JSON_ABS}" \
     -append "dataset_basename=${DATASET_BASENAME}" \
     -append "transfer_inputs=${TRANSFER_INPUTS}" \
     -append "x509_basename=${X509_BASENAME}" \
