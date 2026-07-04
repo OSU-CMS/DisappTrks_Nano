@@ -21,6 +21,7 @@ from .summaries import (
     summarize_veto_probability,
 )
 from .tables import (
+    variable_count_sum,
     write_lepton_pveto_cutflow_latex,
     write_muon_cutflow_latex,
     write_muon_pveto_latex,
@@ -46,6 +47,42 @@ def _load_merged_cutflow(files: list[Path]) -> dict:
         output = load(path)
         merged = _sum_nested_numeric(merged, output["cutflow"])
     return merged
+
+
+def _load_outputs(files: list[Path]) -> list[dict]:
+    from coffea.util import load
+
+    return [load(path) for path in files]
+
+
+def _muon_pair_counts_from_outputs(
+    outputs: list[dict],
+    *,
+    layers: list[str],
+    dataset: str | None = None,
+    sample: str | None = None,
+) -> dict[str, dict[str, float]]:
+    pair_counts = {}
+    for layer in layers:
+        suffix = "" if layer == "combinedBins" else f"_{layer}"
+        totals = {"den_os": 0.0, "num_os": 0.0, "den_ss": 0.0, "num_ss": 0.0}
+        variables = {
+            "den_os": f"nMuonVetoTagProbePairZWindow{suffix}",
+            "num_os": f"nMuonPVetoTagProbePairZWindowPass{suffix}",
+            "den_ss": f"nMuonVetoTagProbePairSSZWindow{suffix}",
+            "num_ss": f"nMuonPVetoTagProbePairSSZWindowPass{suffix}",
+        }
+        for output in outputs:
+            output_variables = output.get("variables", {})
+            for key, variable in variables.items():
+                totals[key] += variable_count_sum(
+                    output_variables,
+                    variable,
+                    dataset=dataset,
+                    sample=sample,
+                )
+        pair_counts[layer] = totals
+    return pair_counts
 
 
 def _audit_command(args: argparse.Namespace) -> int:
@@ -218,7 +255,16 @@ def _make_era_filelists_command(args: argparse.Namespace) -> int:
 
 
 def _make_pveto_tables_command(args: argparse.Namespace) -> int:
-    cutflow = _load_merged_cutflow(args.files)
+    outputs = _load_outputs(args.files)
+    cutflow = {}
+    for output in outputs:
+        cutflow = _sum_nested_numeric(cutflow, output["cutflow"])
+    pair_counts = _muon_pair_counts_from_outputs(
+        outputs,
+        layers=args.layers,
+        dataset=args.dataset,
+        sample=args.sample,
+    )
 
     write_muon_cutflow_latex(
         cutflow,
@@ -242,6 +288,7 @@ def _make_pveto_tables_command(args: argparse.Namespace) -> int:
         ss_denominator_name=args.ss_denominator,
         ss_numerator_name=args.ss_numerator,
         include_table_env=args.table_env,
+        pair_counts=pair_counts,
     )
 
     print(f"Wrote {args.cutflow_tex}")

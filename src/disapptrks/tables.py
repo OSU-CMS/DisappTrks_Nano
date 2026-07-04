@@ -341,6 +341,76 @@ def _category_count(
         return 0.0
 
 
+def _hist_count_sum(hist_obj: Any, *, category: str = "inclusive") -> float:
+    """Return sum of an integer multiplicity from a PocketCoffea histogram.
+
+    The ``n*`` variables are filled as integer event quantities into regular
+    unit-width bins starting at zero.  To recover the sum of pair multiplicities
+    from old outputs, multiply each bin content by the bin's lower edge.
+    """
+    try:
+        axis_names = [axis.name for axis in hist_obj.axes]
+    except AttributeError:
+        return 0.0
+
+    if "cat" in axis_names:
+        try:
+            hist_obj = hist_obj[{"cat": category}]
+        except Exception:
+            return 0.0
+
+    axes = list(hist_obj.axes)
+    if len(axes) != 1:
+        return 0.0
+
+    axis = axes[0]
+    try:
+        counts = hist_obj.values(flow=False)
+        weights = axis.edges[:-1]
+    except Exception:
+        return 0.0
+    return float((counts * weights).sum())
+
+
+def _walk_hists(value: Any):
+    if hasattr(value, "axes") and hasattr(value, "values"):
+        yield value
+    elif isinstance(value, dict):
+        for nested in value.values():
+            yield from _walk_hists(nested)
+
+
+def variable_count_sum(
+    variables: dict[str, Any],
+    variable: str,
+    *,
+    dataset: str | None = None,
+    sample: str | None = None,
+    category: str = "inclusive",
+) -> float:
+    """Sum an event multiplicity variable from PocketCoffea histograms."""
+    if variable not in variables:
+        return 0.0
+
+    value: Any = variables[variable]
+    if sample is not None and isinstance(value, dict):
+        value = value.get(sample, {})
+    if dataset is not None and sample is None and isinstance(value, dict):
+        return sum(
+            variable_count_sum(
+                {variable: nested},
+                variable,
+                dataset=dataset,
+                category=category,
+            )
+            for nested in value.values()
+        )
+    if dataset is not None and isinstance(value, dict):
+        value = value.get(dataset, {})
+
+    return sum(_hist_count_sum(hist, category=category) for hist in _walk_hists(value))
+
+
 def write_muon_cutflow_latex(
     cutflow: dict[str, Any],
     path: Path,
@@ -478,6 +548,7 @@ def write_muon_pveto_latex(
     ss_denominator_name: str = "muon_veto_ss_zwindow",
     ss_numerator_name: str = "muon_pveto_ss_zwindow_pass",
     include_table_env: bool = False,
+    pair_counts: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, AsymmetricVetoProbability]:
     """Write AN/Table-24-style muon Pveto rows."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -489,34 +560,41 @@ def write_muon_pveto_latex(
     rows = []
     for layer in layers:
         suffix = "" if layer == "combinedBins" else f"_{layer}"
-        den_os_value = _category_count(
-            cutflow,
-            f"{os_denominator_name}{suffix}",
-            dataset=dataset,
-            sample=sample,
-            variation=variation,
-        )
-        num_os_value = _category_count(
-            cutflow,
-            f"{os_numerator_name}{suffix}",
-            dataset=dataset,
-            sample=sample,
-            variation=variation,
-        )
-        den_ss_value = _category_count(
-            cutflow,
-            f"{ss_denominator_name}{suffix}",
-            dataset=dataset,
-            sample=sample,
-            variation=variation,
-        )
-        num_ss_value = _category_count(
-            cutflow,
-            f"{ss_numerator_name}{suffix}",
-            dataset=dataset,
-            sample=sample,
-            variation=variation,
-        )
+        if pair_counts is not None and layer in pair_counts:
+            counts = pair_counts[layer]
+            den_os_value = counts["den_os"]
+            num_os_value = counts["num_os"]
+            den_ss_value = counts["den_ss"]
+            num_ss_value = counts["num_ss"]
+        else:
+            den_os_value = _category_count(
+                cutflow,
+                f"{os_denominator_name}{suffix}",
+                dataset=dataset,
+                sample=sample,
+                variation=variation,
+            )
+            num_os_value = _category_count(
+                cutflow,
+                f"{os_numerator_name}{suffix}",
+                dataset=dataset,
+                sample=sample,
+                variation=variation,
+            )
+            den_ss_value = _category_count(
+                cutflow,
+                f"{ss_denominator_name}{suffix}",
+                dataset=dataset,
+                sample=sample,
+                variation=variation,
+            )
+            num_ss_value = _category_count(
+                cutflow,
+                f"{ss_numerator_name}{suffix}",
+                dataset=dataset,
+                sample=sample,
+                variation=variation,
+            )
 
         summary = pveto_with_asymmetric_uncertainty(
             den_os=CountWithVariance(den_os_value, den_os_value),

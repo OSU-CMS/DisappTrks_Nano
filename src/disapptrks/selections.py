@@ -299,7 +299,29 @@ def add_isotrack_derived_fields(events):
         ~tracks.passesTOBDzOrLambda,
         "inTOBCrack",
     )
-    tracks = ak.with_field(tracks, tracks.caloEm + tracks.caloHad, "caloEnergy")
+    raw_calo_energy = tracks.caloEm + tracks.caloHad
+    if "caloTotNoPU" in tracks.fields:
+        calo_energy = tracks.caloTotNoPU
+    else:
+        rho_central_calo = None
+        if "Rho" in events.fields and "fixedGridRhoFastjetCentralCalo" in events.Rho.fields:
+            rho_central_calo = events.Rho.fixedGridRhoFastjetCentralCalo
+        elif "Rho_fixedGridRhoFastjetCentralCalo" in events.fields:
+            rho_central_calo = events.Rho_fixedGridRhoFastjetCentralCalo
+        elif "fixedGridRhoFastjetCentralCalo" in events.fields:
+            rho_central_calo = events.fixedGridRhoFastjetCentralCalo
+
+        if rho_central_calo is not None:
+            raw_calo_energy, rho_central_calo = ak.broadcast_arrays(
+                raw_calo_energy, rho_central_calo
+            )
+            calo_energy = np.maximum(
+                0.0,
+                raw_calo_energy - rho_central_calo * np.pi * 0.4 * 0.4,
+            )
+        else:
+            calo_energy = raw_calo_energy
+    tracks = ak.with_field(tracks, calo_energy, "caloEnergy")
 
     good_jets = (
         (events.Jet.pt > 30.0)
