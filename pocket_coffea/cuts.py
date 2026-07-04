@@ -245,8 +245,8 @@ def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
 
     cset = correctionlib.CorrectionSet.from_file(str(payload_file))
     corr = cset[processor_params.jet_scale_factors.vetomaps[mapped_year]["name"]]
-    eta_flat = ak.flatten(jets.eta)
-    phi_flat = np.clip(ak.flatten(jets.phi), -3.14159, 3.14159)
+    eta_flat = ak.to_numpy(ak.flatten(jets.eta))
+    phi_flat = np.clip(ak.to_numpy(ak.flatten(jets.phi)), -3.14159, 3.14159)
     eta_counts = ak.num(jets.eta)
     weight = ak.unflatten(
         corr.evaluate("jetvetomap", eta_flat, phi_flat),
