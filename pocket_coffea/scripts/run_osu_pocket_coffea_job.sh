@@ -50,6 +50,8 @@ echo "X509_USER_PROXY: ${X509_USER_PROXY:-unset}"
 python3 --version
 echo "Initial sandbox contents:"
 ls -la
+echo "Transferred data payloads:"
+find data golden_jsons jet_veto_maps -maxdepth 3 -type f -print 2>/dev/null || true
 
 export PYTHONPATH="$PWD/src:$PWD:$PWD/python_env:${PYTHONPATH:-}"
 export PATH="$PWD/python_env/bin:${PATH}"
@@ -82,10 +84,16 @@ export DISAPPTRKS_DATASET_YEAR="${YEAR}"
 export DISAPPTRKS_CATEGORY_MODE="${CATEGORY_MODE}"
 if [ -d "$PWD/data/golden_jsons" ]; then
     export DISAPPTRKS_GOLDEN_JSON_DIR="$PWD/data/golden_jsons"
+elif [ -d "$PWD/golden_jsons" ]; then
+    export DISAPPTRKS_GOLDEN_JSON_DIR="$PWD/golden_jsons"
 fi
 if [ -d "$PWD/data/jet_veto_maps" ]; then
     export DISAPPTRKS_JET_VETO_MAP_DIR="$PWD/data/jet_veto_maps"
+elif [ -d "$PWD/jet_veto_maps" ]; then
+    export DISAPPTRKS_JET_VETO_MAP_DIR="$PWD/jet_veto_maps"
 fi
+echo "DISAPPTRKS_GOLDEN_JSON_DIR: ${DISAPPTRKS_GOLDEN_JSON_DIR:-unset}"
+echo "DISAPPTRKS_JET_VETO_MAP_DIR: ${DISAPPTRKS_JET_VETO_MAP_DIR:-unset}"
 unset DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS
 
 cat > osu_inner_run_options.yaml <<'YAML'

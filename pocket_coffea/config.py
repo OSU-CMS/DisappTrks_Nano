@@ -84,6 +84,7 @@ def _install_cvmfs_resolver_fallback():
                     search_dirs.append(Path(env_dir))
                 search_dirs.append(Path(localdir) / "data" / "jet_veto_maps")
                 search_dirs.append(Path.cwd() / "data" / "jet_veto_maps")
+                search_dirs.append(Path.cwd() / "jet_veto_maps")
 
                 for directory in search_dirs:
                     candidates = [

@@ -126,6 +126,7 @@ def _local_jet_veto_map_path(mapped_year):
         search_dirs.append(Path(env_dir))
     search_dirs.append(Path(__file__).resolve().parent / "data" / "jet_veto_maps")
     search_dirs.append(Path.cwd() / "data" / "jet_veto_maps")
+    search_dirs.append(Path.cwd() / "jet_veto_maps")
 
     for directory in search_dirs:
         candidates = [
