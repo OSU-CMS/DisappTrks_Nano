@@ -185,7 +185,7 @@ LEPTON_PVETO_CUTFLOW_ROWS = {
         ),
         (
             "electron_pveto_diag_pair_mass10",
-            r"$\geq 1$ track--electron pairs $M_{\mathrm{track},e}>10~\mathrm{GeV}$",
+            r"$\geq 1$ electron-tag--probe-track pairs $M_{\mathrm{track},e}>10~\mathrm{GeV}$",
         ),
         (
             "electron_pveto_diag_track_muonVeto",
@@ -202,11 +202,11 @@ LEPTON_PVETO_CUTFLOW_ROWS = {
         ),
         (
             "electron_pveto_diag_pair_zwindow",
-            r"$\geq 1$ track--electron pairs $|M_{\mathrm{track},e}-M_Z|<10~\mathrm{GeV}$",
+            r"$\geq 1$ electron-tag--probe-track pairs $|M_{\mathrm{track},e}-M_Z|<10~\mathrm{GeV}$",
         ),
         (
             "electron_pveto_diag_pair_os",
-            r"$\geq 1$ track--electron pairs $q_{\mathrm{track}}q_e<0$",
+            r"$\geq 1$ electron-tag--probe-track pairs $q_{\mathrm{track}}q_e<0$",
         ),
         (
             "electron_pveto_diag_layer_combinedBins",
@@ -311,6 +311,65 @@ def pveto_with_asymmetric_uncertainty(
         rel2 += (sigma_numerator / numerator) ** 2
     if denominator > 0.0:
         rel2 += (sigma_denominator / denominator) ** 2
+    uncertainty = abs(central) * sqrt(rel2)
+    return AsymmetricVetoProbability(
+        central,
+        uncertainty,
+        uncertainty,
+        numerator,
+        denominator,
+    )
+
+
+def combined_pveto_from_layer_counts(
+    layer_counts: Sequence[dict[str, float]],
+) -> AsymmetricVetoProbability:
+    """Combine layer bins without letting negative SS fluctuations cancel bins.
+
+    The displayed table columns retain the raw OS and SS totals.  For the
+    combined-row probability, however, each layer contributes a non-negative
+    SS-subtracted veto numerator.  This avoids a downward same-sign fluctuation
+    in one layer bin erasing a positive veto observation in another bin.
+    """
+
+    denominator = sum(
+        counts["den_os"] - counts["den_ss"] for counts in layer_counts
+    )
+    numerator = sum(
+        max(counts["num_os"] - counts["num_ss"], 0.0)
+        for counts in layer_counts
+    )
+
+    if denominator <= 0.0:
+        return AsymmetricVetoProbability(0.0, 0.0, 0.0, numerator, denominator)
+
+    denominator_variance = sum(
+        max(counts["den_os"] + counts["den_ss"], 0.0)
+        for counts in layer_counts
+    )
+    positive_layers = [
+        counts for counts in layer_counts if counts["num_os"] - counts["num_ss"] > 0.0
+    ]
+    numerator_variance = sum(
+        max(counts["num_os"] + counts["num_ss"], 0.0)
+        for counts in positive_layers
+    )
+
+    sigma_numerator = sqrt(numerator_variance)
+    sigma_denominator = sqrt(max(denominator_variance, 0.0))
+    if numerator <= 0.0:
+        upper_numerator = max(sigma_numerator, POISSON_ZERO_UPPER_68)
+        return AsymmetricVetoProbability(
+            0.0,
+            0.0,
+            upper_numerator / denominator,
+            numerator,
+            denominator,
+        )
+
+    central = numerator / denominator
+    rel2 = (sigma_numerator / numerator) ** 2
+    rel2 += (sigma_denominator / denominator) ** 2
     uncertainty = abs(central) * sqrt(rel2)
     return AsymmetricVetoProbability(
         central,
@@ -557,6 +616,7 @@ def write_muon_pveto_latex(
         layers = (layers,)
     summaries = {}
 
+    layer_count_by_name = {}
     rows = []
     for layer in layers:
         suffix = "" if layer == "combinedBins" else f"_{layer}"
@@ -596,12 +656,35 @@ def write_muon_pveto_latex(
                 variation=variation,
             )
 
-        summary = pveto_with_asymmetric_uncertainty(
-            den_os=CountWithVariance(den_os_value, den_os_value),
-            num_os=CountWithVariance(num_os_value, num_os_value),
-            den_ss=CountWithVariance(den_ss_value, den_ss_value),
-            num_ss=CountWithVariance(num_ss_value, num_ss_value),
-        )
+        layer_count_by_name[layer] = {
+            "den_os": den_os_value,
+            "num_os": num_os_value,
+            "den_ss": den_ss_value,
+            "num_ss": num_ss_value,
+        }
+        if layer == "combinedBins":
+            component_counts = [
+                layer_count_by_name[name]
+                for name in ("NLayers4", "NLayers5", "NLayers6plus")
+                if name in layer_count_by_name
+            ]
+            summary = (
+                combined_pveto_from_layer_counts(component_counts)
+                if component_counts
+                else pveto_with_asymmetric_uncertainty(
+                    den_os=CountWithVariance(den_os_value, den_os_value),
+                    num_os=CountWithVariance(num_os_value, num_os_value),
+                    den_ss=CountWithVariance(den_ss_value, den_ss_value),
+                    num_ss=CountWithVariance(num_ss_value, num_ss_value),
+                )
+            )
+        else:
+            summary = pveto_with_asymmetric_uncertainty(
+                den_os=CountWithVariance(den_os_value, den_os_value),
+                num_os=CountWithVariance(num_os_value, num_os_value),
+                den_ss=CountWithVariance(den_ss_value, den_ss_value),
+                num_ss=CountWithVariance(num_ss_value, num_ss_value),
+            )
         summaries[layer] = summary
         rows.append((layer, den_os_value, num_os_value, den_ss_value, num_ss_value, summary))
 

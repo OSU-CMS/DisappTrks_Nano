@@ -15,6 +15,7 @@ Environment overrides:
   CHUNKSIZE        default: 50000
   JOB_TIMEOUT      default: 2h
   MAX_JOBS         default: all jobs
+  JOB_OFFSET       default: 0; first job index to submit when batching
   REQUEST_MEMORY   default: 4GB
   REQUEST_DISK     default: 4GB
   CATEGORY_MODE    default: muon_pveto
@@ -33,6 +34,7 @@ FILES_PER_JOB="${FILES_PER_JOB:-5}"
 CHUNKSIZE="${CHUNKSIZE:-50000}"
 JOB_TIMEOUT="${JOB_TIMEOUT:-2h}"
 MAX_JOBS="${MAX_JOBS:-}"
+JOB_OFFSET="${JOB_OFFSET:-0}"
 REQUEST_MEMORY="${REQUEST_MEMORY:-4GB}"
 REQUEST_DISK="${REQUEST_DISK:-4GB}"
 CATEGORY_MODE="${CATEGORY_MODE:-muon_pveto}"
@@ -87,7 +89,16 @@ if [ "${NFILES}" -le 0 ]; then
     exit 1
 fi
 
-NJOBS=$(( (NFILES + FILES_PER_JOB - 1) / FILES_PER_JOB ))
+TOTAL_JOBS=$(( (NFILES + FILES_PER_JOB - 1) / FILES_PER_JOB ))
+if [ "${JOB_OFFSET}" -lt 0 ]; then
+    echo "JOB_OFFSET must be non-negative: ${JOB_OFFSET}" >&2
+    exit 1
+fi
+if [ "${JOB_OFFSET}" -ge "${TOTAL_JOBS}" ]; then
+    echo "JOB_OFFSET ${JOB_OFFSET} is outside the job range 0..$((TOTAL_JOBS - 1))" >&2
+    exit 1
+fi
+NJOBS=$(( TOTAL_JOBS - JOB_OFFSET ))
 if [ -n "${MAX_JOBS}" ]; then
     if [ "${MAX_JOBS}" -le 0 ]; then
         echo "MAX_JOBS must be positive if set: ${MAX_JOBS}" >&2
@@ -136,6 +147,8 @@ echo "  dataset:       ${DATASET_JSON_ABS}"
 echo "  tag:           ${TAG}"
 echo "  sample/year:   ${SAMPLE} / ${YEAR}"
 echo "  files/job:     ${FILES_PER_JOB}"
+echo "  job offset:    ${JOB_OFFSET}"
+echo "  total jobs:    ${TOTAL_JOBS}"
 if [ -n "${MAX_JOBS}" ]; then
     echo "  max jobs:      ${MAX_JOBS}"
 fi
@@ -151,13 +164,16 @@ else
 fi
 
 if [ "${TRANSFER_ROOT_FILES}" = "1" ]; then
-    QUEUE_FILE="logs/${TAG}/root_transfer_queue.txt"
-    SUBMIT_FILE="logs/${TAG}/submit_root_transfer.jdl"
-    python3 - "${DATASET_JSON_ABS}" "${FILES_PER_JOB}" "${NJOBS}" > "${QUEUE_FILE}" <<'PY'
+    QUEUE_FILE="logs/${TAG}/root_transfer_queue_offset${JOB_OFFSET}_n${NJOBS}.txt"
+    SUBMIT_FILE="logs/${TAG}/submit_root_transfer_offset${JOB_OFFSET}_n${NJOBS}.jdl"
+    python3 - "${DATASET_JSON_ABS}" "${FILES_PER_JOB}" "${JOB_OFFSET}" "${NJOBS}" > "${QUEUE_FILE}" <<'PY'
 import json
 import sys
 
-dataset_json, files_per_job, n_jobs = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+dataset_json = sys.argv[1]
+files_per_job = int(sys.argv[2])
+job_offset = int(sys.argv[3])
+n_jobs = int(sys.argv[4])
 with open(dataset_json) as handle:
     dataset = json.load(handle)
 
@@ -165,7 +181,7 @@ files = []
 for definition in dataset.values():
     files.extend(definition.get("files", []))
 
-for job_id in range(n_jobs):
+for job_id in range(job_offset, job_offset + n_jobs):
     start = job_id * files_per_job
     selected = files[start:start + files_per_job]
     if not selected:
@@ -200,6 +216,10 @@ EOF
 
     condor_submit "${SUBMIT_FILE}"
 else
+    if [ "${JOB_OFFSET}" -ne 0 ]; then
+        echo "JOB_OFFSET is currently supported only with TRANSFER_ROOT_FILES=1." >&2
+        exit 1
+    fi
     condor_submit \
         -append "dataset_basename=${DATASET_BASENAME}" \
         -append "transfer_inputs=${TRANSFER_INPUTS}" \
