@@ -20,7 +20,11 @@ from .summaries import (
     summarize_ss_subtracted_veto_probability,
     summarize_veto_probability,
 )
-from .tables import write_muon_cutflow_latex, write_muon_pveto_latex
+from .tables import (
+    write_lepton_pveto_cutflow_latex,
+    write_muon_cutflow_latex,
+    write_muon_pveto_latex,
+)
 
 
 def _sum_nested_numeric(left, right):
@@ -284,6 +288,18 @@ def _make_lepton_pveto_table_command(args: argparse.Namespace) -> int:
     else:
         raise ValueError(f"unknown lepton Pveto mode: {args.mode}")
 
+    if args.cutflow_tex is not None:
+        write_lepton_pveto_cutflow_latex(
+            cutflow,
+            args.cutflow_tex,
+            mode=args.mode,
+            dataset=args.dataset,
+            sample=args.sample,
+            variation=args.variation,
+            include_table_env=args.table_env,
+        )
+        print(f"Wrote {args.cutflow_tex}")
+
     summaries = write_muon_pveto_latex(
         cutflow,
         args.output,
@@ -455,6 +471,11 @@ def main():
         type=Path,
         required=True,
         help="Output path for the Pveto LaTeX table.",
+    )
+    lepton_pveto_table.add_argument(
+        "--cutflow-tex",
+        type=Path,
+        help="Also write a compact diagnostic cutflow LaTeX table.",
     )
     lepton_pveto_table.add_argument(
         "--table-env",

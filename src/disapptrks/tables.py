@@ -113,6 +113,45 @@ MUON_CUTFLOW_ROWS = [
     ),
 ]
 
+LEPTON_PVETO_CUTFLOW_ROWS = {
+    "electron": [
+        ("electron_veto_tag", r"$\geq 1$ electron tags"),
+        ("electron_veto_probe", r"$\geq 1$ electron-veto probe tracks"),
+        ("electron_veto_pair", r"$\geq 1$ electron tag--probe pairs"),
+        ("electron_veto_zwindow", r"OS tag--probe pairs in the $Z$ mass window"),
+        ("electron_pveto_zwindow_pass", r"OS $Z$-window pairs passing electron veto"),
+        ("electron_veto_ss_zwindow", r"SS tag--probe pairs in the $Z$ mass window"),
+        (
+            "electron_pveto_ss_zwindow_pass",
+            r"SS $Z$-window pairs passing electron veto",
+        ),
+    ],
+    "tau_mu": [
+        ("tau_mu_veto_tag", r"$\geq 1$ low-$M_T$ muon tags"),
+        ("tau_mu_veto_probe", r"$\geq 1$ tau-veto probe tracks"),
+        ("tau_mu_veto_pair", r"$\geq 1$ muon tag--probe pairs"),
+        ("tau_mu_veto_masswindow", r"OS tag--probe pairs in the tau mass window"),
+        ("tau_mu_pveto_masswindow_pass", r"OS mass-window pairs passing tau veto"),
+        ("tau_mu_veto_ss_masswindow", r"SS tag--probe pairs in the tau mass window"),
+        (
+            "tau_mu_pveto_ss_masswindow_pass",
+            r"SS mass-window pairs passing tau veto",
+        ),
+    ],
+    "tau_ele": [
+        ("tau_ele_veto_tag", r"$\geq 1$ low-$M_T$ electron tags"),
+        ("tau_ele_veto_probe", r"$\geq 1$ tau-veto probe tracks"),
+        ("tau_ele_veto_pair", r"$\geq 1$ electron tag--probe pairs"),
+        ("tau_ele_veto_masswindow", r"OS tag--probe pairs in the tau mass window"),
+        ("tau_ele_pveto_masswindow_pass", r"OS mass-window pairs passing tau veto"),
+        ("tau_ele_veto_ss_masswindow", r"SS tag--probe pairs in the tau mass window"),
+        (
+            "tau_ele_pveto_ss_masswindow_pass",
+            r"SS mass-window pairs passing tau veto",
+        ),
+    ],
+}
+
 DISPLAY_LAYER = {
     "NLayers4": r"$N_{\mathrm{layers}}=4$",
     "NLayers5": r"$N_{\mathrm{layers}}=5$",
@@ -242,6 +281,69 @@ def write_muon_cutflow_latex(
             out.write(r"\centering" + "\n")
             out.write(r"\caption{Muon tag-and-probe cutflow.}" + "\n")
             out.write(r"\label{tab:muon_tp_cutflow}" + "\n")
+
+        out.write(r"\begin{tabular}{lrrr}" + "\n")
+        out.write(r"\hline" + "\n")
+        out.write(
+            r"Cut & Events & $\epsilon_{\mathrm{prev}}$ & "
+            r"$\epsilon_{\mathrm{total}}$ \\" + "\n"
+        )
+        out.write(r"\hline" + "\n")
+
+        first = None
+        previous = None
+        for label, value in rows:
+            if first is None:
+                first = value
+            eff_prev = value / previous if previous else 1.0
+            eff_total = value / first if first else 0.0
+            out.write(
+                f"{label} & {format_count(value)} & "
+                f"{eff_prev:.4f} & {eff_total:.4f} \\\\\n"
+            )
+            previous = value
+
+        out.write(r"\hline" + "\n")
+        out.write(r"\end{tabular}" + "\n")
+        if include_table_env:
+            out.write(r"\end{table}" + "\n")
+
+
+def write_lepton_pveto_cutflow_latex(
+    cutflow: dict[str, Any],
+    path: Path,
+    *,
+    mode: str,
+    dataset: str | None = None,
+    sample: str | None = None,
+    variation: str = "nominal",
+    include_table_env: bool = False,
+) -> None:
+    """Write a compact lepton/tau Pveto diagnostic cutflow table."""
+    if mode not in LEPTON_PVETO_CUTFLOW_ROWS:
+        raise ValueError(f"unknown lepton Pveto cutflow mode: {mode}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        (
+            label,
+            _category_count(
+                cutflow,
+                category,
+                dataset=dataset,
+                sample=sample,
+                variation=variation,
+            ),
+        )
+        for category, label in LEPTON_PVETO_CUTFLOW_ROWS[mode]
+    ]
+
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}[htbp]" + "\n")
+            out.write(r"\centering" + "\n")
+            out.write(r"\caption{Lepton veto tag-and-probe cutflow.}" + "\n")
+            out.write(r"\label{tab:lepton_pveto_cutflow}" + "\n")
 
         out.write(r"\begin{tabular}{lrrr}" + "\n")
         out.write(r"\hline" + "\n")
