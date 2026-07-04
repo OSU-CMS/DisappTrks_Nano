@@ -1,0 +1,16 @@
+{
+  "Run2022CD_EGamma_OSUNano_EOS": {
+    "files": [
+      "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/nano/dev/EGamma22/EGamma/EGamma_Run2022C_customNanoAOD/260701_205955/0000/nano_1.root"
+    ],
+    "metadata": {
+      "sample": "DATA_EGamma",
+      "year": "2022_preEE",
+      "era": "C",
+      "isMC": "False",
+      "primaryDataset": "EGamma",
+      "nevents": "50000",
+      "nano_version": 12
+    }
+  }
+}
