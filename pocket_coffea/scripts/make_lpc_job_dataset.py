@@ -12,6 +12,7 @@ import argparse
 import copy
 import json
 import math
+import os
 from pathlib import Path
 
 
@@ -57,6 +58,36 @@ def slice_dataset(
     return output
 
 
+def localize_files(dataset: dict, local_dir: Path) -> dict:
+    """Point files in a sliced dataset at files transferred into the sandbox.
+
+    Condor places transferred input files in the job working directory using
+    their basenames.  This helper rewrites the file list to those local paths.
+    It intentionally checks for basename collisions within one job so we don't
+    accidentally process the wrong ``nano_1.root``.
+    """
+
+    output = copy.deepcopy(dataset)
+    basenames = []
+    for definition in output.values():
+        files = list(definition.get("files", []))
+        basenames.extend(os.path.basename(path) for path in files)
+
+    duplicates = sorted({name for name in basenames if basenames.count(name) > 1})
+    if duplicates:
+        raise SystemExit(
+            "Cannot localize transferred files with duplicate basenames in one job: "
+            + ", ".join(duplicates)
+        )
+
+    for definition in output.values():
+        definition["files"] = [
+            str(local_dir / os.path.basename(path))
+            for path in definition.get("files", [])
+        ]
+    return output
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, type=Path)
@@ -64,6 +95,17 @@ def main() -> int:
     parser.add_argument("--job-id", required=True, type=int)
     parser.add_argument("--files-per-job", required=True, type=int)
     parser.add_argument("--fallback-events-per-file", type=int, default=50000)
+    parser.add_argument(
+        "--localize-transferred-files",
+        action="store_true",
+        help="Rewrite selected files to local sandbox basenames after Condor transfer.",
+    )
+    parser.add_argument(
+        "--local-dir",
+        type=Path,
+        default=Path("."),
+        help="Directory containing transferred ROOT files. Default: current directory.",
+    )
     args = parser.parse_args()
 
     if args.files_per_job <= 0:
@@ -84,6 +126,9 @@ def main() -> int:
             f"job {args.job_id} has no files; dataset has {n_files} files "
             f"and {n_jobs} jobs for files_per_job={args.files_per_job}"
         )
+
+    if args.localize_transferred_files:
+        selected = localize_files(selected, args.local_dir)
 
     args.output.write_text(json.dumps(selected, indent=2) + "\n")
     print(

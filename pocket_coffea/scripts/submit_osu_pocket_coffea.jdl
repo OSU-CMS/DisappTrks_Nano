@@ -1,6 +1,6 @@
 universe = vanilla
 executable = scripts/run_osu_pocket_coffea_job.sh
-arguments = $(ProcId) $(dataset_basename) $(files_per_job) $(chunksize) $(sample) $(year) $(tag) $(x509_basename) $(job_timeout) $(category_mode)
+arguments = $(ProcId) $(dataset_basename) $(files_per_job) $(chunksize) $(sample) $(year) $(tag) $(x509_basename) $(job_timeout) $(category_mode) 0
 
 output = logs/$(tag)/job_$(ClusterId).$(ProcId).out
 error  = logs/$(tag)/job_$(ClusterId).$(ProcId).err

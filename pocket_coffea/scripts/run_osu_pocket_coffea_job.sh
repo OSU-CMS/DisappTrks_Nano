@@ -11,6 +11,7 @@ TAG="$7"
 X509_BASENAME="${8:-}"
 JOB_TIMEOUT="${9:-2h}"
 CATEGORY_MODE="${10:-muon_pveto}"
+TRANSFER_ROOT_FILES="${11:-0}"
 
 export XRD_RUNFORKHANDLER=1
 export MALLOC_TRIM_THRESHOLD_=0
@@ -44,6 +45,7 @@ echo "Chunksize: ${CHUNKSIZE}"
 echo "Job timeout: ${JOB_TIMEOUT}"
 echo "Sample/year/tag: ${SAMPLE} ${YEAR} ${TAG}"
 echo "Category mode: ${CATEGORY_MODE}"
+echo "Transfer ROOT files: ${TRANSFER_ROOT_FILES}"
 echo "X509_USER_PROXY: ${X509_USER_PROXY:-unset}"
 python3 --version
 echo "Initial sandbox contents:"
@@ -61,12 +63,18 @@ for name in ("awkward", "uproot", "coffea", "pocket_coffea", "disapptrks"):
 PY
 
 JOB_DATASET_JSON="job_dataset_${JOBID}.json"
-python3 make_lpc_job_dataset.py \
-    --input "${DATASET_JSON}" \
-    --output "${JOB_DATASET_JSON}" \
-    --job-id "${JOBID}" \
-    --files-per-job "${FILES_PER_JOB}" \
+make_dataset_cmd=(
+    python3 make_lpc_job_dataset.py
+    --input "${DATASET_JSON}"
+    --output "${JOB_DATASET_JSON}"
+    --job-id "${JOBID}"
+    --files-per-job "${FILES_PER_JOB}"
     --fallback-events-per-file "${CHUNKSIZE}"
+)
+if [ "${TRANSFER_ROOT_FILES}" = "1" ]; then
+    make_dataset_cmd+=(--localize-transferred-files --local-dir "$PWD")
+fi
+"${make_dataset_cmd[@]}"
 
 export DISAPPTRKS_DATASET_JSON="$PWD/${JOB_DATASET_JSON}"
 export DISAPPTRKS_DATASET_SAMPLE="${SAMPLE}"

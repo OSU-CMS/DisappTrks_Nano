@@ -18,6 +18,7 @@ Environment overrides:
   REQUEST_MEMORY   default: 4GB
   REQUEST_DISK     default: 4GB
   CATEGORY_MODE    default: muon_pveto
+  TRANSFER_ROOT_FILES default: 0; set to 1 when worker nodes cannot see dataset paths
   X509_USER_PROXY  optional; only transferred if it points to an existing file
 USAGE
     exit 2
@@ -35,7 +36,19 @@ MAX_JOBS="${MAX_JOBS:-}"
 REQUEST_MEMORY="${REQUEST_MEMORY:-4GB}"
 REQUEST_DISK="${REQUEST_DISK:-4GB}"
 CATEGORY_MODE="${CATEGORY_MODE:-muon_pveto}"
+TRANSFER_ROOT_FILES="${TRANSFER_ROOT_FILES:-0}"
 X509_PROXY="${X509_USER_PROXY:-}"
+
+if [ "${TRANSFER_ROOT_FILES}" = "1" ] && [ "${FILES_PER_JOB}" -ne 1 ]; then
+    cat <<'MSG' >&2
+TRANSFER_ROOT_FILES=1 currently requires FILES_PER_JOB=1.
+
+This avoids Condor sandbox filename collisions from inputs like many different
+directories containing nano_1.root.  Start with FILES_PER_JOB=1; we can add
+staging-directory support later if needed.
+MSG
+    exit 1
+fi
 
 if [ ! -f "${DATASET_JSON}" ]; then
     echo "Dataset JSON not found: ${DATASET_JSON}" >&2
@@ -130,24 +143,76 @@ echo "  chunksize:     ${CHUNKSIZE}"
 echo "  job timeout:   ${JOB_TIMEOUT}"
 echo "  memory/disk:   ${REQUEST_MEMORY} / ${REQUEST_DISK}"
 echo "  category mode: ${CATEGORY_MODE}"
+echo "  transfer ROOT: ${TRANSFER_ROOT_FILES}"
 if [ "${X509_BASENAME}" != "__none__" ]; then
     echo "  proxy:         ${X509_PROXY_ABS}"
 else
     echo "  proxy:         none"
 fi
 
-condor_submit \
-    -append "dataset_basename=${DATASET_BASENAME}" \
-    -append "transfer_inputs=${TRANSFER_INPUTS}" \
-    -append "x509_basename=${X509_BASENAME}" \
-    -append "tag=${TAG}" \
-    -append "sample=${SAMPLE}" \
-    -append "year=${YEAR}" \
-    -append "files_per_job=${FILES_PER_JOB}" \
-    -append "chunksize=${CHUNKSIZE}" \
-    -append "job_timeout=${JOB_TIMEOUT}" \
-    -append "request_memory=${REQUEST_MEMORY}" \
-    -append "request_disk=${REQUEST_DISK}" \
-    -append "category_mode=${CATEGORY_MODE}" \
-    -append "n_jobs=${NJOBS}" \
-    scripts/submit_osu_pocket_coffea.jdl
+if [ "${TRANSFER_ROOT_FILES}" = "1" ]; then
+    QUEUE_FILE="logs/${TAG}/root_transfer_queue.txt"
+    SUBMIT_FILE="logs/${TAG}/submit_root_transfer.jdl"
+    python3 - "${DATASET_JSON_ABS}" "${FILES_PER_JOB}" "${NJOBS}" > "${QUEUE_FILE}" <<'PY'
+import json
+import sys
+
+dataset_json, files_per_job, n_jobs = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
+with open(dataset_json) as handle:
+    dataset = json.load(handle)
+
+files = []
+for definition in dataset.values():
+    files.extend(definition.get("files", []))
+
+for job_id in range(n_jobs):
+    start = job_id * files_per_job
+    selected = files[start:start + files_per_job]
+    if not selected:
+        continue
+    print(job_id, ",".join(selected))
+PY
+
+    cat > "${SUBMIT_FILE}" <<EOF
+universe = vanilla
+executable = scripts/run_osu_pocket_coffea_job.sh
+arguments = \$(job_id) ${DATASET_BASENAME} ${FILES_PER_JOB} ${CHUNKSIZE} ${SAMPLE} ${YEAR} ${TAG} ${X509_BASENAME} ${JOB_TIMEOUT} ${CATEGORY_MODE} 1
+
+output = logs/${TAG}/job_\$(ClusterId).\$(job_id).out
+error  = logs/${TAG}/job_\$(ClusterId).\$(job_id).err
+log    = logs/${TAG}/job_\$(ClusterId).log
+
+request_cpus = 1
+request_memory = ${REQUEST_MEMORY}
+request_disk = ${REQUEST_DISK}
+
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+transfer_input_files = ${TRANSFER_INPUTS},\$(root_inputs)
+transfer_output_files = analysis_output
+
+on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
+max_retries = 3
+requirements = Machine =!= LastRemoteHost
+
+queue job_id,root_inputs from ${QUEUE_FILE}
+EOF
+
+    condor_submit "${SUBMIT_FILE}"
+else
+    condor_submit \
+        -append "dataset_basename=${DATASET_BASENAME}" \
+        -append "transfer_inputs=${TRANSFER_INPUTS}" \
+        -append "x509_basename=${X509_BASENAME}" \
+        -append "tag=${TAG}" \
+        -append "sample=${SAMPLE}" \
+        -append "year=${YEAR}" \
+        -append "files_per_job=${FILES_PER_JOB}" \
+        -append "chunksize=${CHUNKSIZE}" \
+        -append "job_timeout=${JOB_TIMEOUT}" \
+        -append "request_memory=${REQUEST_MEMORY}" \
+        -append "request_disk=${REQUEST_DISK}" \
+        -append "category_mode=${CATEGORY_MODE}" \
+        -append "n_jobs=${NJOBS}" \
+        scripts/submit_osu_pocket_coffea.jdl
+fi
