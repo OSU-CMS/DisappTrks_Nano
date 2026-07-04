@@ -14,6 +14,7 @@ from disapptrks.selections import (
     build_lepton_veto_tag_probe_pairs,
     build_muon_veto_tag_probe_pairs,
     electron_pveto_pair_pass_mask,
+    electron_tag_progression_masks,
     electron_tag_mask,
     fake_track_no_d0_mask,
     generic_probe_pair_layer_mask,
@@ -36,6 +37,7 @@ from disapptrks.selections import (
     search_event_cutflow_masks,
     search_track_cutflow_masks,
     search_track_mask,
+    single_electron_trigger_mask,
     ss_mass10_muon_probe_pair_mask,
     ss_muon_probe_pair_mask,
     ss_mass_window_pair_mask,
@@ -625,6 +627,156 @@ class DisappTrksProcessor(BaseProcessorABC):
             ]
         ) >= 1
         self.events["MuonTable16Diag"] = ak.zip(muon_table16_diagnostics)
+
+        event_singleele_trigger = event_golden_json & single_electron_trigger_mask(
+            self.events
+        )
+        event_ele_met_filters = event_singleele_trigger & _met_filters_mask(
+            self.events
+        )
+        event_ele_jet_veto_map = event_ele_met_filters & _jet_veto_map_mask(
+            self.events,
+            processor_params=self.params,
+            year=self._year,
+            era=self._era,
+            sample=self._sample,
+            is_mc=self._isMC,
+        )
+        electron_pveto_diagnostics = {
+            "event_singleele_trigger": event_singleele_trigger,
+            "event_met_filters": event_ele_met_filters,
+            "event_jet_veto_map": event_ele_jet_veto_map,
+        }
+        electron_tag_masks = electron_tag_progression_masks(
+            self.events.Electron, self.events
+        )
+        for name, mask in electron_tag_masks.items():
+            self.events[f"n{name[0].upper()}{name[1:]}"] = ak.num(
+                self.events.Electron[mask]
+            )
+            electron_pveto_diagnostics[name] = (
+                event_ele_jet_veto_map
+                & (self.events[f"n{name[0].upper()}{name[1:]}"] >= 1)
+            )
+
+        has_selected_electron_tag = electron_pveto_diagnostics[
+            "electron_selected_tag"
+        ]
+        electron_track_masks = muon_veto_probe_track_cutflow_masks(
+            self.events.IsoTrack
+        )
+        for name in (
+            "track_pt30",
+            "track_eta2p1",
+            "track_noDTWheelGap",
+            "track_noECALCrack",
+            "track_noCSCTransition",
+            "track_fiducialECAL",
+            "track_dzOrLambda",
+            "track_pixelHits4",
+            "track_noMissingInner",
+            "track_noMissingMiddle",
+            "track_chargedIso0p05",
+            "track_dxy0p02",
+            "track_dz0p5",
+            "track_dRJet0p5",
+        ):
+            n_name = f"n{name[0].upper()}{name[1:]}ElectronPVeto"
+            self.events[n_name] = ak.num(self.events.IsoTrack[electron_track_masks[name]])
+            electron_pveto_diagnostics[name] = (
+                has_selected_electron_tag & (self.events[n_name] >= 1)
+            )
+
+        electron_mass_probe_tracks = self.events.IsoTrack[
+            electron_track_masks["track_dRJet0p5"]
+        ]
+        electron_mass_pairs = build_lepton_veto_tag_probe_pairs(
+            self.events.ElectronTag,
+            electron_mass_probe_tracks,
+            tag_mass=ELECTRON_MASS,
+            probe_mass=ELECTRON_MASS,
+        )
+        electron_muon_veto_mask = electron_track_masks["track_dRJet0p5"] & (
+            (self.events.IsoTrack.dRMinMuon < 0.0)
+            | (self.events.IsoTrack.dRMinMuon > 0.15)
+        )
+        electron_tau_veto_mask = electron_muon_veto_mask & (
+            (self.events.IsoTrack.dRMinTauHad < 0.0)
+            | (self.events.IsoTrack.dRMinTauHad > 0.15)
+        )
+        electron_calo_mask = electron_tau_veto_mask & (
+            self.events.IsoTrack.caloEnergy < 10.0
+        )
+        electron_muon_veto_pairs = build_lepton_veto_tag_probe_pairs(
+            self.events.ElectronTag,
+            self.events.IsoTrack[electron_muon_veto_mask],
+            tag_mass=ELECTRON_MASS,
+            probe_mass=ELECTRON_MASS,
+        )
+        electron_tau_veto_pairs = build_lepton_veto_tag_probe_pairs(
+            self.events.ElectronTag,
+            self.events.IsoTrack[electron_tau_veto_mask],
+            tag_mass=ELECTRON_MASS,
+            probe_mass=ELECTRON_MASS,
+        )
+        electron_pairs = build_lepton_veto_tag_probe_pairs(
+            self.events.ElectronTag,
+            self.events.IsoTrack[electron_tau_veto_mask],
+            tag_mass=ELECTRON_MASS,
+            probe_mass=ELECTRON_MASS,
+        )
+        electron_calo_pairs = build_lepton_veto_tag_probe_pairs(
+            self.events.ElectronTag,
+            self.events.IsoTrack[electron_calo_mask],
+            tag_mass=ELECTRON_MASS,
+            probe_mass=ELECTRON_MASS,
+        )
+        electron_z_window = mass_window_pair_mask(
+            electron_pairs, 91.1876 - 10.0, 91.1876 + 10.0
+        )
+        electron_os_z_window = os_mass_window_pair_mask(
+            electron_pairs, 91.1876 - 10.0, 91.1876 + 10.0
+        )
+        electron_pveto_diagnostics.update(
+            {
+                "pair_mass10": ak.num(electron_mass_pairs[electron_mass_pairs.mass > 10.0])
+                >= 1,
+                "track_muonVeto": ak.num(
+                    electron_muon_veto_pairs[electron_muon_veto_pairs.mass > 10.0]
+                )
+                >= 1,
+                "track_tauVeto": ak.num(
+                    electron_tau_veto_pairs[electron_tau_veto_pairs.mass > 10.0]
+                )
+                >= 1,
+                "track_calo10": ak.num(
+                    electron_calo_pairs[electron_calo_pairs.mass > 10.0]
+                )
+                >= 1,
+                "track_probe_before_layer": ak.num(
+                    electron_pairs[electron_pairs.mass > 10.0]
+                )
+                >= 1,
+                "pair_zwindow": ak.num(electron_pairs[electron_z_window]) >= 1,
+                "pair_os": ak.num(electron_pairs[electron_os_z_window]) >= 1,
+                "layer_combinedBins": ak.num(
+                    electron_pairs[
+                        electron_os_z_window
+                        & generic_probe_pair_layer_mask(electron_pairs, "combinedBins")
+                    ]
+                )
+                >= 1,
+                "pair_pass_electron_pveto": ak.num(
+                    electron_pairs[
+                        electron_os_z_window
+                        & generic_probe_pair_layer_mask(electron_pairs, "combinedBins")
+                        & electron_pveto_pair_pass_mask(electron_pairs)
+                    ]
+                )
+                >= 1,
+            }
+        )
+        self.events["ElectronPVetoDiag"] = ak.zip(electron_pveto_diagnostics)
 
         track_diagnostics = {}
         diagnostics = {}

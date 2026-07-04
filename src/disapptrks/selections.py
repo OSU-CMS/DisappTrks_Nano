@@ -106,10 +106,59 @@ def electron_tag_mask(
     electrons,
     events,
     *,
-    pt_min: float = 32.0,
+    pt_min: float = 35.0,
     eta_max: float = 2.1,
 ):
     """Run-3 tight electron tag for the electron/tau-to-electron T&P paths."""
+    return electron_tag_progression_masks(
+        electrons,
+        events,
+        pt_min=pt_min,
+        eta_max=eta_max,
+    )["electron_selected_tag"]
+
+
+def _event_bool_like(events, value: bool):
+    import awkward as ak
+
+    if "event" in events.fields:
+        template = events.event
+    elif "run" in events.fields:
+        template = events.run
+    elif "HLT" in events.fields and len(events.HLT.fields) > 0:
+        template = events.HLT[events.HLT.fields[0]]
+    else:
+        raise ValueError("cannot build an event-shaped boolean mask")
+    return ak.ones_like(template, dtype=bool) if value else ak.zeros_like(template, dtype=bool)
+
+
+def single_electron_trigger_mask(events):
+    """Event-level single-electron trigger decision used for electron T&P.
+
+    ``Ele32_WPTight_Gsf`` is the intended Run-3 path.  A few productions keep
+    suffixed or closely related variants, so OR in available compatible names
+    rather than failing or silently requiring one exact branch.
+    """
+    names = (
+        "Ele32_WPTight_Gsf",
+        "Ele32_WPTight_Gsf_L1DoubleEG",
+        "Ele32_WPTight_Gsf_DoubleL1EG",
+    )
+    mask = None
+    for name in names:
+        if "HLT" in events.fields and name in events.HLT.fields:
+            mask = events.HLT[name] if mask is None else (mask | events.HLT[name])
+    return mask if mask is not None else _event_bool_like(events, False)
+
+
+def electron_tag_progression_masks(
+    electrons,
+    events,
+    *,
+    pt_min: float = 35.0,
+    eta_max: float = 2.1,
+):
+    """Cumulative tight-electron tag masks for the electron Pveto cutflow."""
     abs_sc_eta = abs(electrons.eta + electrons.deltaEtaSC)
     barrel = abs_sc_eta <= 1.479
     endcap = abs_sc_eta > 1.479
@@ -119,14 +168,22 @@ def electron_tag_mask(
     dz_ok = (barrel & (abs(electrons.dz) < 0.10)) | (
         endcap & (abs(electrons.dz) < 0.20)
     )
-    return (
-        events.HLT.Ele32_WPTight_Gsf
-        & (electrons.pt > pt_min)
-        & (abs(electrons.eta) < eta_max)
-        & (electrons.cutBased >= 4)
-        & dxy_ok
-        & dz_ok
-    )
+    mask = single_electron_trigger_mask(events) & (electrons.pt > pt_min)
+    masks = {"electron_pt35": mask}
+
+    mask = mask & (abs(electrons.eta) < eta_max)
+    masks["electron_eta2p1"] = mask
+
+    mask = mask & (electrons.cutBased >= 4)
+    masks["electron_tight_id"] = mask
+
+    mask = mask & dxy_ok
+    masks["electron_dxy"] = mask
+
+    mask = mask & dz_ok
+    masks["electron_dz"] = mask
+    masks["electron_selected_tag"] = mask
+    return masks
 
 
 def low_mt_mask(leptons, met, *, mt_max: float = 40.0):
@@ -404,7 +461,11 @@ def lepton_veto_probe_track_mask(
         tracks,
         pt_min=30.0,
         layer=layer,
-        apply_calo_cut=True,
+        # For the electron Pveto measurement, Table-15-style denominator keeps
+        # E_calo open.  The E_calo < 10 GeV requirement belongs to the electron
+        # Pveto numerator together with the electron-veto and missing-outer-hit
+        # requirements.
+        apply_calo_cut=(measured_veto != "electron"),
         apply_outer_hits_cut=False,
     )
     if measured_veto != "electron":
@@ -455,6 +516,7 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
             "probe_phi": probe.phi,
             "probe_dRMinMuon": probe.dRMinMuon,
             "probe_missingOuterHits": probe.missingOuterHits,
+            "probe_caloEnergy": probe.caloEnergy,
             "probe_nLayers": (
                 probe.hp_trackerLayersWithMeasurement
                 if "hp_trackerLayersWithMeasurement" in probe.fields
@@ -503,6 +565,7 @@ def build_lepton_veto_tag_probe_pairs(
             ),
             "probe_passElectronPVetoNoFiducial": (
                 ((probe.dRMinElectron < 0.0) | (probe.dRMinElectron > 0.15))
+                & (probe.caloEnergy < 10.0)
                 & (probe.missingOuterHits >= 3)
             ),
             "probe_passTauPVetoNoFiducial": (

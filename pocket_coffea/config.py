@@ -19,6 +19,7 @@ import cuts
 import workflow
 from cuts import (
     event_flags,
+    electron_pveto_diagnostic_cuts,
     fake_track_cuts,
     golden_json_lumi,
     has_disappearing_track,
@@ -77,6 +78,10 @@ fake_track_categories = {name: [cut] for name, cut in fake_track_cuts.items()}
 muon_table16_categories = {
     f"muon_table16_{name}": [cut] for name, cut in muon_table16_cuts.items()
 }
+electron_pveto_diagnostic_categories = {
+    f"electron_pveto_diag_{name}": [cut]
+    for name, cut in electron_pveto_diagnostic_cuts.items()
+}
 
 common_categories = {
     "inclusive": [passthrough],
@@ -120,6 +125,7 @@ elif category_mode == "electron_pveto":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "electron_"),
+        **electron_pveto_diagnostic_categories,
     }
 elif category_mode == "tau_mu_pveto":
     selected_categories = {
@@ -143,6 +149,7 @@ elif category_mode == "all":
         **lepton_pveto_categories,
         **fake_track_categories,
         **muon_table16_categories,
+        **electron_pveto_diagnostic_categories,
         **muon_pveto_layer_categories,
     }
 else:

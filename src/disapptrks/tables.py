@@ -115,15 +115,106 @@ MUON_CUTFLOW_ROWS = [
 
 LEPTON_PVETO_CUTFLOW_ROWS = {
     "electron": [
-        ("electron_veto_tag", r"$\geq 1$ electron tags"),
-        ("electron_veto_probe", r"$\geq 1$ electron-veto probe tracks"),
-        ("electron_veto_pair", r"$\geq 1$ electron tag--probe pairs"),
-        ("electron_veto_zwindow", r"OS tag--probe pairs in the $Z$ mass window"),
-        ("electron_pveto_zwindow_pass", r"OS $Z$-window pairs passing electron veto"),
-        ("electron_veto_ss_zwindow", r"SS tag--probe pairs in the $Z$ mass window"),
+        ("electron_pveto_diag_event_singleele_trigger", r"event passes SingleElectron triggers"),
+        ("electron_pveto_diag_event_met_filters", r"event passes MET filters"),
+        ("electron_pveto_diag_event_jet_veto_map", r"event passes jet veto map filter"),
+        ("electron_pveto_diag_electron_pt35", r"$\geq 1$ electrons $p_T > 35~\mathrm{GeV}$"),
+        ("electron_pveto_diag_electron_eta2p1", r"$\geq 1$ electrons $|\eta| < 2.1$"),
         (
-            "electron_pveto_ss_zwindow_pass",
-            r"SS $Z$-window pairs passing electron veto",
+            "electron_pveto_diag_electron_tight_id",
+            r"$\geq 1$ electrons passing tight electron ID",
+        ),
+        (
+            "electron_pveto_diag_electron_dxy",
+            r"$\geq 1$ electrons passing barrel/endcap $d_{xy}$ cuts",
+        ),
+        (
+            "electron_pveto_diag_electron_dz",
+            r"$\geq 1$ electrons passing barrel/endcap $d_z$ cuts",
+        ),
+        ("electron_pveto_diag_electron_selected_tag", r"$\geq 1$ selected electron tags"),
+        ("electron_pveto_diag_track_pt30", r"$\geq 1$ tracks $p_T > 30~\mathrm{GeV}$"),
+        ("electron_pveto_diag_track_eta2p1", r"$\geq 1$ tracks $|\eta| < 2.1$"),
+        (
+            "electron_pveto_diag_track_noDTWheelGap",
+            r"$\geq 1$ tracks $|\eta| < 0.15$ OR $|\eta| > 0.35$",
+        ),
+        (
+            "electron_pveto_diag_track_noECALCrack",
+            r"$\geq 1$ tracks $|\eta| < 1.42$ OR $|\eta| > 1.65$",
+        ),
+        (
+            "electron_pveto_diag_track_noCSCTransition",
+            r"$\geq 1$ tracks $|\eta| < 1.55$ OR $|\eta| > 1.85$",
+        ),
+        (
+            "electron_pveto_diag_track_fiducialECAL",
+            r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,noisy/dead~ECAL~ch.}}>0.05$",
+        ),
+        (
+            "electron_pveto_diag_track_dzOrLambda",
+            r"$\geq 1$ tracks $|d_z| > 0.5~\mathrm{cm}$ OR $|\lambda|>10^{-3}$",
+        ),
+        (
+            "electron_pveto_diag_track_pixelHits4",
+            r"$\geq 1$ tracks number of pixel hits $\geq 4$",
+        ),
+        (
+            "electron_pveto_diag_track_noMissingInner",
+            r"$\geq 1$ tracks missing inner hits $=0$",
+        ),
+        (
+            "electron_pveto_diag_track_noMissingMiddle",
+            r"$\geq 1$ tracks missing middle hits $=0$",
+        ),
+        (
+            "electron_pveto_diag_track_chargedIso0p05",
+            r"$\geq 1$ tracks rel. PF-based iso. $<0.05$",
+        ),
+        (
+            "electron_pveto_diag_track_dxy0p02",
+            r"$\geq 1$ tracks $|d_{xy}|<0.02~\mathrm{cm}$",
+        ),
+        (
+            "electron_pveto_diag_track_dz0p5",
+            r"$\geq 1$ tracks $|d_z|<0.5~\mathrm{cm}$",
+        ),
+        (
+            "electron_pveto_diag_track_dRJet0p5",
+            r"$\geq 1$ track--jet pairs $\Delta R_{\mathrm{track,jet}}>0.5$",
+        ),
+        (
+            "electron_pveto_diag_pair_mass10",
+            r"$\geq 1$ track--electron pairs $M_{\mathrm{track},e}>10~\mathrm{GeV}$",
+        ),
+        (
+            "electron_pveto_diag_track_muonVeto",
+            r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,\mu}}>0.15$",
+        ),
+        (
+            "electron_pveto_diag_track_tauVeto",
+            r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,had.~tau}}>0.15$",
+        ),
+        ("electron_pveto_diag_track_calo10", r"$\geq 1$ tracks $E_{\mathrm{calo}}<10~\mathrm{GeV}$"),
+        (
+            "electron_pveto_diag_track_probe_before_layer",
+            r"$\geq 1$ passing probe tracks before layer selection",
+        ),
+        (
+            "electron_pveto_diag_pair_zwindow",
+            r"$\geq 1$ track--electron pairs $|M_{\mathrm{track},e}-M_Z|<10~\mathrm{GeV}$",
+        ),
+        (
+            "electron_pveto_diag_pair_os",
+            r"$\geq 1$ track--electron pairs $q_{\mathrm{track}}q_e<0$",
+        ),
+        (
+            "electron_pveto_diag_layer_combinedBins",
+            r"$\geq 1$ track $n_{\mathrm{layers}}\geq 4$ (three signal region bins)",
+        ),
+        (
+            "electron_pveto_diag_pair_pass_electron_pveto",
+            r"OS $Z$-window pairs passing electron veto",
         ),
     ],
     "tau_mu": [

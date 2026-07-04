@@ -84,6 +84,41 @@ MUON_TABLE16_FIELDS = [
     "layer_combinedBins",
 ]
 
+ELECTRON_PVETO_DIAGNOSTIC_FIELDS = [
+    "event_singleele_trigger",
+    "event_met_filters",
+    "event_jet_veto_map",
+    "electron_pt35",
+    "electron_eta2p1",
+    "electron_tight_id",
+    "electron_dxy",
+    "electron_dz",
+    "electron_selected_tag",
+    "track_pt30",
+    "track_eta2p1",
+    "track_noDTWheelGap",
+    "track_noECALCrack",
+    "track_noCSCTransition",
+    "track_fiducialECAL",
+    "track_dzOrLambda",
+    "track_pixelHits4",
+    "track_noMissingInner",
+    "track_noMissingMiddle",
+    "track_chargedIso0p05",
+    "track_dxy0p02",
+    "track_dz0p5",
+    "track_dRJet0p5",
+    "pair_mass10",
+    "track_muonVeto",
+    "track_tauVeto",
+    "track_calo10",
+    "track_probe_before_layer",
+    "pair_zwindow",
+    "pair_os",
+    "layer_combinedBins",
+    "pair_pass_electron_pveto",
+]
+
 
 def _all_true(events):
     return np.ones(len(events), dtype=bool)
@@ -204,6 +239,10 @@ def _search_diagnostic(events, params, **kwargs):
 
 def _muon_table16_diagnostic(events, params, **kwargs):
     return events.MuonTable16Diag[params["field"]]
+
+
+def _electron_pveto_diagnostic(events, params, **kwargs):
+    return events.ElectronPVetoDiag[params["field"]]
 
 
 def _search_kinematics(events, params, **kwargs):
@@ -505,4 +544,13 @@ muon_table16_cuts = {
         function=_muon_table16_diagnostic,
     )
     for field in MUON_TABLE16_FIELDS
+}
+
+electron_pveto_diagnostic_cuts = {
+    field: Cut(
+        name=f"electron_pveto_diag_{field}",
+        params={"field": field},
+        function=_electron_pveto_diagnostic,
+    )
+    for field in ELECTRON_PVETO_DIAGNOSTIC_FIELDS
 }
