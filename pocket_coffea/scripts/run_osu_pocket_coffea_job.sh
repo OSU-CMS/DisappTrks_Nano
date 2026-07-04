@@ -75,6 +75,9 @@ export DISAPPTRKS_CATEGORY_MODE="${CATEGORY_MODE}"
 if [ -d "$PWD/data/golden_jsons" ]; then
     export DISAPPTRKS_GOLDEN_JSON_DIR="$PWD/data/golden_jsons"
 fi
+if [ -d "$PWD/data/jet_veto_maps" ]; then
+    export DISAPPTRKS_JET_VETO_MAP_DIR="$PWD/data/jet_veto_maps"
+fi
 unset DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS
 
 cat > osu_inner_run_options.yaml <<'YAML'

@@ -99,6 +99,11 @@ if [ -d "data/golden_jsons" ]; then
 else
     echo "Warning: data/golden_jsons not found; data jobs may fail if /cvmfs golden JSONs are unavailable." >&2
 fi
+if [ -d "data/jet_veto_maps" ]; then
+    TRANSFER_INPUTS="${TRANSFER_INPUTS},data/jet_veto_maps"
+else
+    echo "Warning: data/jet_veto_maps not found; data jobs may fail if /cvmfs JME jet-veto-map payloads are unavailable." >&2
+fi
 X509_BASENAME="__none__"
 if [ -n "${X509_PROXY}" ] && [ -f "${X509_PROXY}" ]; then
     X509_PROXY_ABS="$(python3 - "${X509_PROXY}" <<'PY'
