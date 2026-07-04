@@ -71,7 +71,16 @@ def cutflow_count(
     if dataset is not None:
         value = value[dataset]
     if sample is not None:
-        value = value[sample]
+        if isinstance(value, dict) and sample in value:
+            value = value[sample]
+        elif dataset is None and isinstance(value, dict):
+            value = {
+                key: nested[sample]
+                for key, nested in value.items()
+                if isinstance(nested, dict) and sample in nested
+            }
+        else:
+            value = value[sample]
     if isinstance(value, dict) and variation in value:
         value = value[variation]
     return _sum_numeric_leaves(value)
