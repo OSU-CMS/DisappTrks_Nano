@@ -94,6 +94,11 @@ PY
 DATASET_BASENAME="$(basename "${DATASET_JSON_ABS}")"
 
 TRANSFER_INPUTS="config.py,cuts.py,workflow.py,../src,python_env,${DATASET_JSON_ABS},scripts/make_lpc_job_dataset.py"
+if [ -d "data/golden_jsons" ]; then
+    TRANSFER_INPUTS="${TRANSFER_INPUTS},data/golden_jsons"
+else
+    echo "Warning: data/golden_jsons not found; data jobs may fail if /cvmfs golden JSONs are unavailable." >&2
+fi
 X509_BASENAME="__none__"
 if [ -n "${X509_PROXY}" ] && [ -f "${X509_PROXY}" ]; then
     X509_PROXY_ABS="$(python3 - "${X509_PROXY}" <<'PY'

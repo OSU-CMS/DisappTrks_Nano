@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import awkward as ak
 import numpy as np
+from coffea.lumi_tools import LumiMask
 
 from pocket_coffea.lib.cut_definition import Cut
 from pocket_coffea.lib.cut_functions import apply_golden_json, get_JetVetoMap_Mask
@@ -51,6 +53,24 @@ SEARCH_DIAGNOSTIC_FIELDS = (
 )
 
 PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
+
+GOLDEN_JSON_FILES = {
+    "2022_preEE": "Cert_Collisions2022_355100_362760_Golden.json",
+    "2022_postEE": "Cert_Collisions2022_355100_362760_Golden.json",
+    "2023_preBPix": "Cert_Collisions2023_366442_370790_Golden.json",
+    "2023_postBPix": "Cert_Collisions2023_366442_370790_Golden.json",
+    "2024": "Cert_Collisions2024_378981_386951_Golden.json",
+    "2025": "Cert_Collisions2025_391658_398903_Golden.json",
+}
+
+JET_VETO_MAP_FILES = {
+    "2022_preEE": "Run3-22CDSep23-Summer22-NanoAODv12_jetvetomaps.json.gz",
+    "2022_postEE": "Run3-22EFGSep23-Summer22EE-NanoAODv12_jetvetomaps.json.gz",
+    "2023_preBPix": "Run3-23CSep23-Summer23-NanoAODv12_jetvetomaps.json.gz",
+    "2023_postBPix": "Run3-23DSep23-Summer23BPix-NanoAODv12_jetvetomaps.json.gz",
+    "2024": "Run3-24CDEReprocessingFGHIPrompt-Summer24-NanoAODv15_jetvetomaps.json.gz",
+    "2025": "Run3-25Prompt-Winter25-NanoAODv15_jetvetomaps.json.gz",
+}
 
 MUON_TABLE16_FIELDS = [
     "event_singlemu_trigger",
@@ -160,16 +180,113 @@ def _pocketcoffea_run3_year_key(year, events=None, processor_params=None):
     return year
 
 
-def _golden_json_lumi(events, params, year, processor_params, sample, isMC, **kwargs):
-    return apply_golden_json(
-        events,
-        params=params,
-        year=_pocketcoffea_run3_year_key(year, events, processor_params),
-        processor_params=processor_params,
-        sample=sample,
-        isMC=isMC,
-        **kwargs,
+def _local_golden_json_path(mapped_year):
+    filename = GOLDEN_JSON_FILES.get(str(mapped_year))
+    if filename is None:
+        return None
+
+    search_dirs = []
+    env_dir = os.environ.get("DISAPPTRKS_GOLDEN_JSON_DIR")
+    if env_dir:
+        search_dirs.append(Path(env_dir))
+    search_dirs.append(Path(__file__).resolve().parent / "data" / "golden_jsons")
+    search_dirs.append(Path.cwd() / "data" / "golden_jsons")
+
+    for directory in search_dirs:
+        candidate = directory / filename
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _local_jet_veto_map_path(mapped_year):
+    filename = JET_VETO_MAP_FILES.get(str(mapped_year))
+    if filename is None:
+        return None
+
+    search_dirs = []
+    env_dir = os.environ.get("DISAPPTRKS_JET_VETO_MAP_DIR")
+    if env_dir:
+        search_dirs.append(Path(env_dir))
+    search_dirs.append(Path(__file__).resolve().parent / "data" / "jet_veto_maps")
+    search_dirs.append(Path.cwd() / "data" / "jet_veto_maps")
+
+    for directory in search_dirs:
+        candidates = [
+            directory / filename,
+            directory / str(mapped_year) / "jetvetomaps.json.gz",
+            directory / filename.removesuffix("_jetvetomaps.json.gz") / "jetvetomaps.json.gz",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
+    """Evaluate the Run-3 JME jet-veto map using a concrete local payload."""
+    import correctionlib
+    from pocket_coffea.lib.jets import compute_jetId
+
+    jets = ak.with_field(
+        events["Jet"],
+        compute_jetId(events, "Jet", processor_params, mapped_year),
+        "jetId_corrected",
     )
+    mask_for_veto_map = (
+        (jets["jetId_corrected"] >= 6)
+        & (abs(jets.eta) < 5.19)
+        & (jets.pt > 15.0)
+        & ((jets["neEmEF"] + jets["chEmEF"]) < 0.9)
+    )
+    jets = jets[mask_for_veto_map]
+
+    cset = correctionlib.CorrectionSet.from_file(str(payload_file))
+    corr = cset[processor_params.jet_scale_factors.vetomaps[mapped_year]["name"]]
+    eta_flat = ak.flatten(jets.eta)
+    phi_flat = np.clip(ak.flatten(jets.phi), -3.14159, 3.14159)
+    eta_counts = ak.num(jets.eta)
+    weight = ak.unflatten(
+        corr.evaluate("jetvetomap", eta_flat, phi_flat),
+        counts=eta_counts,
+    )
+    event_mask = ak.sum(weight, axis=-1) == 0
+    return ak.where(ak.is_none(event_mask), False, event_mask)
+
+
+def _golden_json_lumi(events, params, year, processor_params, sample, isMC, **kwargs):
+    if isMC:
+        return _all_true(events)
+
+    mapped_year = _pocketcoffea_run3_year_key(year, events, processor_params)
+    local_json = _local_golden_json_path(mapped_year)
+    if local_json is not None:
+        return LumiMask(str(local_json))(events.run, events.luminosityBlock)
+
+    try:
+        return apply_golden_json(
+            events,
+            params=params,
+            year=mapped_year,
+            processor_params=processor_params,
+            sample=sample,
+            isMC=False,
+            **kwargs,
+        )
+    except Exception:
+        if os.environ.get("DISAPPTRKS_ALLOW_MISSING_GOLDEN_JSON", "").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            return _all_true(events)
+        raise RuntimeError(
+            "Could not apply the golden JSON lumimask. Provide local JSONs in "
+            "pocket_coffea/data/golden_jsons, set DISAPPTRKS_GOLDEN_JSON_DIR, "
+            "or explicitly set DISAPPTRKS_ALLOW_MISSING_GOLDEN_JSON=1 for a "
+            "non-production diagnostic run."
+        )
 
 
 def _event_flags(events, params, year, processor_params, sample, isMC, **kwargs):
@@ -204,6 +321,10 @@ def _jet_veto_map(events, params, year, processor_params, sample, isMC, **kwargs
         return events.jetVeto2022
 
     mapped_year = _pocketcoffea_run3_year_key(year, events, processor_params)
+    local_payload = _local_jet_veto_map_path(mapped_year)
+    if local_payload is not None:
+        return _evaluate_jet_veto_map(events, processor_params, mapped_year, local_payload)
+
     try:
         return get_JetVetoMap_Mask(
             events,
@@ -214,15 +335,20 @@ def _jet_veto_map(events, params, year, processor_params, sample, isMC, **kwargs
             isMC=isMC,
             **kwargs,
         )
-    except Exception:
-        if os.environ.get("DISAPPTRKS_STRICT_JET_VETO_MAP", "").lower() in (
+    except Exception as exc:
+        if os.environ.get("DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP", "").lower() in (
             "1",
             "true",
             "yes",
             "on",
         ):
-            raise
-        return _all_true(events)
+            return _all_true(events)
+        raise RuntimeError(
+            "Could not apply the JME jet-veto map. Provide local payloads in "
+            "pocket_coffea/data/jet_veto_maps, set DISAPPTRKS_JET_VETO_MAP_DIR, "
+            "or explicitly set DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP=1 for a "
+            "non-production diagnostic run."
+        ) from exc
 
 
 def _has_disappearing_track(events, params, **kwargs):

@@ -72,6 +72,9 @@ export DISAPPTRKS_DATASET_JSON="$PWD/${JOB_DATASET_JSON}"
 export DISAPPTRKS_DATASET_SAMPLE="${SAMPLE}"
 export DISAPPTRKS_DATASET_YEAR="${YEAR}"
 export DISAPPTRKS_CATEGORY_MODE="${CATEGORY_MODE}"
+if [ -d "$PWD/data/golden_jsons" ]; then
+    export DISAPPTRKS_GOLDEN_JSON_DIR="$PWD/data/golden_jsons"
+fi
 unset DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS
 
 cat > osu_inner_run_options.yaml <<'YAML'

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import awkward as ak
+import numpy as np
 
 from pocket_coffea.workflows.base import BaseProcessorABC
 
@@ -49,6 +53,15 @@ from disapptrks.selections import (
 PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
 ELECTRON_MASS = 0.000511
 MUON_MASS = 0.105658
+
+JET_VETO_MAP_FILES = {
+    "2022_preEE": "Run3-22CDSep23-Summer22-NanoAODv12_jetvetomaps.json.gz",
+    "2022_postEE": "Run3-22EFGSep23-Summer22EE-NanoAODv12_jetvetomaps.json.gz",
+    "2023_preBPix": "Run3-23CSep23-Summer23-NanoAODv12_jetvetomaps.json.gz",
+    "2023_postBPix": "Run3-23DSep23-Summer23BPix-NanoAODv12_jetvetomaps.json.gz",
+    "2024": "Run3-24CDEReprocessingFGHIPrompt-Summer24-NanoAODv15_jetvetomaps.json.gz",
+    "2025": "Run3-25Prompt-Winter25-NanoAODv15_jetvetomaps.json.gz",
+}
 
 
 def _all_true_like(events):
@@ -102,6 +115,60 @@ def _jet_veto_map_parameter_year(year, era, processor_params):
     return year
 
 
+def _local_jet_veto_map_path(mapped_year):
+    filename = JET_VETO_MAP_FILES.get(str(mapped_year))
+    if filename is None:
+        return None
+
+    search_dirs = []
+    env_dir = os.environ.get("DISAPPTRKS_JET_VETO_MAP_DIR")
+    if env_dir:
+        search_dirs.append(Path(env_dir))
+    search_dirs.append(Path(__file__).resolve().parent / "data" / "jet_veto_maps")
+    search_dirs.append(Path.cwd() / "data" / "jet_veto_maps")
+
+    for directory in search_dirs:
+        candidates = [
+            directory / filename,
+            directory / str(mapped_year) / "jetvetomaps.json.gz",
+            directory / filename.removesuffix("_jetvetomaps.json.gz") / "jetvetomaps.json.gz",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+    return None
+
+
+def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
+    import correctionlib
+    from pocket_coffea.lib.jets import compute_jetId
+
+    jets = ak.with_field(
+        events["Jet"],
+        compute_jetId(events, "Jet", processor_params, mapped_year),
+        "jetId_corrected",
+    )
+    mask_for_veto_map = (
+        (jets["jetId_corrected"] >= 6)
+        & (abs(jets.eta) < 5.19)
+        & (jets.pt > 15.0)
+        & ((jets["neEmEF"] + jets["chEmEF"]) < 0.9)
+    )
+    jets = jets[mask_for_veto_map]
+
+    cset = correctionlib.CorrectionSet.from_file(str(payload_file))
+    corr = cset[processor_params.jet_scale_factors.vetomaps[mapped_year]["name"]]
+    eta_flat = ak.flatten(jets.eta)
+    phi_flat = np.clip(ak.flatten(jets.phi), -3.14159, 3.14159)
+    eta_counts = ak.num(jets.eta)
+    weight = ak.unflatten(
+        corr.evaluate("jetvetomap", eta_flat, phi_flat),
+        counts=eta_counts,
+    )
+    event_mask = ak.sum(weight, axis=-1) == 0
+    return ak.where(ak.is_none(event_mask), False, event_mask)
+
+
 def _golden_json_mask(
     events,
     *,
@@ -143,21 +210,30 @@ def _jet_veto_map_mask(
     # NanoAOD.  Legacy DisappTrks computed and saved it as ``jetVeto2022``; some
     # custom NanoAOD productions may store the same decision under Flag.  When
     # it is absent, use PocketCoffea's correctionlib-based Run-3 jet-veto-map
-    # evaluator.  If the map payload is unavailable in a lightweight local test
-    # environment, keep the row as pass-through rather than making old validation
-    # samples unusable.
+    # evaluator, preferring local payloads in environments without CMS CVMFS.
     if "Flag" in events.fields and "jetVeto2022" in events.Flag.fields:
         return events.Flag.jetVeto2022
     if "jetVeto2022" in events.fields:
         return events.jetVeto2022
 
     if processor_params is None or year is None:
-        return _all_true_like(events)
+        if os.environ.get("DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP", "").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            return _all_true_like(events)
+        raise RuntimeError("Cannot apply the JME jet-veto map without processor parameters and year.")
+
+    veto_map_year = _jet_veto_map_parameter_year(year, era, processor_params)
+    local_payload = _local_jet_veto_map_path(veto_map_year)
+    if local_payload is not None:
+        return _evaluate_jet_veto_map(events, processor_params, veto_map_year, local_payload)
 
     try:
         from pocket_coffea.lib.cut_functions import get_JetVetoMap_Mask
 
-        veto_map_year = _jet_veto_map_parameter_year(year, era, processor_params)
         return get_JetVetoMap_Mask(
             events,
             params={},
@@ -166,8 +242,20 @@ def _jet_veto_map_mask(
             sample=sample,
             isMC=is_mc,
         )
-    except Exception:
-        return _all_true_like(events)
+    except Exception as exc:
+        if os.environ.get("DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP", "").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            return _all_true_like(events)
+        raise RuntimeError(
+            "Could not apply the JME jet-veto map. Provide local payloads in "
+            "pocket_coffea/data/jet_veto_maps, set DISAPPTRKS_JET_VETO_MAP_DIR, "
+            "or explicitly set DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP=1 for a "
+            "non-production diagnostic run."
+        ) from exc
 
 
 class DisappTrksProcessor(BaseProcessorABC):
