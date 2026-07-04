@@ -218,10 +218,7 @@ def _make_era_filelists_command(args: argparse.Namespace) -> int:
 
 
 def _make_pveto_tables_command(args: argparse.Namespace) -> int:
-    from coffea.util import load
-
-    output = load(args.file)
-    cutflow = output["cutflow"]
+    cutflow = _load_merged_cutflow(args.files)
 
     write_muon_cutflow_latex(
         cutflow,
@@ -382,7 +379,7 @@ def main():
         "make-pveto-tables",
         help="Write AN-style muon Pveto cutflow and probability LaTeX tables.",
     )
-    pveto_tables.add_argument("file", type=Path)
+    pveto_tables.add_argument("files", nargs="+", type=Path)
     pveto_tables.add_argument("--dataset", help="Restrict to one dataset key.")
     pveto_tables.add_argument("--sample", help="Restrict to one sample key.")
     pveto_tables.add_argument("--variation", default="nominal")
@@ -401,6 +398,7 @@ def main():
         help="Output path for the cutflow LaTeX table.",
     )
     pveto_tables.add_argument(
+        "-o",
         "--pveto-tex",
         type=Path,
         default=Path("muon_pveto_table.tex"),
