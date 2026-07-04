@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import Union
 
 from . import greet
 from .datasets import (
@@ -26,6 +27,8 @@ from .tables import (
     write_muon_cutflow_latex,
     write_muon_pveto_latex,
 )
+
+PairVariableTemplate = Union[str, tuple[str, str]]
 
 
 def _sum_nested_numeric(left, right):
@@ -55,10 +58,11 @@ def _load_outputs(files: list[Path]) -> list[dict]:
     return [load(path) for path in files]
 
 
-def _muon_pair_counts_from_outputs(
+def _pair_counts_from_outputs(
     outputs: list[dict],
     *,
     layers: list[str],
+    variable_templates: dict[str, PairVariableTemplate],
     dataset: str | None = None,
     sample: str | None = None,
 ) -> dict[str, dict[str, float]]:
@@ -67,10 +71,8 @@ def _muon_pair_counts_from_outputs(
         suffix = "" if layer == "combinedBins" else f"_{layer}"
         totals = {"den_os": 0.0, "num_os": 0.0, "den_ss": 0.0, "num_ss": 0.0}
         variables = {
-            "den_os": f"nMuonVetoTagProbePairZWindow{suffix}",
-            "num_os": f"nMuonPVetoTagProbePairZWindowPass{suffix}",
-            "den_ss": f"nMuonVetoTagProbePairSSZWindow{suffix}",
-            "num_ss": f"nMuonPVetoTagProbePairSSZWindowPass{suffix}",
+            key: _pair_variable_name(template, layer=layer, suffix=suffix)
+            for key, template in variable_templates.items()
         }
         for output in outputs:
             output_variables = output.get("variables", {})
@@ -83,6 +85,89 @@ def _muon_pair_counts_from_outputs(
                 )
         pair_counts[layer] = totals
     return pair_counts
+
+
+def _has_pair_count_variables(
+    outputs: list[dict],
+    *,
+    layers: list[str],
+    variable_templates: dict[str, PairVariableTemplate],
+) -> bool:
+    wanted = set()
+    for layer in layers:
+        suffix = "" if layer == "combinedBins" else f"_{layer}"
+        wanted.update(
+            _pair_variable_name(template, layer=layer, suffix=suffix)
+            for template in variable_templates.values()
+        )
+    return any(wanted.intersection(output.get("variables", {}).keys()) for output in outputs)
+
+
+def _pair_variable_name(
+    template: PairVariableTemplate,
+    *,
+    layer: str,
+    suffix: str,
+) -> str:
+    if isinstance(template, tuple):
+        combined_template, layer_template = template
+        template = combined_template if layer == "combinedBins" else layer_template
+    return template.format(suffix=suffix)
+
+
+def _muon_pair_counts_from_outputs(
+    outputs: list[dict],
+    *,
+    layers: list[str],
+    dataset: str | None = None,
+    sample: str | None = None,
+) -> dict[str, dict[str, float]]:
+    templates = {
+        "den_os": "nMuonVetoTagProbePairZWindow{suffix}",
+        "num_os": "nMuonPVetoTagProbePairZWindowPass{suffix}",
+        "den_ss": "nMuonVetoTagProbePairSSZWindow{suffix}",
+        "num_ss": "nMuonPVetoTagProbePairSSZWindowPass{suffix}",
+    }
+    if not _has_pair_count_variables(outputs, layers=layers, variable_templates=templates):
+        return {}
+    return _pair_counts_from_outputs(
+        outputs,
+        layers=layers,
+        variable_templates=templates,
+        dataset=dataset,
+        sample=sample,
+    )
+
+
+LEPTON_PVETO_PAIR_VARIABLES = {
+    "electron": {
+        "den_os": (
+            "nElectronTagProbePairOSMassWindow",
+            "nElectronTagProbePairMassWindow{suffix}",
+        ),
+        "num_os": "nElectronPVetoTagProbePairMassWindowPass{suffix}",
+        "den_ss": "nElectronTagProbePairSSMassWindow{suffix}",
+        "num_ss": "nElectronPVetoTagProbePairSSMassWindowPass{suffix}",
+    },
+    "tau_mu": {
+        "den_os": (
+            "nTauMuTagProbePairOSMassWindow",
+            "nTauMuTagProbePairMassWindow{suffix}",
+        ),
+        "num_os": "nTauMuPVetoTagProbePairMassWindowPass{suffix}",
+        "den_ss": "nTauMuTagProbePairSSMassWindow{suffix}",
+        "num_ss": "nTauMuPVetoTagProbePairSSMassWindowPass{suffix}",
+    },
+    "tau_ele": {
+        "den_os": (
+            "nTauEleTagProbePairOSMassWindow",
+            "nTauEleTagProbePairMassWindow{suffix}",
+        ),
+        "num_os": "nTauElePVetoTagProbePairMassWindowPass{suffix}",
+        "den_ss": "nTauEleTagProbePairSSMassWindow{suffix}",
+        "num_ss": "nTauElePVetoTagProbePairSSMassWindowPass{suffix}",
+    },
+}
 
 
 def _audit_command(args: argparse.Namespace) -> int:
@@ -303,7 +388,10 @@ def _make_pveto_tables_command(args: argparse.Namespace) -> int:
 
 
 def _make_lepton_pveto_table_command(args: argparse.Namespace) -> int:
-    cutflow = _load_merged_cutflow(args.files)
+    outputs = _load_outputs(args.files)
+    cutflow = {}
+    for output in outputs:
+        cutflow = _sum_nested_numeric(cutflow, output["cutflow"])
 
     if args.mode == "tau_mu":
         defaults = {
@@ -332,6 +420,23 @@ def _make_lepton_pveto_table_command(args: argparse.Namespace) -> int:
     else:
         raise ValueError(f"unknown lepton Pveto mode: {args.mode}")
 
+    pair_count_templates = LEPTON_PVETO_PAIR_VARIABLES[args.mode]
+    pair_counts = (
+        _pair_counts_from_outputs(
+            outputs,
+            layers=args.layers,
+            variable_templates=pair_count_templates,
+            dataset=args.dataset,
+            sample=args.sample,
+        )
+        if _has_pair_count_variables(
+            outputs,
+            layers=args.layers,
+            variable_templates=pair_count_templates,
+        )
+        else {}
+    )
+
     if args.cutflow_tex is not None:
         write_lepton_pveto_cutflow_latex(
             cutflow,
@@ -358,6 +463,7 @@ def _make_lepton_pveto_table_command(args: argparse.Namespace) -> int:
         ss_denominator_name=args.ss_denominator or defaults["ss_denominator_name"],
         ss_numerator_name=args.ss_numerator or defaults["ss_numerator_name"],
         include_table_env=args.table_env,
+        pair_counts=pair_counts,
     )
 
     print(f"Wrote {args.output}")

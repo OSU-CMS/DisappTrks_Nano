@@ -175,6 +175,78 @@ outer_hit_variants = {
     "hp_stripLayersWithoutMeasurementOuter": "strip layers without measurement",
 }
 
+
+def _event_count_hist(field, label, bins=50):
+    return HistConf(
+        [
+            Axis(
+                coll="events",
+                field=field,
+                bins=bins,
+                start=0,
+                stop=bins,
+                label=label,
+            )
+        ]
+    )
+
+
+lepton_pair_count_variables = {}
+for prefix, label in (
+    ("Electron", "electron"),
+    ("TauMu", r"tau-muon"),
+    ("TauEle", r"tau-electron"),
+):
+    lepton_pair_count_variables.update(
+        {
+            f"n{prefix}TagProbePair": _event_count_hist(
+                f"n{prefix}TagProbePair",
+                f"N({label} tag-probe pairs)",
+            ),
+            f"n{prefix}TagProbePairMassWindow": _event_count_hist(
+                f"n{prefix}TagProbePairMassWindow",
+                f"N({label} tag-probe pairs in mass window)",
+            ),
+            f"n{prefix}TagProbePairOSMassWindow": _event_count_hist(
+                f"n{prefix}TagProbePairOSMassWindow",
+                f"N(OS {label} tag-probe pairs in mass window)",
+            ),
+            f"n{prefix}TagProbePairSSMassWindow": _event_count_hist(
+                f"n{prefix}TagProbePairSSMassWindow",
+                f"N(SS {label} tag-probe pairs in mass window)",
+            ),
+            f"n{prefix}PVetoTagProbePairMassWindowPass": _event_count_hist(
+                f"n{prefix}PVetoTagProbePairMassWindowPass",
+                f"N(OS {label} mass-window pairs passing Pveto numerator)",
+            ),
+            f"n{prefix}PVetoTagProbePairSSMassWindowPass": _event_count_hist(
+                f"n{prefix}PVetoTagProbePairSSMassWindowPass",
+                f"N(SS {label} mass-window pairs passing Pveto numerator)",
+            ),
+        }
+    )
+    for layer in pveto_layers:
+        lepton_pair_count_variables.update(
+            {
+                f"n{prefix}TagProbePairMassWindow_{layer}": _event_count_hist(
+                    f"n{prefix}TagProbePairMassWindow_{layer}",
+                    f"N(OS {label} mass-window pairs, {layer})",
+                ),
+                f"n{prefix}PVetoTagProbePairMassWindowPass_{layer}": _event_count_hist(
+                    f"n{prefix}PVetoTagProbePairMassWindowPass_{layer}",
+                    f"N(OS {label} mass-window pairs passing Pveto numerator, {layer})",
+                ),
+                f"n{prefix}TagProbePairSSMassWindow_{layer}": _event_count_hist(
+                    f"n{prefix}TagProbePairSSMassWindow_{layer}",
+                    f"N(SS {label} mass-window pairs, {layer})",
+                ),
+                f"n{prefix}PVetoTagProbePairSSMassWindowPass_{layer}": _event_count_hist(
+                    f"n{prefix}PVetoTagProbePairSSMassWindowPass_{layer}",
+                    f"N(SS {label} mass-window pairs passing Pveto numerator, {layer})",
+                ),
+            }
+        )
+
 cfg = Configurator(
     parameters=parameters,
     datasets={
@@ -454,6 +526,7 @@ cfg = Configurator(
             )
             for layer in pveto_layers
         },
+        **lepton_pair_count_variables,
         "nIsoTrackSearch": HistConf(
             [
                 Axis(
