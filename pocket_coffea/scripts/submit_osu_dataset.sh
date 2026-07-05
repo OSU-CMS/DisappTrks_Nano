@@ -65,6 +65,38 @@ submit_with_retries() {
     return 1
 }
 
+submit_no_root_with_retries() {
+    local attempt
+
+    for attempt in $(seq 1 "${SUBMIT_RETRIES}"); do
+        echo "condor_submit scripts/submit_osu_pocket_coffea.jdl (attempt ${attempt}/${SUBMIT_RETRIES})"
+        if condor_submit \
+            -append "dataset_basename=${DATASET_BASENAME}" \
+            -append "transfer_inputs=${TRANSFER_INPUTS}" \
+            -append "x509_basename=${X509_BASENAME}" \
+            -append "tag=${TAG}" \
+            -append "sample=${SAMPLE}" \
+            -append "year=${YEAR}" \
+            -append "files_per_job=${FILES_PER_JOB}" \
+            -append "chunksize=${CHUNKSIZE}" \
+            -append "job_timeout=${JOB_TIMEOUT}" \
+            -append "request_memory=${REQUEST_MEMORY}" \
+            -append "request_disk=${REQUEST_DISK}" \
+            -append "category_mode=${CATEGORY_MODE}" \
+            -append "n_jobs=${NJOBS}" \
+            scripts/submit_osu_pocket_coffea.jdl
+        then
+            return 0
+        fi
+        if [ "${attempt}" -lt "${SUBMIT_RETRIES}" ]; then
+            sleep 10
+        fi
+    done
+
+    echo "ERROR: failed to submit scripts/submit_osu_pocket_coffea.jdl after ${SUBMIT_RETRIES} attempts" >&2
+    return 1
+}
+
 if [ "${TRANSFER_ROOT_FILES}" = "1" ] && [ "${FILES_PER_JOB}" -ne 1 ]; then
     cat <<'MSG' >&2
 TRANSFER_ROOT_FILES=1 currently requires FILES_PER_JOB=1.
@@ -291,19 +323,5 @@ else
         echo "JOB_OFFSET is currently supported only with TRANSFER_ROOT_FILES=1." >&2
         exit 1
     fi
-    condor_submit \
-        -append "dataset_basename=${DATASET_BASENAME}" \
-        -append "transfer_inputs=${TRANSFER_INPUTS}" \
-        -append "x509_basename=${X509_BASENAME}" \
-        -append "tag=${TAG}" \
-        -append "sample=${SAMPLE}" \
-        -append "year=${YEAR}" \
-        -append "files_per_job=${FILES_PER_JOB}" \
-        -append "chunksize=${CHUNKSIZE}" \
-        -append "job_timeout=${JOB_TIMEOUT}" \
-        -append "request_memory=${REQUEST_MEMORY}" \
-        -append "request_disk=${REQUEST_DISK}" \
-        -append "category_mode=${CATEGORY_MODE}" \
-        -append "n_jobs=${NJOBS}" \
-        scripts/submit_osu_pocket_coffea.jdl
+    submit_no_root_with_retries
 fi
