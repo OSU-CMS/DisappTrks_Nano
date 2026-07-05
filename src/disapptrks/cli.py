@@ -139,6 +139,21 @@ def _muon_pair_counts_from_outputs(
     )
 
 
+def _sum_pair_count_maps(
+    left: dict[str, dict[str, float]],
+    right: dict[str, dict[str, float]],
+) -> dict[str, dict[str, float]]:
+    layers = set(left) | set(right)
+    keys = ("den_os", "num_os", "den_ss", "num_ss")
+    return {
+        layer: {
+            key: left.get(layer, {}).get(key, 0.0) + right.get(layer, {}).get(key, 0.0)
+            for key in keys
+        }
+        for layer in layers
+    }
+
+
 LEPTON_PVETO_PAIR_VARIABLES = {
     "electron": {
         "den_os": (
@@ -476,6 +491,49 @@ def _make_lepton_pveto_table_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _make_tau_pveto_table_command(args: argparse.Namespace) -> int:
+    tau_mu_outputs = _load_outputs(args.tau_mu_files)
+    tau_ele_outputs = _load_outputs(args.tau_ele_files)
+
+    tau_mu_pair_counts = _pair_counts_from_outputs(
+        tau_mu_outputs,
+        layers=args.layers,
+        variable_templates=LEPTON_PVETO_PAIR_VARIABLES["tau_mu"],
+        dataset=args.tau_mu_dataset or args.dataset,
+        sample=args.tau_mu_sample,
+    )
+    tau_ele_pair_counts = _pair_counts_from_outputs(
+        tau_ele_outputs,
+        layers=args.layers,
+        variable_templates=LEPTON_PVETO_PAIR_VARIABLES["tau_ele"],
+        dataset=args.tau_ele_dataset or args.dataset,
+        sample=args.tau_ele_sample,
+    )
+    combined_pair_counts = _sum_pair_count_maps(tau_mu_pair_counts, tau_ele_pair_counts)
+
+    summaries = write_muon_pveto_latex(
+        {},
+        args.output,
+        run_period=args.run_period,
+        flavor=args.flavor,
+        layers=args.layers,
+        include_table_env=args.table_env,
+        pair_counts=combined_pair_counts,
+    )
+
+    print(f"Wrote {args.output}")
+    for layer, summary in summaries.items():
+        counts = combined_pair_counts.get(layer, {})
+        print(
+            f"{layer}: P_veto = "
+            f"{summary.central:.6g} +{summary.err_up:.6g} -{summary.err_down:.6g} "
+            f"(N_OS={counts.get('den_os', 0):g}, N_veto_OS={counts.get('num_os', 0):g}, "
+            f"N_SS={counts.get('den_ss', 0):g}, N_veto_SS={counts.get('num_ss', 0):g}; "
+            f"signed numerator={summary.numerator:g}, denominator={summary.denominator:g})"
+        )
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(prog="disapptrks")
     subparsers = parser.add_subparsers(dest="command")
@@ -651,6 +709,79 @@ def main():
     )
     lepton_pveto_table.set_defaults(func=_make_lepton_pveto_table_command)
 
+    tau_pveto_table = subparsers.add_parser(
+        "make-tau-pveto-table",
+        help=(
+            "Write a combined tau Pveto table by summing tau_mu and tau_ele "
+            "raw tag-and-probe counts before computing the SS-subtracted probability."
+        ),
+    )
+    tau_pveto_table.add_argument(
+        "--tau-mu-files",
+        nargs="+",
+        type=Path,
+        required=True,
+        help="tau_mu_pveto PocketCoffea output files.",
+    )
+    tau_pveto_table.add_argument(
+        "--tau-ele-files",
+        nargs="+",
+        type=Path,
+        required=True,
+        help="tau_ele_pveto PocketCoffea output files.",
+    )
+    tau_pveto_table.add_argument(
+        "--dataset",
+        help="Restrict both tau_mu and tau_ele inputs to one dataset key.",
+    )
+    tau_pveto_table.add_argument(
+        "--tau-mu-dataset",
+        help="Restrict tau_mu inputs to one dataset key. Overrides --dataset.",
+    )
+    tau_pveto_table.add_argument(
+        "--tau-ele-dataset",
+        help="Restrict tau_ele inputs to one dataset key. Overrides --dataset.",
+    )
+    tau_pveto_table.add_argument(
+        "--tau-mu-sample",
+        default="DATA_Muon",
+        help="Restrict tau_mu inputs to one sample key.",
+    )
+    tau_pveto_table.add_argument(
+        "--tau-ele-sample",
+        default="DATA_EGamma",
+        help="Restrict tau_ele inputs to one sample key.",
+    )
+    tau_pveto_table.add_argument(
+        "--run-period",
+        required=True,
+        help="Run-period label used in the Pveto table.",
+    )
+    tau_pveto_table.add_argument(
+        "--flavor",
+        default=r"$\tau_h$",
+        help="Flavor label used in the Pveto table.",
+    )
+    tau_pveto_table.add_argument(
+        "--layers",
+        nargs="+",
+        default=["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"],
+        help="Layer-bin rows to include in the Pveto table.",
+    )
+    tau_pveto_table.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        required=True,
+        help="Output path for the combined tau Pveto LaTeX table.",
+    )
+    tau_pveto_table.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap the tabular in a LaTeX table environment.",
+    )
+    tau_pveto_table.set_defaults(func=_make_tau_pveto_table_command)
+
     fake_tracks = subparsers.add_parser(
         "estimate-fake-tracks",
         help="Compute the AN-style fake-track estimate from coffea cutflow counts.",
@@ -756,7 +887,7 @@ def main():
 
     era_filelists = subparsers.add_parser(
         "make-era-filelists",
-        help="Scan OSUNano EOS areas and write Muon/EGamma filelists split by Run-3 era group.",
+        help="Scan OSUNano EOS areas and write Muon/EGamma/JetMET filelists split by Run-3 era group.",
     )
     era_filelists.add_argument(
         "eos_paths",

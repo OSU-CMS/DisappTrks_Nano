@@ -83,18 +83,65 @@ ERA_GROUP_BY_LABEL = {group.label: group for group in ERA_GROUPS}
 YEAR_ERA_TO_GROUP = {
     year_era: group.label for group in ERA_GROUPS for year_era in group.years_eras
 }
-PRIMARY_DATASETS = ("Muon", "EGamma")
+PRIMARY_DATASETS = ("Muon", "EGamma", "JetMET")
 ALLOWED_DEV_DIRS = (
     "EGamma0",
     "EGamma1",
     "EGamma2",
     "EGamma22",
     "EGamma3",
+    "JetMET",
+    "JetMET0",
+    "JetMET1",
+    "JetMET2",
+    "JetMET3",
     "Muon",
     "Muon0",
     "Muon1",
 )
 ALLOWED_PROD_DIRS = (
+    "JetMET_Run2022C",
+    "JetMET_Run2022D",
+    "JetMET_Run2022E",
+    "JetMET_Run2022F",
+    "JetMET_Run2022G",
+    "JetMET_Run2023C",
+    "JetMET_Run2023C_v1",
+    "JetMET_Run2023C_v2",
+    "JetMET_Run2023C_v3",
+    "JetMET_Run2023C_v4",
+    "JetMET_Run2023D",
+    "JetMET_Run2023D_v1",
+    "JetMET_Run2023D_v2",
+    "JetMET_Run2024C",
+    "JetMET_Run2024D",
+    "JetMET_Run2024E",
+    "JetMET_Run2024F",
+    "JetMET_Run2024G",
+    "JetMET_Run2024H",
+    "JetMET_Run2024I",
+    "JetMET0_Run2023C_v1",
+    "JetMET0_Run2023C_v2",
+    "JetMET0_Run2023C_v3",
+    "JetMET0_Run2023C_v4",
+    "JetMET0_Run2023D_v1",
+    "JetMET0_Run2023D_v2",
+    "JetMET0_Run2024C",
+    "JetMET0_Run2024D",
+    "JetMET0_Run2024E",
+    "JetMET0_Run2024F",
+    "JetMET0_Run2024G",
+    "JetMET0_Run2024H",
+    "JetMET0_Run2024I",
+    "JetMET1_Run2023C_v1",
+    "JetMET1_Run2023C_v2",
+    "JetMET1_Run2023C_v3",
+    "JetMET1_Run2023D_v1",
+    "JetMET1_Run2023D_v2",
+    "JetMET1_Run2024C",
+    "JetMET1_Run2024D",
+    "JetMET1_Run2024E",
+    "JetMET1_Run2024F",
     "Muon0_Run2023C_v1",
     "Muon0_Run2023C_v2",
     "Muon0_Run2023C_v3",
@@ -125,17 +172,19 @@ ALLOWED_PROD_DIRS = (
 )
 RUN_RE = re.compile(r"Run(20\d{2})([A-Z])")
 PROD_DATASET_DIR_RE = re.compile(
-    r"^(?P<primary>Muon\d*|EGamma\d*)_Run(?P<year>20\d{2})(?P<era>[A-Z])(?:_v(?P<version>\d+))?$"
+    r"^(?P<primary>Muon\d*|EGamma\d*|JetMET\d*)_Run(?P<year>20\d{2})(?P<era>[A-Z])(?:_v(?P<version>\d+))?$"
 )
 
 
 def primary_dataset_from_path(path: str) -> str | None:
-    """Infer Muon/EGamma from an OSUNano EOS path."""
+    """Infer Muon/EGamma/JetMET from an OSUNano EOS path."""
     for part in Path(path).parts:
         if part.startswith("Muon"):
             return "Muon"
         if part.startswith("EGamma"):
             return "EGamma"
+        if part.startswith("JetMET"):
+            return "JetMET"
     return None
 
 
@@ -176,6 +225,8 @@ def is_allowed_osunano_path(
     if area_top is None:
         return False
     area, top_dir = area_top
+    if top_dir.startswith("JetMET"):
+        return True
     if area == "dev":
         return top_dir in allowed_dev_dirs
     if area == "prod":
