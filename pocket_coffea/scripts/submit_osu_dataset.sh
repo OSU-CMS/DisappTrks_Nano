@@ -20,6 +20,9 @@ Environment overrides:
   REQUEST_DISK     default: 4GB
   CATEGORY_MODE    default: muon_pveto
   TRANSFER_ROOT_FILES default: 0; set to 1 when worker nodes cannot see dataset paths
+  ROOT_TRANSFER_SUBMIT_MODE default: single; use queue to try one multi-proc submit
+  SUBMIT_SLEEP      default: 0; seconds to sleep between single-proc submits
+  SUBMIT_RETRIES    default: 5; condor_submit retries for transient schedd failures
   X509_USER_PROXY  optional; only transferred if it points to an existing file
 USAGE
     exit 2
@@ -39,7 +42,28 @@ REQUEST_MEMORY="${REQUEST_MEMORY:-4GB}"
 REQUEST_DISK="${REQUEST_DISK:-4GB}"
 CATEGORY_MODE="${CATEGORY_MODE:-muon_pveto}"
 TRANSFER_ROOT_FILES="${TRANSFER_ROOT_FILES:-0}"
+ROOT_TRANSFER_SUBMIT_MODE="${ROOT_TRANSFER_SUBMIT_MODE:-single}"
+SUBMIT_SLEEP="${SUBMIT_SLEEP:-0}"
+SUBMIT_RETRIES="${SUBMIT_RETRIES:-5}"
 X509_PROXY="${X509_USER_PROXY:-}"
+
+submit_with_retries() {
+    local submit_file="$1"
+    local attempt
+
+    for attempt in $(seq 1 "${SUBMIT_RETRIES}"); do
+        echo "condor_submit ${submit_file} (attempt ${attempt}/${SUBMIT_RETRIES})"
+        if condor_submit "${submit_file}"; then
+            return 0
+        fi
+        if [ "${attempt}" -lt "${SUBMIT_RETRIES}" ]; then
+            sleep 10
+        fi
+    done
+
+    echo "ERROR: failed to submit ${submit_file} after ${SUBMIT_RETRIES} attempts" >&2
+    return 1
+}
 
 if [ "${TRANSFER_ROOT_FILES}" = "1" ] && [ "${FILES_PER_JOB}" -ne 1 ]; then
     cat <<'MSG' >&2
@@ -157,6 +181,10 @@ echo "  job timeout:   ${JOB_TIMEOUT}"
 echo "  memory/disk:   ${REQUEST_MEMORY} / ${REQUEST_DISK}"
 echo "  category mode: ${CATEGORY_MODE}"
 echo "  transfer ROOT: ${TRANSFER_ROOT_FILES}"
+if [ "${TRANSFER_ROOT_FILES}" = "1" ]; then
+    echo "  submit mode:   ${ROOT_TRANSFER_SUBMIT_MODE}"
+    echo "  retries:       ${SUBMIT_RETRIES}"
+fi
 if [ "${X509_BASENAME}" != "__none__" ]; then
     echo "  proxy:         ${X509_PROXY_ABS}"
 else
@@ -165,7 +193,6 @@ fi
 
 if [ "${TRANSFER_ROOT_FILES}" = "1" ]; then
     QUEUE_FILE="logs/${TAG}/root_transfer_queue_offset${JOB_OFFSET}_n${NJOBS}.txt"
-    SUBMIT_FILE="logs/${TAG}/submit_root_transfer_offset${JOB_OFFSET}_n${NJOBS}.jdl"
     python3 - "${DATASET_JSON_ABS}" "${FILES_PER_JOB}" "${JOB_OFFSET}" "${NJOBS}" > "${QUEUE_FILE}" <<'PY'
 import json
 import sys
@@ -189,10 +216,13 @@ for job_id in range(job_offset, job_offset + n_jobs):
     print(job_id, ",".join(selected))
 PY
 
-    cat > "${SUBMIT_FILE}" <<EOF
+    if [ "${ROOT_TRANSFER_SUBMIT_MODE}" = "queue" ]; then
+        SUBMIT_FILE="logs/${TAG}/submit_root_transfer_offset${JOB_OFFSET}_n${NJOBS}.jdl"
+        cat > "${SUBMIT_FILE}" <<EOF
 universe = vanilla
 executable = scripts/run_osu_pocket_coffea_job.sh
 arguments = \$(job_id) ${DATASET_BASENAME} ${FILES_PER_JOB} ${CHUNKSIZE} ${SAMPLE} ${YEAR} ${TAG} ${X509_BASENAME} ${JOB_TIMEOUT} ${CATEGORY_MODE} 1
++JobBatchName = "${TAG}"
 
 output = logs/${TAG}/job_\$(ClusterId).\$(job_id).out
 error  = logs/${TAG}/job_\$(ClusterId).\$(job_id).err
@@ -214,7 +244,48 @@ requirements = Machine =!= LastRemoteHost
 queue job_id,root_inputs from ${QUEUE_FILE}
 EOF
 
-    condor_submit "${SUBMIT_FILE}"
+        submit_with_retries "${SUBMIT_FILE}"
+    elif [ "${ROOT_TRANSFER_SUBMIT_MODE}" = "single" ]; then
+        echo "Submitting ROOT-transfer jobs one at a time from ${QUEUE_FILE}"
+        while read -r JOB_ID ROOT_INPUTS; do
+            if [ -z "${JOB_ID}" ]; then
+                continue
+            fi
+            SUBMIT_FILE="logs/${TAG}/submit_root_transfer_job${JOB_ID}.jdl"
+            cat > "${SUBMIT_FILE}" <<EOF
+universe = vanilla
+executable = scripts/run_osu_pocket_coffea_job.sh
+arguments = ${JOB_ID} ${DATASET_BASENAME} ${FILES_PER_JOB} ${CHUNKSIZE} ${SAMPLE} ${YEAR} ${TAG} ${X509_BASENAME} ${JOB_TIMEOUT} ${CATEGORY_MODE} 1
++JobBatchName = "${TAG}"
+
+output = logs/${TAG}/job_\$(ClusterId).${JOB_ID}.out
+error  = logs/${TAG}/job_\$(ClusterId).${JOB_ID}.err
+log    = logs/${TAG}/job_\$(ClusterId).log
+
+request_cpus = 1
+request_memory = ${REQUEST_MEMORY}
+request_disk = ${REQUEST_DISK}
+
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+transfer_input_files = ${TRANSFER_INPUTS},${ROOT_INPUTS}
+transfer_output_files = analysis_output
+
+on_exit_remove = (ExitBySignal == False) && (ExitCode == 0)
+max_retries = 3
+requirements = Machine =!= LastRemoteHost
+
+queue 1
+EOF
+            submit_with_retries "${SUBMIT_FILE}"
+            if [ "${SUBMIT_SLEEP}" != "0" ]; then
+                sleep "${SUBMIT_SLEEP}"
+            fi
+        done < "${QUEUE_FILE}"
+    else
+        echo "ROOT_TRANSFER_SUBMIT_MODE must be 'single' or 'queue': ${ROOT_TRANSFER_SUBMIT_MODE}" >&2
+        exit 1
+    fi
 else
     if [ "${JOB_OFFSET}" -ne 0 ]; then
         echo "JOB_OFFSET is currently supported only with TRANSFER_ROOT_FILES=1." >&2
