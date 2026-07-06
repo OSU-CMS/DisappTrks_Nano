@@ -191,7 +191,8 @@ def _fake_fit_tracks_for_control(events, control_mask):
         )
     ]
     tracks = ak.with_field(tracks, abs(tracks.dxy), "absDxy")
-    return tracks[control_mask]
+    control_track_mask, _ = ak.broadcast_arrays(control_mask, tracks.pt)
+    return tracks[control_track_mask]
 
 
 def _jet_veto_map_parameter_year(year, era, processor_params):
