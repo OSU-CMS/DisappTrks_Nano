@@ -163,8 +163,7 @@ def _configured_jet_veto_map_path(processor_params, mapped_year):
     except Exception:
         return None
 
-    path = Path(str(payload))
-    return path if path.exists() else None
+    return Path(str(payload))
 
 
 def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
