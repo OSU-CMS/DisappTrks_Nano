@@ -202,6 +202,24 @@ def _jet_id_compute_year(processor_params, mapped_year):
     return year
 
 
+def _jet_veto_map_correction_name(cset, processor_params, mapped_year):
+    try:
+        return processor_params.jet_scale_factors.vetomaps[str(mapped_year)]["name"]
+    except Exception:
+        pass
+
+    keys = list(cset.keys())
+    for key in keys:
+        if "jetvetomap" in str(key).lower():
+            return key
+    if len(keys) == 1:
+        return keys[0]
+    raise KeyError(
+        f"Could not determine jet-veto-map correction name for {mapped_year}; "
+        f"available corrections are {keys}"
+    )
+
+
 def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
     import correctionlib
 
@@ -230,7 +248,7 @@ def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
     jets = jets[mask_for_veto_map]
 
     cset = correctionlib.CorrectionSet.from_file(str(payload_file))
-    corr = cset[processor_params.jet_scale_factors.vetomaps[mapped_year]["name"]]
+    corr = cset[_jet_veto_map_correction_name(cset, processor_params, mapped_year)]
     eta_flat = ak.to_numpy(ak.flatten(jets.eta))
     phi_flat = np.clip(ak.to_numpy(ak.flatten(jets.phi)), -3.14159, 3.14159)
     eta_counts = ak.num(jets.eta)
