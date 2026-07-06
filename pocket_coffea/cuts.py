@@ -180,6 +180,30 @@ def _pocketcoffea_run3_year_key(year, events=None, processor_params=None):
     return year
 
 
+def _container_has_key(container, key):
+    try:
+        return str(key) in container
+    except Exception:
+        try:
+            container[str(key)]
+        except Exception:
+            return False
+        return True
+
+
+def _event_flags_year_key(year, events, processor_params):
+    mapped_year = _pocketcoffea_run3_year_key(year, events, processor_params)
+    if _container_has_key(processor_params.event_flags, mapped_year):
+        return mapped_year
+
+    # PocketCoffea may not yet define explicit 2025 event-flag lists.  Use the
+    # Run-3 2024 list as the closest available NanoAODv15/data-era fallback.
+    if str(year) == "2025" and _container_has_key(processor_params.event_flags, "2024"):
+        return "2024"
+
+    return mapped_year
+
+
 def _local_golden_json_path(mapped_year):
     filename = GOLDEN_JSON_FILES.get(str(mapped_year))
     if filename is None:
@@ -370,9 +394,9 @@ def _event_flags(events, params, year, processor_params, sample, isMC, **kwargs)
     if "METFilters" in events.fields:
         return events.METFilters
 
-    mapped_year = _pocketcoffea_run3_year_key(year, events, processor_params)
+    mapped_year = _event_flags_year_key(year, events, processor_params)
     flags = list(processor_params.event_flags[mapped_year])
-    if not isMC:
+    if not isMC and _container_has_key(processor_params.event_flags_data, mapped_year):
         flags += list(processor_params.event_flags_data[mapped_year])
 
     mask = _all_true(events)
