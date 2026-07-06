@@ -225,16 +225,31 @@ def _local_jet_veto_map_path(mapped_year):
     return None
 
 
+def _configured_jet_veto_map_path(processor_params, mapped_year):
+    try:
+        payload = processor_params.jet_scale_factors.vetomaps[str(mapped_year)]["file"]
+    except Exception:
+        return None
+
+    path = Path(str(payload))
+    return path if path.exists() else None
+
+
 def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
     """Evaluate the Run-3 JME jet-veto map using a concrete local payload."""
     import correctionlib
-    from pocket_coffea.lib.jets import compute_jetId
 
-    jets = ak.with_field(
-        events["Jet"],
-        compute_jetId(events, "Jet", processor_params, mapped_year),
-        "jetId_corrected",
-    )
+    jets = events["Jet"]
+    if "jetId" in jets.fields:
+        jet_id = jets.jetId
+    else:
+        # Only recompute if the stored NanoAOD jetId branch is absent.  This
+        # avoids requiring a PocketCoffea jet-ID correction entry for newly
+        # added data-taking years such as 2025.
+        from pocket_coffea.lib.jets import compute_jetId
+
+        jet_id = compute_jetId(events, "Jet", processor_params, mapped_year)
+    jets = ak.with_field(jets, jet_id, "jetId_corrected")
     mask_for_veto_map = (
         (jets["jetId_corrected"] >= 6)
         & (abs(jets.eta) < 5.19)
@@ -323,9 +338,11 @@ def _jet_veto_map(events, params, year, processor_params, sample, isMC, **kwargs
         return events.jetVeto2022
 
     mapped_year = _pocketcoffea_run3_year_key(year, events, processor_params)
-    local_payload = _local_jet_veto_map_path(mapped_year)
-    if local_payload is not None:
-        return _evaluate_jet_veto_map(events, processor_params, mapped_year, local_payload)
+    payload = _local_jet_veto_map_path(mapped_year)
+    if payload is None:
+        payload = _configured_jet_veto_map_path(processor_params, mapped_year)
+    if payload is not None:
+        return _evaluate_jet_veto_map(events, processor_params, mapped_year, payload)
 
     try:
         return get_JetVetoMap_Mask(
