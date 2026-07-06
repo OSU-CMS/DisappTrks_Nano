@@ -7,6 +7,7 @@ PocketCoffea checkout.
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 
 import cloudpickle
@@ -114,8 +115,35 @@ dataset_json = os.environ.get(
     "DISAPPTRKS_DATASET_JSON",
     f"{localdir}/datasets/local_2024F_muon.json",
 )
-dataset_sample = os.environ.get("DISAPPTRKS_DATASET_SAMPLE", "DATA_Muon")
-dataset_year = os.environ.get("DISAPPTRKS_DATASET_YEAR", "2024")
+
+
+def _unique_dataset_metadata_values(json_path, key):
+    try:
+        with open(json_path, encoding="utf-8") as handle:
+            datasets = json.load(handle)
+    except OSError:
+        return []
+
+    values = {
+        dataset.get("metadata", {}).get(key)
+        for dataset in datasets.values()
+        if dataset.get("metadata", {}).get(key) is not None
+    }
+    return sorted(values)
+
+
+def _single_or_none(values):
+    return values[0] if len(values) == 1 else None
+
+
+dataset_sample = os.environ.get(
+    "DISAPPTRKS_DATASET_SAMPLE",
+    _single_or_none(_unique_dataset_metadata_values(dataset_json, "sample")) or "DATA_Muon",
+)
+dataset_year = os.environ.get(
+    "DISAPPTRKS_DATASET_YEAR",
+    _single_or_none(_unique_dataset_metadata_values(dataset_json, "year")) or "2024",
+)
 enable_search_diagnostics = os.environ.get(
     "DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", ""
 ).lower() in ("1", "true", "yes", "on")
