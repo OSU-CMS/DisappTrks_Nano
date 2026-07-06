@@ -1,4 +1,7 @@
 # LPC Dask options for the custom executor in executors_lpc.py.
+# Defaults are intentionally conservative so the first test only proves that
+# LPC can start workers in the right Python environment. Override scaleout and
+# queue on the command line for production.
 #
 # Use with:
 #   python -m pocket_coffea.scripts.runner run \
@@ -8,12 +11,12 @@
 #     --executor-custom-setup executors_lpc.py \
 #     --custom-run-options run_options_lpc_dask.yaml
 
-scaleout: 60
+scaleout: 2
 chunksize: 50000
 cores-per-worker: 1
 mem-per-worker: "4GB"
 disk-per-worker: "2GB"
-queue: "workday"
+queue: "microcentury"
 adaptive: false
 retries: 3
 tree-reduction: 20
@@ -22,12 +25,12 @@ skip-bad-files: true
 # Let lpcjobqueue choose an LPC-safe scheduler port unless you need to pin one.
 dask-scheduler-port: null
 dask-scheduler-host: null
-dask-worker-start-timeout: 600
+dask-worker-start-timeout: 1800
 
 # The lpcjobqueue bootstrap creates/activates the .env inside ./shell. Workers
 # should use that same virtualenv so lpcjobqueue, PocketCoffea, and this package
 # are all visible.
 local-virtualenv: true
 conda-env: false
-worker-python: "python"
+worker-python: "/srv/.env/bin/python"
 custom-setup-commands: null

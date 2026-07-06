@@ -91,21 +91,23 @@ Python outside the container/venv and miss `lpcjobqueue`.
 ```bash
 cd pocket_coffea
 DISAPPTRKS_DATASET_JSON=datasets/eos_2023C_muon.json \
-DISAPPTRKS_DATASET_SAMPLE=DATA_Muon \
-DISAPPTRKS_DATASET_YEAR=2023 \
 python -m pocket_coffea.scripts.runner run \
   --cfg config.py \
   --outputdir analysis_output/2023C_muon_pveto \
   --executor dask@lpc \
   --executor-custom-setup executors_lpc.py \
   --custom-run-options run_options_lpc_dask.yaml \
-  --scaleout 60
+  --limit-files 1 \
+  --limit-chunks 1
 ```
 
 Tune `scaleout`, `chunksize`, memory, and queue defaults in
 `pocket_coffea/run_options_lpc_dask.yaml`.  Condor logs are written under
 `$HOME/pocketcoffea_dask_logs/<output-tag>/condor_log` by default so they are
 visible to the LPC schedd outside the container.
+
+After the smoke test starts workers successfully, increase worker count from the
+command line, for example `--scaleout 60 --queue workday`.
 
 ## LPC manual Condor fallback
 

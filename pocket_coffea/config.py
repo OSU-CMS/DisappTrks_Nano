@@ -115,6 +115,8 @@ dataset_json = os.environ.get(
     "DISAPPTRKS_DATASET_JSON",
     f"{localdir}/datasets/local_2024F_muon.json",
 )
+if not os.path.isabs(dataset_json) and not os.path.exists(dataset_json):
+    dataset_json = os.path.join(localdir, dataset_json)
 
 
 def _unique_dataset_metadata_values(json_path, key):
@@ -136,14 +138,19 @@ def _single_or_none(values):
     return values[0] if len(values) == 1 else None
 
 
-dataset_sample = os.environ.get(
-    "DISAPPTRKS_DATASET_SAMPLE",
-    _single_or_none(_unique_dataset_metadata_values(dataset_json, "sample")) or "DATA_Muon",
-)
-dataset_year = os.environ.get(
-    "DISAPPTRKS_DATASET_YEAR",
-    _single_or_none(_unique_dataset_metadata_values(dataset_json, "year")) or "2024",
-)
+dataset_sample = os.environ.get("DISAPPTRKS_DATASET_SAMPLE")
+if dataset_sample is None:
+    dataset_sample = _single_or_none(_unique_dataset_metadata_values(dataset_json, "sample"))
+
+dataset_year = os.environ.get("DISAPPTRKS_DATASET_YEAR")
+if dataset_year is None:
+    dataset_year = _single_or_none(_unique_dataset_metadata_values(dataset_json, "year"))
+
+dataset_filter = {}
+if dataset_sample:
+    dataset_filter["samples"] = [dataset_sample]
+if dataset_year:
+    dataset_filter["year"] = [dataset_year]
 enable_search_diagnostics = os.environ.get(
     "DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", ""
 ).lower() in ("1", "true", "yes", "on")
@@ -342,7 +349,7 @@ cfg = Configurator(
     parameters=parameters,
     datasets={
         "jsons": [dataset_json],
-        "filter": {"samples": [dataset_sample], "year": [dataset_year]},
+        "filter": dataset_filter,
     },
     workflow=DisappTrksProcessor,
     calibrators=[],
