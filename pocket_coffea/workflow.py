@@ -22,6 +22,7 @@ from disapptrks.selections import (
     electron_tag_mask,
     fake_track_no_d0_mask,
     generic_probe_pair_layer_mask,
+    invariant_mass,
     lepton_veto_probe_track_mask,
     low_mt_mask,
     mass10_muon_probe_pair_mask,
@@ -53,6 +54,7 @@ from disapptrks.selections import (
 PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
 ELECTRON_MASS = 0.000511
 MUON_MASS = 0.105658
+Z_MASS = 91.1876
 
 JET_VETO_MAP_FILES = {
     "2022_preEE": "Run3-22CDSep23-Summer22-NanoAODv12_jetvetomaps.json.gz",
@@ -113,6 +115,80 @@ def _met_for_transverse_mass(events):
         "No MET-like collection found for lepton transverse-mass cuts; "
         "expected either MET or PuppiMET."
     )
+
+
+def _single_muon_trigger_mask(events):
+    if "HLT" in events.fields and "IsoMu24" in events.HLT.fields:
+        return events.HLT.IsoMu24
+    return _all_true_like(events) & False
+
+
+def _z_to_mumu_control_mask(events, muons):
+    selected = muons[muon_tag_mask(muons)]
+    first, second = ak.unzip(ak.combinations(selected, 2, axis=1))
+    pair_mass = invariant_mass(first, second, first_mass=MUON_MASS, second_mass=MUON_MASS)
+    os_z = (first.charge * second.charge < 0) & (abs(pair_mass - Z_MASS) < 10.0)
+    return _single_muon_trigger_mask(events) & (ak.num(selected) == 2) & ak.any(os_z, axis=1)
+
+
+def _z_electron_tag_mask(electrons, *, pt_min=25.0, eta_max=2.1):
+    abs_sc_eta = abs(electrons.eta + electrons.deltaEtaSC)
+    barrel = abs_sc_eta <= 1.479
+    endcap = abs_sc_eta > 1.479
+    dxy_ok = (barrel & (abs(electrons.dxy) < 0.05)) | (
+        endcap & (abs(electrons.dxy) < 0.10)
+    )
+    dz_ok = (barrel & (abs(electrons.dz) < 0.10)) | (
+        endcap & (abs(electrons.dz) < 0.20)
+    )
+    return (
+        (electrons.pt > pt_min)
+        & (abs(electrons.eta) < eta_max)
+        & (electrons.cutBased >= 4)
+        & dxy_ok
+        & dz_ok
+    )
+
+
+def _z_to_ee_control_mask(events, electrons):
+    selected = electrons[_z_electron_tag_mask(electrons, pt_min=25.0)]
+    first, second = ak.unzip(ak.combinations(selected, 2, axis=1))
+    pair_mass = invariant_mass(
+        first,
+        second,
+        first_mass=ELECTRON_MASS,
+        second_mass=ELECTRON_MASS,
+    )
+    os_z = (first.charge * second.charge < 0) & (abs(pair_mass - Z_MASS) < 10.0)
+    return (
+        single_electron_trigger_mask(events)
+        & (ak.num(selected) == 2)
+        & ak.any(selected.pt > 32.0, axis=1)
+        & ak.any(os_z, axis=1)
+    )
+
+
+def _fake_track_count_for_control(events, control_mask, *, layer, d0_region):
+    count = ak.num(
+        events.IsoTrack[
+            fake_track_no_d0_mask(events.IsoTrack, layer=layer, d0_region=d0_region)
+        ]
+    )
+    return ak.where(control_mask, count, 0)
+
+
+def _fake_fit_tracks_for_control(events, control_mask):
+    tracks = events.IsoTrack[
+        fake_track_no_d0_mask(
+            events.IsoTrack,
+            layer="NLayers4",
+            d0_region="sideband",
+            sideband_min=0.0,
+            sideband_max=0.5,
+        )
+    ]
+    tracks = ak.with_field(tracks, abs(tracks.dxy), "absDxy")
+    return tracks[control_mask]
 
 
 def _jet_veto_map_parameter_year(year, era, processor_params):
@@ -680,6 +756,32 @@ class DisappTrksProcessor(BaseProcessorABC):
                         d0_region="sideband",
                     )
                 ]
+            )
+
+        fake_zmumu_control = _z_to_mumu_control_mask(self.events, self.events.Muon)
+        fake_zee_control = _z_to_ee_control_mask(self.events, self.events.Electron)
+        self.events["nFakeZMuMuControl"] = ak.values_astype(fake_zmumu_control, np.int64)
+        self.events["nFakeZeeControl"] = ak.values_astype(fake_zee_control, np.int64)
+        self.events["FakeZMuMuFitTrack"] = _fake_fit_tracks_for_control(
+            self.events,
+            fake_zmumu_control,
+        )
+        self.events["FakeZeeFitTrack"] = _fake_fit_tracks_for_control(
+            self.events,
+            fake_zee_control,
+        )
+        for layer in (*PVETO_LAYERS, "combinedBins"):
+            self.events[f"nFakeZMuMuSideband_{layer}"] = _fake_track_count_for_control(
+                self.events,
+                fake_zmumu_control,
+                layer=layer,
+                d0_region="sideband",
+            )
+            self.events[f"nFakeZeeSideband_{layer}"] = _fake_track_count_for_control(
+                self.events,
+                fake_zee_control,
+                layer=layer,
+                d0_region="sideband",
             )
 
         event_golden_json = _golden_json_mask(

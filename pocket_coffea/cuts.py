@@ -694,12 +694,28 @@ fake_track_cuts = {
         "fake_basic3hits_d0_sideband",
         "nFakeBasic3HitsD0Sideband",
     ),
+    "fake_zmumu_control": _make_count_cut(
+        "fake_zmumu_control",
+        "nFakeZMuMuControl",
+    ),
+    "fake_zee_control": _make_count_cut(
+        "fake_zee_control",
+        "nFakeZeeControl",
+    ),
 }
 
 for layer in (*PVETO_LAYERS, "combinedBins"):
     fake_track_cuts[f"fake_control_{layer}"] = _make_count_cut(
         f"fake_control_{layer}",
         f"nFakeControl_{layer}",
+    )
+    fake_track_cuts[f"fake_zmumu_sideband_{layer}"] = _make_count_cut(
+        f"fake_zmumu_sideband_{layer}",
+        f"nFakeZMuMuSideband_{layer}",
+    )
+    fake_track_cuts[f"fake_zee_sideband_{layer}"] = _make_count_cut(
+        f"fake_zee_sideband_{layer}",
+        f"nFakeZeeSideband_{layer}",
     )
 
 for layer in PVETO_LAYERS:

@@ -15,7 +15,14 @@ from .datasets import (
     write_dataset_definition,
     write_grouped_filelists,
 )
-from .fake_tracks import estimate_fake_track_background, write_fake_track_latex
+from .fake_tracks import (
+    estimate_fake_track_background,
+    estimate_fake_track_background_an,
+    fit_dxy_transfer_factor,
+    summed_hist_counts_edges,
+    write_an_fake_track_latex,
+    write_fake_track_latex,
+)
 from .schema import audit_root_file
 from .summaries import (
     summarize_ss_subtracted_veto_probability,
@@ -240,6 +247,111 @@ def _summarize_pveto_command(args: argparse.Namespace) -> int:
 
 
 def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
+    if args.an_control:
+        if args.counts_json:
+            raise SystemExit("error: --an-control requires coffea files, not --counts-json")
+        if not args.files:
+            raise SystemExit("error: at least one coffea file is required with --an-control")
+
+        outputs = _load_outputs(args.files)
+        source = _load_merged_cutflow(args.files)
+        control_cfg = {
+            "zmumu": {
+                "control_region": r"$Z\to\mu\mu$",
+                "histogram": "fakeZMuMuFitTrack_absDxy",
+                "control_category": "fake_zmumu_control",
+                "sideband_category": "fake_zmumu_sideband_{layer}",
+            },
+            "zee": {
+                "control_region": r"$Z\to ee$",
+                "histogram": "fakeZeeFitTrack_absDxy",
+                "control_category": "fake_zee_control",
+                "sideband_category": "fake_zee_sideband_{layer}",
+            },
+        }[args.an_control]
+
+        counts, edges = summed_hist_counts_edges(
+            outputs,
+            control_cfg["histogram"],
+            dataset=args.dataset,
+            sample=args.sample,
+        )
+        fit = fit_dxy_transfer_factor(
+            counts,
+            edges,
+            control_region=control_cfg["control_region"],
+            histogram=control_cfg["histogram"],
+        )
+        estimates = [
+            estimate_fake_track_background_an(
+                source,
+                layer=layer,
+                control_region=control_cfg["control_region"],
+                transfer_factor=fit.transfer_factor,
+                control_category=control_cfg["control_category"],
+                sideband_category=control_cfg["sideband_category"].format(layer=layer),
+                basic_yield_category=args.basic_yield_category,
+                dataset=args.dataset,
+                sample=args.sample,
+                variation=args.variation,
+            )
+            for layer in args.layers
+        ]
+
+        if args.output_json:
+            args.output_json.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "fit": {
+                    "control_region": fit.control_region,
+                    "histogram": fit.histogram,
+                    "numerator_range": fit.numerator_range,
+                    "denominator_range": fit.denominator_range,
+                    "fit_range": fit.fit_range,
+                    "amplitude": fit.amplitude,
+                    "sigma": fit.sigma,
+                    "constant": fit.constant,
+                    "transfer_factor": {
+                        "value": fit.transfer_factor.value,
+                        "error": fit.transfer_factor.error,
+                        "variance": fit.transfer_factor.variance,
+                    },
+                },
+                "estimates": [e.as_dict() for e in estimates],
+            }
+            args.output_json.write_text(json.dumps(payload, indent=2, sort_keys=True))
+            print(f"Wrote {args.output_json}")
+
+        if args.output_tex:
+            write_an_fake_track_latex(
+                estimates,
+                fit,
+                args.output_tex,
+                run_period=args.run_period,
+                include_table_env=args.table_env,
+            )
+            print(f"Wrote {args.output_tex}")
+
+        print(
+            f"{control_cfg['control_region']}: "
+            f"zeta={fit.transfer_factor.value:.6g} ± {fit.transfer_factor.error:.6g} "
+            f"(fit sigma={fit.sigma:.6g})"
+        )
+        for estimate in estimates:
+            fake_yield = (
+                "N_fake=--"
+                if estimate.fake_yield is None
+                else f"N_fake={estimate.fake_yield.value:.6g} ± {estimate.fake_yield.error:.6g}"
+            )
+            print(
+                f"{estimate.layer}: "
+                f"N_Z={estimate.control_events.value:.6g}, "
+                f"N_sideband={estimate.sideband_events.value:.6g}, "
+                f"P_raw={estimate.raw_probability.value:.6g} ± {estimate.raw_probability.error:.6g}, "
+                f"P_fake={estimate.fake_probability.value:.6g} ± {estimate.fake_probability.error:.6g}, "
+                f"{fake_yield}"
+            )
+        return 0
+
     if args.counts_json:
         source = json.loads(args.counts_json.read_text())
         source_is_cutflow = False
@@ -801,6 +913,14 @@ def main():
     fake_tracks.add_argument("--sample", help="Restrict to one sample key for coffea input.")
     fake_tracks.add_argument("--variation", default="nominal")
     fake_tracks.add_argument("--run-period", required=True, help="Run-period label used in the LaTeX table.")
+    fake_tracks.add_argument(
+        "--an-control",
+        choices=["zmumu", "zee"],
+        help=(
+            "Use the Chapter-5 fake-track method for a Z->ll control region: "
+            "P_fake = zeta * N_sideband / N_Z, with zeta from the 4-layer |d0| fit."
+        ),
+    )
     fake_tracks.add_argument(
         "--layers",
         nargs="+",

@@ -870,6 +870,32 @@ cfg = Configurator(
                 )
             ]
         ),
+        "fakeZMuMuFitTrack_absDxy": HistConf(
+            [
+                Axis(
+                    coll="FakeZMuMuFitTrack",
+                    field="absDxy",
+                    bins=50,
+                    start=0.0,
+                    stop=0.5,
+                    label=r"Z$\to\mu\mu$ fake-track $|d_{xy}|$ [cm]",
+                )
+            ],
+            only_categories=["inclusive"],
+        ),
+        "fakeZeeFitTrack_absDxy": HistConf(
+            [
+                Axis(
+                    coll="FakeZeeFitTrack",
+                    field="absDxy",
+                    bins=50,
+                    start=0.0,
+                    stop=0.5,
+                    label=r"Z$\to ee$ fake-track $|d_{xy}|$ [cm]",
+                )
+            ],
+            only_categories=["inclusive"],
+        ),
         **{
             f"allTrack_{field}": HistConf(
                 [

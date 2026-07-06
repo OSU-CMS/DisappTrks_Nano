@@ -13,7 +13,7 @@ ratio of the basic-search yield to the inclusive Z->ll yield.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from math import sqrt
+from math import erf, sqrt
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -92,6 +92,59 @@ class FakeTrackEstimate:
         return out
 
 
+@dataclass(frozen=True)
+class DxyTransferFactorFit:
+    """Fit-derived d0 transfer factor used by the AN fake-track method."""
+
+    control_region: str
+    histogram: str
+    numerator_range: tuple[float, float]
+    denominator_range: tuple[float, float]
+    fit_range: tuple[float, float]
+    amplitude: float
+    sigma: float
+    constant: float
+    transfer_factor: Count
+
+
+@dataclass(frozen=True)
+class ANFakeTrackEstimate:
+    """Chapter-5 fake-track estimate components for one layer bin."""
+
+    control_region: str
+    layer: str
+    control_events: Count
+    sideband_events: Count
+    basic_events: Count | None
+    raw_probability: Count
+    transfer_factor: Count
+    fake_probability: Count
+    fake_yield: Count | None
+    control_category: str
+    sideband_category: str
+    basic_yield_category: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        out = asdict(self)
+        for key in (
+            "control_events",
+            "sideband_events",
+            "basic_events",
+            "raw_probability",
+            "transfer_factor",
+            "fake_probability",
+            "fake_yield",
+        ):
+            value = out[key]
+            if value is not None:
+                out[key] = {
+                    "value": value["value"],
+                    "error": sqrt(max(value["variance"], 0.0)),
+                    "variance": value["variance"],
+                }
+        return out
+
+
 def _relative_variance(count: Count) -> float:
     if count.value == 0.0:
         return 0.0
@@ -131,6 +184,248 @@ def _count_from_cutflow(
         variation=variation,
     )
     return Count(value)
+
+
+def _find_hist_axis(hist_obj: Any):
+    axes = list(getattr(hist_obj, "axes", []))
+    for axis in axes:
+        name = getattr(axis, "name", "")
+        if name not in {"cat", "variation", "sample"}:
+            return axis
+    return axes[0] if axes else None
+
+
+def _hist_counts_edges(hist_obj: Any, *, category: str = "inclusive") -> tuple[Any, Any] | None:
+    """Return counts and bin edges from a one-dimensional PocketCoffea histogram."""
+
+    try:
+        axis_names = [axis.name for axis in hist_obj.axes]
+    except AttributeError:
+        return None
+
+    if "cat" in axis_names:
+        try:
+            hist_obj = hist_obj[{"cat": category}]
+        except Exception:
+            return None
+
+    axis = _find_hist_axis(hist_obj)
+    if axis is None:
+        return None
+
+    try:
+        import numpy as np
+
+        values = hist_obj.values(flow=False)
+        counts = np.asarray(values, dtype=float)
+        edges = np.asarray(axis.edges, dtype=float)
+    except Exception:
+        return None
+
+    while counts.ndim > 1:
+        counts = counts.sum(axis=0)
+
+    if counts.ndim != 1 or len(edges) != len(counts) + 1:
+        return None
+    return counts, edges
+
+
+def _walk_hists(value: Any):
+    if hasattr(value, "axes") and hasattr(value, "values"):
+        yield value
+    elif isinstance(value, Mapping):
+        for nested in value.values():
+            yield from _walk_hists(nested)
+
+
+def summed_hist_counts_edges(
+    outputs: Sequence[Mapping[str, Any]],
+    variable: str,
+    *,
+    dataset: str | None = None,
+    sample: str | None = None,
+    category: str = "inclusive",
+) -> tuple[Any, Any]:
+    """Sum one histogram variable across PocketCoffea output files."""
+
+    import numpy as np
+
+    total_counts = None
+    total_edges = None
+    for output in outputs:
+        variables = output.get("variables", {})
+        if variable not in variables:
+            continue
+        value: Any = variables[variable]
+        if sample is not None and isinstance(value, Mapping):
+            value = value.get(sample, {})
+        if dataset is not None and sample is None and isinstance(value, Mapping):
+            nested_values = value.values()
+        elif dataset is not None and isinstance(value, Mapping):
+            nested_values = [value.get(dataset, {})]
+        else:
+            nested_values = [value]
+
+        for nested in nested_values:
+            for hist_obj in _walk_hists(nested):
+                result = _hist_counts_edges(hist_obj, category=category)
+                if result is None:
+                    continue
+                counts, edges = result
+                if total_counts is None:
+                    total_counts = counts.copy()
+                    total_edges = edges.copy()
+                else:
+                    if len(edges) != len(total_edges) or not np.allclose(edges, total_edges):
+                        raise ValueError(f"histogram {variable!r} has inconsistent binning")
+                    total_counts += counts
+
+    if total_counts is None or total_edges is None:
+        raise KeyError(f"histogram variable {variable!r} not found")
+    return total_counts, total_edges
+
+
+def _gauss_plus_constant_integral(amplitude: float, sigma: float, constant: float, lo: float, hi: float) -> float:
+    if sigma <= 0.0:
+        return constant * (hi - lo)
+    gaussian = amplitude * sigma * sqrt(3.141592653589793 / 2.0)
+    gaussian *= erf(hi / (sqrt(2.0) * sigma)) - erf(lo / (sqrt(2.0) * sigma))
+    return gaussian + constant * (hi - lo)
+
+
+def fit_dxy_transfer_factor(
+    counts,
+    edges,
+    *,
+    control_region: str,
+    histogram: str,
+    numerator_range: tuple[float, float] = (0.0, 0.02),
+    denominator_range: tuple[float, float] = (0.05, 0.50),
+    fit_range: tuple[float, float] = (0.10, 0.50),
+) -> DxyTransferFactorFit:
+    """Fit |dxy| sideband with Gaussian(mean=0)+constant and return zeta."""
+
+    import numpy as np
+    from scipy.optimize import curve_fit
+
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    fit_mask = (centers >= fit_range[0]) & (centers < fit_range[1])
+    x = centers[fit_mask]
+    y = counts[fit_mask]
+    if len(x) < 3 or float(y.sum()) <= 0.0:
+        raise ValueError(f"not enough entries to fit {histogram!r} for {control_region}")
+
+    def model(xvals, amplitude, sigma, constant):
+        return amplitude * np.exp(-0.5 * (xvals / sigma) ** 2) + constant
+
+    yerr = np.sqrt(np.maximum(y, 1.0))
+    p0 = [max(float(y.max() - y.min()), 1.0), 0.10, max(float(y.min()), 0.0)]
+    popt, pcov = curve_fit(
+        model,
+        x,
+        y,
+        p0=p0,
+        sigma=yerr,
+        absolute_sigma=True,
+        bounds=([0.0, 1.0e-4, 0.0], [np.inf, 1.0, np.inf]),
+        maxfev=20000,
+    )
+    amplitude, sigma, constant = (float(v) for v in popt)
+
+    numerator = _gauss_plus_constant_integral(amplitude, sigma, constant, *numerator_range)
+    denominator = _gauss_plus_constant_integral(amplitude, sigma, constant, *denominator_range)
+    value = 0.0 if denominator == 0.0 else numerator / denominator
+
+    variance = 0.0
+    try:
+        grad = []
+        for i, param in enumerate(popt):
+            step = max(abs(float(param)) * 1.0e-5, 1.0e-7)
+            shifted_hi = list(popt)
+            shifted_lo = list(popt)
+            shifted_hi[i] += step
+            shifted_lo[i] -= step
+            num_hi = _gauss_plus_constant_integral(*shifted_hi, *numerator_range)
+            den_hi = _gauss_plus_constant_integral(*shifted_hi, *denominator_range)
+            num_lo = _gauss_plus_constant_integral(*shifted_lo, *numerator_range)
+            den_lo = _gauss_plus_constant_integral(*shifted_lo, *denominator_range)
+            val_hi = 0.0 if den_hi == 0.0 else num_hi / den_hi
+            val_lo = 0.0 if den_lo == 0.0 else num_lo / den_lo
+            grad.append((val_hi - val_lo) / (2.0 * step))
+        grad = np.asarray(grad)
+        variance = float(grad @ pcov @ grad)
+    except Exception:
+        variance = 0.0
+
+    return DxyTransferFactorFit(
+        control_region=control_region,
+        histogram=histogram,
+        numerator_range=numerator_range,
+        denominator_range=denominator_range,
+        fit_range=fit_range,
+        amplitude=amplitude,
+        sigma=sigma,
+        constant=constant,
+        transfer_factor=Count(value, max(variance, 0.0)),
+    )
+
+
+def estimate_fake_track_background_an(
+    cutflow: Mapping[str, Any],
+    *,
+    layer: str,
+    control_region: str,
+    transfer_factor: Count,
+    control_category: str,
+    sideband_category: str,
+    basic_yield_category: str | None = None,
+    dataset: str | None = None,
+    sample: str | None = None,
+    variation: str = "nominal",
+) -> ANFakeTrackEstimate:
+    control_events = _count_from_cutflow(
+        dict(cutflow),
+        control_category,
+        dataset=dataset,
+        sample=sample,
+        variation=variation,
+    )
+    sideband_events = _count_from_cutflow(
+        dict(cutflow),
+        sideband_category,
+        dataset=dataset,
+        sample=sample,
+        variation=variation,
+    )
+    raw_probability = sideband_events / control_events
+    fake_probability = raw_probability * transfer_factor
+
+    basic_events = None
+    fake_yield = None
+    if basic_yield_category:
+        basic_events = _count_from_cutflow(
+            dict(cutflow),
+            basic_yield_category,
+            dataset=dataset,
+            sample=sample,
+            variation=variation,
+        )
+        fake_yield = fake_probability * basic_events
+
+    return ANFakeTrackEstimate(
+        control_region=control_region,
+        layer=layer,
+        control_events=control_events,
+        sideband_events=sideband_events,
+        basic_events=basic_events,
+        raw_probability=raw_probability,
+        transfer_factor=transfer_factor,
+        fake_probability=fake_probability,
+        fake_yield=fake_yield,
+        control_category=control_category,
+        sideband_category=sideband_category,
+        basic_yield_category=basic_yield_category,
+    )
 
 
 def estimate_fake_track_background(
@@ -256,5 +551,68 @@ def write_fake_track_latex(
             )
         out.write(r"\hline" + "\n")
         out.write(r"\end{tabular}" + "\n")
+        if include_table_env:
+            out.write(r"\end{table}" + "\n")
+
+
+def write_an_fake_track_latex(
+    estimates: Sequence[ANFakeTrackEstimate],
+    fit: DxyTransferFactorFit,
+    path: Path,
+    *,
+    run_period: str,
+    include_table_env: bool = False,
+) -> None:
+    """Write the Chapter-5 fake-track estimate table."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}[htbp]" + "\n")
+            out.write(r"\centering" + "\n")
+            out.write(r"\caption{Fake-track background estimate.}" + "\n")
+            out.write(r"\label{tab:fake_track_estimate}" + "\n")
+
+        has_yield = any(estimate.fake_yield is not None for estimate in estimates)
+        if has_yield:
+            out.write(r"\begin{tabular}{llrrrrrr}" + "\n")
+            header = (
+                r"run period & control & $n_{\mathrm{layers}}$ & $N_Z$ & "
+                r"$N_{\mathrm{sideband}}$ & $\zeta$ & $P_{\mathrm{fake}}$ & "
+                r"$N_{\mathrm{fake}}$ \\"
+            )
+        else:
+            out.write(r"\begin{tabular}{llrrrrr}" + "\n")
+            header = (
+                r"run period & control & $n_{\mathrm{layers}}$ & $N_Z$ & "
+                r"$N_{\mathrm{sideband}}$ & $\zeta$ & $P_{\mathrm{fake}}$ \\"
+            )
+        out.write(r"\hline" + "\n")
+        out.write(header + "\n")
+        out.write(r"\hline" + "\n")
+
+        for estimate in estimates:
+            zeta = f"{estimate.transfer_factor.value:.4g} $\\pm$ {estimate.transfer_factor.error:.2g}"
+            p_fake = f"{estimate.fake_probability.value:.4g} $\\pm$ {estimate.fake_probability.error:.2g}"
+            row = (
+                f"{run_period} & {estimate.control_region} & {estimate.layer} & "
+                f"{format_count(estimate.control_events.value)} & "
+                f"{format_count(estimate.sideband_events.value)} & "
+                f"{zeta} & {p_fake}"
+            )
+            if has_yield:
+                if estimate.fake_yield is None:
+                    row += " & --"
+                else:
+                    row += f" & {format_count(estimate.fake_yield.value)} $\\pm$ {estimate.fake_yield.error:.2g}"
+            out.write(row + r" \\" + "\n")
+
+        out.write(r"\hline" + "\n")
+        out.write(r"\end{tabular}" + "\n")
+        out.write(
+            "% Fit: Gaussian with mean fixed to zero plus constant, "
+            f"{fit.fit_range[0]} <= |dxy| < {fit.fit_range[1]} cm. "
+            f"sigma={fit.sigma:.4g}, constant={fit.constant:.4g}.\n"
+        )
         if include_table_env:
             out.write(r"\end{table}" + "\n")
