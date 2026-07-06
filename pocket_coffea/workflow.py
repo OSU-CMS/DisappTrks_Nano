@@ -98,6 +98,23 @@ def _met_filters_mask(events):
     return mask
 
 
+def _met_for_transverse_mass(events):
+    """Return the event-level MET collection used for lepton MT cuts.
+
+    Some of the newer/custom NanoAOD files used in the 2024/2025 productions do
+    not store the classic ``MET`` collection, but do store ``PuppiMET``.  The
+    low-MT tag selection only needs an event-level ``pt`` and ``phi``, so use
+    ``MET`` when available and fall back to ``PuppiMET`` otherwise.
+    """
+    for name in ("MET", "PuppiMET"):
+        if name in events.fields:
+            return events[name]
+    raise AttributeError(
+        "No MET-like collection found for lepton transverse-mass cuts; "
+        "expected either MET or PuppiMET."
+    )
+
+
 def _jet_veto_map_parameter_year(year, era, processor_params):
     year = str(year)
     for container in (
@@ -319,15 +336,16 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["Muon"] = add_muon_derived_fields(self.events)
         self.events["IsoTrack"] = add_isotrack_derived_fields(self.events)
         self.events["AnalysisEvent"] = add_event_derived_fields(self.events)
+        tag_met = _met_for_transverse_mass(self.events)
         self.events["MuonTag"] = self.events.Muon[muon_tag_mask(self.events.Muon)]
         self.events["MuonLowMTTag"] = self.events.MuonTag[
-            low_mt_mask(self.events.MuonTag, self.events.MET)
+            low_mt_mask(self.events.MuonTag, tag_met)
         ]
         self.events["ElectronTag"] = self.events.Electron[
             electron_tag_mask(self.events.Electron, self.events)
         ]
         self.events["ElectronLowMTTag"] = self.events.ElectronTag[
-            low_mt_mask(self.events.ElectronTag, self.events.MET)
+            low_mt_mask(self.events.ElectronTag, tag_met)
         ]
         self.events["IsoTrackProbe"] = self.events.IsoTrack[
             base_probe_track_mask(self.events.IsoTrack)
