@@ -13,6 +13,9 @@ from pathlib import Path
 import cloudpickle
 from omegaconf import OmegaConf
 
+import disapptrks
+import disapptrks.selections as disapptrks_selections
+
 from pocket_coffea.parameters import defaults
 from pocket_coffea.parameters.cuts import passthrough
 from pocket_coffea.lib.hist_manager import Axis, HistConf
@@ -55,6 +58,11 @@ from workflow import DisappTrksProcessor
 
 cloudpickle.register_pickle_by_value(cuts)
 cloudpickle.register_pickle_by_value(workflow)
+# Dask workers can run in a slightly different import context inside the LPC
+# container. Ship local analysis modules by value instead of requiring workers
+# to import them from the same filesystem path.
+cloudpickle.register_pickle_by_value(disapptrks)
+cloudpickle.register_pickle_by_value(disapptrks_selections)
 
 localdir = os.path.dirname(os.path.abspath(__file__))
 
