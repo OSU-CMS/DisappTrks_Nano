@@ -76,24 +76,41 @@ executor from `pocket_coffea/executors_lpc.py`.  This follows the working
 `displaced_leptons` setup and avoids maintaining one custom Condor job wrapper
 per file slice.
 
-From the repository root on `cmslpc`, run the bootstrap once:
+From the repository root on `cmslpc`, run the bootstrap once.  This creates the
+`./shell` Apptainer/Singularity entrypoint and a `.env` Python environment with
+`lpcjobqueue`.
 
 ```bash
 ./setup_lpc.sh
 ./shell
 ```
 
-Inside `./shell`, install this analysis if needed and run from `pocket_coffea`.
-Use `python -m pocket_coffea.scripts.runner run` rather than relying on the
-`pocket-coffea` executable; on the LPC container the executable can point at a
-Python outside the container/venv and miss `lpcjobqueue`.
+Inside `./shell`, confirm that the active Python and worker-only packages are
+coming from the container venv:
+
+```bash
+which python
+python -c "import disapptrks; print(disapptrks.__file__)"
+python -c "import lpcjobqueue; print(lpcjobqueue.__file__)"
+```
+
+The expected Python is `/srv/.env/bin/python`.  If `disapptrks` is missing,
+install this package from the repository root inside `./shell`:
+
+```bash
+python -m pip install '.[analysis]'
+```
+
+Run from `pocket_coffea` with the Python module entrypoint.  This avoids the LPC
+container quirk where the `pocket-coffea` executable can point at a Python that
+does not see `lpcjobqueue`.
 
 ```bash
 cd pocket_coffea
-DISAPPTRKS_DATASET_JSON=datasets/eos_2023C_muon.json \
+DISAPPTRKS_DATASET_JSON=datasets/eos_2023_Muon.json \
 python -m pocket_coffea.scripts.runner run \
   --cfg config.py \
-  --outputdir analysis_output/2023C_muon_pveto \
+  --outputdir analysis_output/2023_muon_smoke \
   --executor dask@lpc \
   --executor-custom-setup executors_lpc.py \
   --custom-run-options run_options_lpc_dask.yaml \
@@ -101,13 +118,74 @@ python -m pocket_coffea.scripts.runner run \
   --limit-chunks 1
 ```
 
-Tune `scaleout`, `chunksize`, memory, and queue defaults in
-`pocket_coffea/run_options_lpc_dask.yaml`.  Condor logs are written under
+`run_options_lpc_dask.yaml` is intentionally a small smoke-test profile:
+`scaleout: 2`, `queue: microcentury`, `local-virtualenv: true`, and
+`worker-python: /srv/.env/bin/python`.  Condor logs are written under
 `$HOME/pocketcoffea_dask_logs/<output-tag>/condor_log` by default so they are
 visible to the LPC schedd outside the container.
 
 After the smoke test starts workers successfully, increase worker count from the
-command line, for example `--scaleout 60 --queue workday`.
+command line, for example:
+
+```bash
+DISAPPTRKS_DATASET_JSON=datasets/eos_2023_Muon.json \
+python -m pocket_coffea.scripts.runner run \
+  --cfg config.py \
+  --outputdir analysis_output/2023_muon_pveto \
+  --executor dask@lpc \
+  --executor-custom-setup executors_lpc.py \
+  --custom-run-options run_options_lpc_dask.yaml \
+  --scaleout 60 \
+  --queue workday
+```
+
+If workers fail with a missing local module, check the worker `.err` files in
+the log directory above.  The config registers the local analysis modules with
+`cloudpickle.register_pickle_by_value(...)` so Dask does not have to import
+`cuts.py`, `workflow.py`, or `disapptrks.selections` from exactly the same path
+on every worker.
+
+## Tau Pveto validation
+
+The tau-pveto modes are selected with `DISAPPTRKS_CATEGORY_MODE`:
+
+- `tau_mu_pveto` for Muon datasets
+- `tau_ele_pveto` for EGamma datasets
+
+For short local/iterative checks inside the same `./shell` environment, run from
+`pocket_coffea`:
+
+```bash
+scripts/run_tau_pveto_smokes.sh
+```
+
+This runs one file and one chunk for 2022/2023 Muon and EGamma datasets.  To run
+only a couple of cases:
+
+```bash
+CASES="2023C_mu 2023D_eg" LIMIT_FILES=1 LIMIT_CHUNKS=1 \
+  scripts/run_tau_pveto_smokes.sh
+```
+
+The smoke script sets `DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP=1` by default so it
+can test the tau-pveto workflow without local JME payloads.  For a
+production-like validation with real jet-veto-map payloads, override it:
+
+```bash
+DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP=0 scripts/run_tau_pveto_smokes.sh
+```
+
+After the smoke outputs exist under `analysis_output/tau_pveto_smoke`, write the
+cutflow and Pveto LaTeX tables:
+
+```bash
+scripts/make_tau_pveto_tables.sh 2022
+scripts/make_tau_pveto_tables.sh 2023
+```
+
+This writes `tau_mu_cutflow.tex`, `tau_mu_pveto.tex`, `tau_ele_cutflow.tex`,
+`tau_ele_pveto.tex`, and `tau_pveto_combined.tex` under
+`tables/tau_pveto/<year>/`.
 
 ## LPC manual Condor fallback
 
