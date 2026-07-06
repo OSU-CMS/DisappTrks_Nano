@@ -349,6 +349,7 @@ def base_probe_track_mask(
     *,
     pt_min: float = 30.0,
     layer: str = "combinedBins",
+    apply_jet_cut: bool = True,
     apply_calo_cut: bool = True,
     apply_outer_hits_cut: bool = False,
 ):
@@ -367,9 +368,10 @@ def base_probe_track_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dxy) < 0.02)
         & (abs(tracks.dz) < 0.5)
-        & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
         & layer_mask(tracks, layer)
     )
+    if apply_jet_cut:
+        mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     if apply_calo_cut:
         mask = mask & (tracks.caloEnergy < 10.0)
     if apply_outer_hits_cut:
@@ -499,6 +501,82 @@ def lepton_veto_probe_track_mask(
     return mask
 
 
+def tau_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
+    """Tau Pveto tag-and-probe denominator from AN Tables 22/23.
+
+    The tau denominator intentionally leaves the measured tau veto open.  It
+    also leaves the jet, calorimeter-energy, and missing-outer-hit requirements
+    open, because those are part of the tau Pveto numerator in Table 21.
+    """
+
+    return base_probe_track_mask(
+        tracks,
+        pt_min=30.0,
+        layer=layer,
+        apply_jet_cut=False,
+        apply_calo_cut=False,
+        apply_outer_hits_cut=False,
+    ) & (
+        ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+        & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+    )
+
+
+def tau_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+    """Cumulative tau Pveto probe-track masks in the AN Table 22/23 order."""
+
+    masks = {}
+    mask = tracks.pt > 30.0
+    masks["track_pt30"] = mask
+
+    mask = mask & (abs(tracks.eta) < 2.1)
+    masks["track_eta2p1"] = mask
+
+    mask = mask & ~tracks.inDTWheelGap
+    masks["track_noDTWheelGap"] = mask
+
+    mask = mask & ~tracks.inECALCrack
+    masks["track_noECALCrack"] = mask
+
+    mask = mask & ~tracks.inCSCTransition
+    masks["track_noCSCTransition"] = mask
+
+    mask = mask & ~tracks.inTOBCrack
+    masks["track_noTOBCrack"] = mask
+
+    mask = mask & tracks.isFiducialECALTrack
+    masks["track_fiducialECAL"] = mask
+
+    mask = mask & (tracks.hp_nValidPixelHits >= 4) & (tracks.hp_nValidHits >= 4)
+    masks["track_pixelHits4"] = mask
+
+    mask = mask & (tracks.missingInnerHits == 0)
+    masks["track_noMissingInner"] = mask
+
+    mask = mask & (tracks.missingMiddleHits == 0)
+    masks["track_noMissingMiddle"] = mask
+
+    mask = mask & (tracks.pfRelIso03_chg < 0.05)
+    masks["track_chargedIso0p05"] = mask
+
+    mask = mask & (abs(tracks.dxy) < 0.02)
+    masks["track_dxy0p02"] = mask
+
+    mask = mask & (abs(tracks.dz) < 0.5)
+    masks["track_dz0p5"] = mask
+
+    mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+    masks["track_electronVeto"] = mask
+
+    mask = mask & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+    masks["track_muonVeto"] = mask
+
+    mask = mask & layer_mask(tracks, layer)
+    masks["track_layers4plus"] = mask
+
+    return masks
+
+
 def invariant_mass(
     first, second, *, first_mass: float = 0.105658, second_mass: float = 0.105658
 ):
@@ -573,6 +651,8 @@ def build_lepton_veto_tag_probe_pairs(
             "probe_dRMinElectron": probe.dRMinElectron,
             "probe_dRMinMuon": probe.dRMinMuon,
             "probe_dRMinTauHad": probe.dRMinTauHad,
+            "probe_dRMinJet": probe.dRMinJet,
+            "probe_caloEnergy": probe.caloEnergy,
             "probe_missingOuterHits": probe.missingOuterHits,
             "probe_nLayers": (
                 probe.hp_trackerLayersWithMeasurement
@@ -592,6 +672,8 @@ def build_lepton_veto_tag_probe_pairs(
             ),
             "probe_passTauPVetoNoFiducial": (
                 ((probe.dRMinTauHad < 0.0) | (probe.dRMinTauHad > 0.15))
+                & ((probe.dRMinJet < 0.0) | (probe.dRMinJet > 0.5))
+                & (probe.caloEnergy < 10.0)
                 & (probe.missingOuterHits >= 3)
             ),
         }

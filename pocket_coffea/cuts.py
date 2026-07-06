@@ -139,6 +139,37 @@ ELECTRON_PVETO_DIAGNOSTIC_FIELDS = [
     "pair_pass_electron_pveto",
 ]
 
+TAU_PVETO_DIAGNOSTIC_FIELDS = [
+    "event_trigger",
+    "event_met_filters",
+    "event_jet_veto_map",
+    "tag_pt",
+    "tag_eta2p1",
+    "tag_tight_id",
+    "tag_low_mt",
+    "track_pt30",
+    "track_eta2p1",
+    "track_noDTWheelGap",
+    "track_noECALCrack",
+    "track_noCSCTransition",
+    "track_noTOBCrack",
+    "track_fiducialECAL",
+    "track_pixelHits4",
+    "track_noMissingInner",
+    "track_noMissingMiddle",
+    "track_chargedIso0p05",
+    "track_dxy0p02",
+    "track_dz0p5",
+    "track_electronVeto",
+    "track_muonVeto",
+    "pair_masswindow",
+    "pair_os",
+    "layer_combinedBins",
+    "pair_pass_tau_pveto",
+    "pair_ss_masswindow",
+    "pair_ss_pass_tau_pveto",
+]
+
 
 def _all_true(events):
     return np.ones(len(events), dtype=bool)
@@ -474,6 +505,10 @@ def _electron_pveto_diagnostic(events, params, **kwargs):
     return events.ElectronPVetoDiag[params["field"]]
 
 
+def _tau_pveto_diagnostic(events, params, **kwargs):
+    return events[params["collection"]][params["field"]]
+
+
 def _search_kinematics(events, params, **kwargs):
     event = events.AnalysisEvent
     return (
@@ -798,4 +833,17 @@ electron_pveto_diagnostic_cuts = {
         function=_electron_pveto_diagnostic,
     )
     for field in ELECTRON_PVETO_DIAGNOSTIC_FIELDS
+}
+
+tau_pveto_diagnostic_cuts = {
+    f"{mode}_{field}": Cut(
+        name=f"{mode}_pveto_diag_{field}",
+        params={"collection": collection, "field": field},
+        function=_tau_pveto_diagnostic,
+    )
+    for mode, collection in (
+        ("tau_mu", "TauMuPVetoDiag"),
+        ("tau_ele", "TauElePVetoDiag"),
+    )
+    for field in TAU_PVETO_DIAGNOSTIC_FIELDS
 }

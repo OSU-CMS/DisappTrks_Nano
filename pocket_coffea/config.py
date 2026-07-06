@@ -31,6 +31,7 @@ from cuts import (
     muon_pveto_layer_cuts,
     search_diagnostic_cuts,
     search_kinematics,
+    tau_pveto_diagnostic_cuts,
 )
 from cuts import (
     has_muon_veto_os_mass10_pair,
@@ -137,6 +138,10 @@ electron_pveto_diagnostic_categories = {
     f"electron_pveto_diag_{name}": [cut]
     for name, cut in electron_pveto_diagnostic_cuts.items()
 }
+tau_pveto_diagnostic_categories = {
+    f"tau_pveto_diag_{name}": [cut]
+    for name, cut in tau_pveto_diagnostic_cuts.items()
+}
 
 common_categories = {
     "inclusive": [passthrough],
@@ -186,11 +191,13 @@ elif category_mode == "tau_mu_pveto":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_mu_"),
+        **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_mu_"),
     }
 elif category_mode == "tau_ele_pveto":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_ele_"),
+        **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_ele_"),
     }
 elif category_mode == "fake_tracks":
     selected_categories = {
@@ -205,6 +212,7 @@ elif category_mode == "all":
         **fake_track_categories,
         **muon_table16_categories,
         **electron_pveto_diagnostic_categories,
+        **tau_pveto_diagnostic_categories,
         **muon_pveto_layer_categories,
     }
 else:

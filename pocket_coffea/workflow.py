@@ -49,6 +49,8 @@ from disapptrks.selections import (
     ss_mass_window_pair_mask,
     ss_z_window_muon_probe_pair_mask,
     tau_pveto_pair_pass_mask,
+    tau_veto_probe_track_cutflow_masks,
+    tau_veto_probe_track_mask,
     z_window_muon_probe_pair_mask,
 )
 
@@ -465,14 +467,20 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["AnalysisEvent"] = add_event_derived_fields(self.events)
         tag_met = _met_for_transverse_mass(self.events)
         self.events["MuonTag"] = self.events.Muon[muon_tag_mask(self.events.Muon)]
-        self.events["MuonLowMTTag"] = self.events.MuonTag[
-            low_mt_mask(self.events.MuonTag, tag_met)
+        tau_mu_tag_mask = (
+            (self.events.Muon.pt > 26.0)
+            & (abs(self.events.Muon.eta) < 2.1)
+            & self.events.Muon.tightId
+        )
+        self.events["MuonLowMTTag"] = self.events.Muon[tau_mu_tag_mask][
+            low_mt_mask(self.events.Muon[tau_mu_tag_mask], tag_met)
         ]
         self.events["ElectronTag"] = self.events.Electron[
             electron_tag_mask(self.events.Electron, self.events)
         ]
-        self.events["ElectronLowMTTag"] = self.events.ElectronTag[
-            low_mt_mask(self.events.ElectronTag, tag_met)
+        tau_ele_tag_mask = _z_electron_tag_mask(self.events.Electron, pt_min=32.0)
+        self.events["ElectronLowMTTag"] = self.events.Electron[tau_ele_tag_mask][
+            low_mt_mask(self.events.Electron[tau_ele_tag_mask], tag_met)
         ]
         self.events["IsoTrackProbe"] = self.events.IsoTrack[
             base_probe_track_mask(self.events.IsoTrack)
@@ -484,7 +492,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             lepton_veto_probe_track_mask(self.events.IsoTrack, measured_veto="electron")
         ]
         self.events["TauVetoProbeTrack"] = self.events.IsoTrack[
-            lepton_veto_probe_track_mask(self.events.IsoTrack, measured_veto="tau")
+            tau_veto_probe_track_mask(self.events.IsoTrack)
         ]
         muon_veto_pairs = build_muon_veto_tag_probe_pairs(
             self.events.MuonTag, self.events.MuonVetoProbeTrack
@@ -1037,6 +1045,124 @@ class DisappTrksProcessor(BaseProcessorABC):
             }
         )
         self.events["ElectronPVetoDiag"] = ak.zip(electron_pveto_diagnostics)
+
+        tau_track_masks = tau_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+
+        def _store_tau_pveto_diagnostics(
+            *,
+            collection,
+            tag_source,
+            event_trigger,
+            event_met_filters,
+            event_jet_veto_map,
+            tag_masks,
+            low_mt_tags,
+            tag_mass,
+            probe_mass,
+        ):
+            diagnostics = {
+                "event_trigger": event_trigger,
+                "event_met_filters": event_met_filters,
+                "event_jet_veto_map": event_jet_veto_map,
+            }
+
+            for name, mask in tag_masks.items():
+                diagnostics[name] = event_jet_veto_map & (
+                    ak.num(tag_source[mask]) >= 1
+                )
+
+            diagnostics["tag_low_mt"] = event_jet_veto_map & (ak.num(low_mt_tags) >= 1)
+
+            for name, mask in tau_track_masks.items():
+                diagnostics[name] = diagnostics["tag_low_mt"] & (
+                    ak.num(self.events.IsoTrack[mask]) >= 1
+                )
+
+            mass_probe_tracks = self.events.IsoTrack[tau_track_masks["track_muonVeto"]]
+            pairs = build_lepton_veto_tag_probe_pairs(
+                low_mt_tags,
+                mass_probe_tracks,
+                tag_mass=tag_mass,
+                probe_mass=probe_mass,
+            )
+            mass_window = mass_window_pair_mask(
+                pairs, 91.1876 - 50.0, 91.1876 - 15.0
+            )
+            os_mass_window = os_mass_window_pair_mask(
+                pairs, 91.1876 - 50.0, 91.1876 - 15.0
+            )
+            ss_mass_window = ss_mass_window_pair_mask(
+                pairs, 91.1876 - 50.0, 91.1876 - 15.0
+            )
+            layer_mask = generic_probe_pair_layer_mask(pairs, "combinedBins")
+            diagnostics.update(
+                {
+                    "pair_masswindow": ak.num(pairs[mass_window]) >= 1,
+                    "pair_os": ak.num(pairs[os_mass_window]) >= 1,
+                    "layer_combinedBins": ak.num(pairs[os_mass_window & layer_mask])
+                    >= 1,
+                    "pair_pass_tau_pveto": ak.num(
+                        pairs[
+                            os_mass_window
+                            & layer_mask
+                            & tau_pveto_pair_pass_mask(pairs)
+                        ]
+                    )
+                    >= 1,
+                    "pair_ss_masswindow": ak.num(pairs[ss_mass_window]) >= 1,
+                    "pair_ss_pass_tau_pveto": ak.num(
+                        pairs[
+                            ss_mass_window
+                            & layer_mask
+                            & tau_pveto_pair_pass_mask(pairs)
+                        ]
+                    )
+                    >= 1,
+                }
+            )
+            self.events[collection] = ak.zip(diagnostics)
+
+        tau_mu_tag_masks = {
+            "tag_pt": self.events.Muon.pt > 26.0,
+        }
+        tau_mu_tag_masks["tag_eta2p1"] = tau_mu_tag_masks["tag_pt"] & (
+            abs(self.events.Muon.eta) < 2.1
+        )
+        tau_mu_tag_masks["tag_tight_id"] = (
+            tau_mu_tag_masks["tag_eta2p1"] & self.events.Muon.tightId
+        )
+        _store_tau_pveto_diagnostics(
+            collection="TauMuPVetoDiag",
+            tag_source=self.events.Muon,
+            event_trigger=event_singlemu_trigger,
+            event_met_filters=event_met_filters,
+            event_jet_veto_map=event_jet_veto_map,
+            tag_masks=tau_mu_tag_masks,
+            low_mt_tags=self.events.MuonLowMTTag,
+            tag_mass=MUON_MASS,
+            probe_mass=MUON_MASS,
+        )
+
+        tau_ele_tag_masks = {
+            "tag_pt": self.events.Electron.pt > 32.0,
+        }
+        tau_ele_tag_masks["tag_eta2p1"] = tau_ele_tag_masks["tag_pt"] & (
+            abs(self.events.Electron.eta) < 2.1
+        )
+        tau_ele_tag_masks["tag_tight_id"] = (
+            tau_ele_tag_masks["tag_eta2p1"] & (self.events.Electron.cutBased >= 4)
+        )
+        _store_tau_pveto_diagnostics(
+            collection="TauElePVetoDiag",
+            tag_source=self.events.Electron,
+            event_trigger=event_singleele_trigger,
+            event_met_filters=event_ele_met_filters,
+            event_jet_veto_map=event_ele_jet_veto_map,
+            tag_masks=tau_ele_tag_masks,
+            low_mt_tags=self.events.ElectronLowMTTag,
+            tag_mass=ELECTRON_MASS,
+            probe_mass=ELECTRON_MASS,
+        )
 
         track_diagnostics = {}
         diagnostics = {}
