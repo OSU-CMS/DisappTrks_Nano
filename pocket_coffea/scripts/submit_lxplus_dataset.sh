@@ -21,6 +21,8 @@ Environment overrides:
   JOB_FLAVOUR      default: workday
   WANT_OS          default: el9
   OUTPUT_DEST      optional; copy .coffea files there as well as Condor transfer
+  FILE_REWRITE_FROM default: root://cmseosmgm01.fnal.gov:1094//
+  FILE_REWRITE_TO   default: root://cmseos.fnal.gov//
   DRY_RUN          default: 0; print resolved settings without condor_submit
   X509_USER_PROXY  optional; transferred if it points to an existing file
 USAGE
@@ -42,6 +44,8 @@ CATEGORY_MODE="${CATEGORY_MODE:-muon_pveto}"
 JOB_FLAVOUR="${JOB_FLAVOUR:-workday}"
 WANT_OS="${WANT_OS:-el9}"
 OUTPUT_DEST="${OUTPUT_DEST:-}"
+FILE_REWRITE_FROM="${FILE_REWRITE_FROM:-root://cmseosmgm01.fnal.gov:1094//}"
+FILE_REWRITE_TO="${FILE_REWRITE_TO:-root://cmseos.fnal.gov//}"
 DRY_RUN="${DRY_RUN:-0}"
 X509_PROXY="${X509_USER_PROXY:-}"
 
@@ -67,6 +71,8 @@ submit_with_retries() {
             -append "job_flavour=${JOB_FLAVOUR}" \
             -append "want_os=${WANT_OS}" \
             -append "output_dest=${OUTPUT_DEST:-__none__}" \
+            -append "file_rewrite_from=${FILE_REWRITE_FROM:-__none__}" \
+            -append "file_rewrite_to=${FILE_REWRITE_TO:-__none__}" \
             -append "n_jobs=${NJOBS}" \
             scripts/submit_lxplus_pocket_coffea.jdl
         then
@@ -178,6 +184,11 @@ echo "  category mode: ${CATEGORY_MODE}"
 echo "  job flavour:   ${JOB_FLAVOUR}"
 echo "  want OS:       ${WANT_OS}"
 echo "  output dest:   ${OUTPUT_DEST:-Condor transfer only}"
+if [ -n "${FILE_REWRITE_FROM}" ]; then
+    echo "  file rewrite:  ${FILE_REWRITE_FROM} -> ${FILE_REWRITE_TO}"
+else
+    echo "  file rewrite:  none"
+fi
 echo "  dry run:       ${DRY_RUN}"
 if [ "${X509_BASENAME}" != "__none__" ]; then
     echo "  proxy:         ${X509_PROXY_ABS}"

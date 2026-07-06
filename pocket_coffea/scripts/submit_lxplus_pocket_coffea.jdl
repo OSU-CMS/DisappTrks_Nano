@@ -1,6 +1,6 @@
 universe = vanilla
 executable = scripts/run_lxplus_pocket_coffea_job.sh
-arguments = $(ProcId) $(dataset_basename) $(files_per_job) $(chunksize) $(sample) $(year) $(tag) $(x509_basename) $(job_timeout) $(category_mode) $(output_dest)
+arguments = $(ProcId) $(dataset_basename) $(files_per_job) $(chunksize) $(sample) $(year) $(tag) $(x509_basename) $(job_timeout) $(category_mode) $(output_dest) $(file_rewrite_from) $(file_rewrite_to)
 +JobBatchName = "$(tag)"
 +JobFlavour = "$(job_flavour)"
 MY.WantOS = "$(want_os)"

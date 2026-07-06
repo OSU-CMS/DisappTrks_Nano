@@ -15,6 +15,14 @@ OUTPUT_DEST="${11:-}"
 if [ "${OUTPUT_DEST}" = "__none__" ]; then
     OUTPUT_DEST=""
 fi
+FILE_REWRITE_FROM="${12:-}"
+FILE_REWRITE_TO="${13:-}"
+if [ "${FILE_REWRITE_FROM}" = "__none__" ]; then
+    FILE_REWRITE_FROM=""
+fi
+if [ "${FILE_REWRITE_TO}" = "__none__" ]; then
+    FILE_REWRITE_TO=""
+fi
 
 export XRD_RUNFORKHANDLER=1
 export MALLOC_TRIM_THRESHOLD_=0
@@ -49,6 +57,11 @@ echo "Job timeout: ${JOB_TIMEOUT}"
 echo "Sample/year/tag: ${SAMPLE} ${YEAR} ${TAG}"
 echo "Category mode: ${CATEGORY_MODE}"
 echo "Output destination: ${OUTPUT_DEST:-Condor transfer only}"
+if [ -n "${FILE_REWRITE_FROM}" ]; then
+    echo "File rewrite: ${FILE_REWRITE_FROM} -> ${FILE_REWRITE_TO}"
+else
+    echo "File rewrite: none"
+fi
 echo "X509_USER_PROXY: ${X509_USER_PROXY:-unset}"
 python3 --version
 echo "Initial sandbox contents:"
@@ -68,12 +81,20 @@ for name in ("awkward", "uproot", "coffea", "pocket_coffea", "disapptrks"):
 PY
 
 JOB_DATASET_JSON="job_dataset_${JOBID}.json"
-python3 make_lpc_job_dataset.py \
+make_dataset_cmd=(
+    python3 make_lpc_job_dataset.py
     --input "${DATASET_JSON}" \
     --output "${JOB_DATASET_JSON}" \
     --job-id "${JOBID}" \
     --files-per-job "${FILES_PER_JOB}" \
     --fallback-events-per-file "${CHUNKSIZE}"
+)
+if [ -n "${FILE_REWRITE_FROM}" ]; then
+    make_dataset_cmd+=(--replace-prefix "${FILE_REWRITE_FROM}=${FILE_REWRITE_TO}")
+fi
+"${make_dataset_cmd[@]}"
+echo "Per-job dataset JSON:"
+cat "${JOB_DATASET_JSON}"
 
 export DISAPPTRKS_DATASET_JSON="$PWD/${JOB_DATASET_JSON}"
 export DISAPPTRKS_DATASET_SAMPLE="${SAMPLE}"

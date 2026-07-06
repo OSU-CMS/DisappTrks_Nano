@@ -88,6 +88,35 @@ def localize_files(dataset: dict, local_dir: Path) -> dict:
     return output
 
 
+def rewrite_file_prefixes(dataset: dict, replacements: list[tuple[str, str]]) -> dict:
+    """Rewrite file path prefixes in a sliced dataset."""
+
+    output = copy.deepcopy(dataset)
+    for definition in output.values():
+        rewritten_files = []
+        for path in definition.get("files", []):
+            rewritten = path
+            for old, new in replacements:
+                if rewritten.startswith(old):
+                    rewritten = new + rewritten[len(old) :]
+                    break
+            rewritten_files.append(rewritten)
+        definition["files"] = rewritten_files
+    return output
+
+
+def parse_prefix_replacement(value: str) -> tuple[str, str]:
+    if "=" not in value:
+        raise argparse.ArgumentTypeError(
+            "prefix replacements must be OLD=NEW, e.g. "
+            "root://old//store/=root://new//store/"
+        )
+    old, new = value.split("=", 1)
+    if not old:
+        raise argparse.ArgumentTypeError("OLD prefix must not be empty")
+    return old, new
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, type=Path)
@@ -105,6 +134,14 @@ def main() -> int:
         type=Path,
         default=Path("."),
         help="Directory containing transferred ROOT files. Default: current directory.",
+    )
+    parser.add_argument(
+        "--replace-prefix",
+        action="append",
+        type=parse_prefix_replacement,
+        default=[],
+        metavar="OLD=NEW",
+        help="Rewrite selected dataset file path prefixes. May be supplied more than once.",
     )
     args = parser.parse_args()
 
@@ -129,6 +166,8 @@ def main() -> int:
 
     if args.localize_transferred_files:
         selected = localize_files(selected, args.local_dir)
+    if args.replace_prefix:
+        selected = rewrite_file_prefixes(selected, args.replace_prefix)
 
     args.output.write_text(json.dumps(selected, indent=2) + "\n")
     print(
