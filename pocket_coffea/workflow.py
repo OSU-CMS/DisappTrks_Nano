@@ -166,6 +166,21 @@ def _configured_jet_veto_map_path(processor_params, mapped_year):
     return Path(str(payload))
 
 
+def _cvmfs_jet_veto_map_path(mapped_year):
+    filename = JET_VETO_MAP_FILES.get(str(mapped_year))
+    if filename is None:
+        return None
+
+    period = filename.removesuffix("_jetvetomaps.json.gz")
+    return (
+        Path("/cvmfs/cms-griddata.cern.ch/cat/metadata")
+        / "JME"
+        / period
+        / "latest"
+        / "jetvetomaps.json.gz"
+    )
+
+
 def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
     import correctionlib
 
@@ -262,6 +277,8 @@ def _jet_veto_map_mask(
     payload = _local_jet_veto_map_path(veto_map_year)
     if payload is None:
         payload = _configured_jet_veto_map_path(processor_params, veto_map_year)
+    if payload is None:
+        payload = _cvmfs_jet_veto_map_path(veto_map_year)
     if payload is not None:
         return _evaluate_jet_veto_map(events, processor_params, veto_map_year, payload)
 
