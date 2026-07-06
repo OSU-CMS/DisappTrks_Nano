@@ -69,11 +69,50 @@ cd pocket_coffea
 pocket-coffea run --cfg config.py --test -lf 1 -lc 1 -c 50000 -e iterative -ps -o output_test_nano99
 ```
 
-## LPC Condor submission
+## LPC Dask submission
 
-For larger EOS samples on the LPC, use the v2-style wrapper in
-`pocket_coffea/scripts`.  The Condor worker runs in a sandbox, so it does not
-depend on `/uscms` or `/uscms_data` paths being mounted inside the job.
+The preferred LPC path is PocketCoffea's Dask executor with the local LPC
+executor from `pocket_coffea/executors_lpc.py`.  This follows the working
+`displaced_leptons` setup and avoids maintaining one custom Condor job wrapper
+per file slice.
+
+From the repository root on `cmslpc`, run the bootstrap once:
+
+```bash
+./setup_lpc.sh
+./shell
+```
+
+Inside `./shell`, install this analysis if needed and run from `pocket_coffea`.
+Use `python -m pocket_coffea.scripts.runner run` rather than relying on the
+`pocket-coffea` executable; on the LPC container the executable can point at a
+Python outside the container/venv and miss `lpcjobqueue`.
+
+```bash
+cd pocket_coffea
+DISAPPTRKS_DATASET_JSON=datasets/eos_2023C_muon.json \
+DISAPPTRKS_DATASET_SAMPLE=DATA_Muon \
+DISAPPTRKS_DATASET_YEAR=2023 \
+python -m pocket_coffea.scripts.runner run \
+  --cfg config.py \
+  --outputdir analysis_output/2023C_muon_pveto \
+  --executor dask@lpc \
+  --executor-custom-setup executors_lpc.py \
+  --custom-run-options run_options_lpc_dask.yaml \
+  --scaleout 60
+```
+
+Tune `scaleout`, `chunksize`, memory, and queue defaults in
+`pocket_coffea/run_options_lpc_dask.yaml`.  Condor logs are written under
+`$HOME/pocketcoffea_dask_logs/<output-tag>/condor_log` by default so they are
+visible to the LPC schedd outside the container.
+
+## LPC manual Condor fallback
+
+If Dask/lpcjobqueue is unavailable, the v2-style wrapper in
+`pocket_coffea/scripts` remains as a fallback.  The Condor worker runs in a
+sandbox, so it does not depend on `/uscms` or `/uscms_data` paths being mounted
+inside the job.
 
 Build a relocatable Python target directory once from the repository root:
 

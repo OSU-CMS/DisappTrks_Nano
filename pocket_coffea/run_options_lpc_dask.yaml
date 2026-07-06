@@ -1,0 +1,33 @@
+# LPC Dask options for the custom executor in executors_lpc.py.
+#
+# Use with:
+#   python -m pocket_coffea.scripts.runner run \
+#     --cfg config.py \
+#     --outputdir analysis_output/TAG \
+#     --executor dask@lpc \
+#     --executor-custom-setup executors_lpc.py \
+#     --custom-run-options run_options_lpc_dask.yaml
+
+scaleout: 60
+chunksize: 50000
+cores-per-worker: 1
+mem-per-worker: "4GB"
+disk-per-worker: "2GB"
+queue: "workday"
+adaptive: false
+retries: 3
+tree-reduction: 20
+skip-bad-files: true
+
+# Let lpcjobqueue choose an LPC-safe scheduler port unless you need to pin one.
+dask-scheduler-port: null
+dask-scheduler-host: null
+dask-worker-start-timeout: 600
+
+# The lpcjobqueue bootstrap creates/activates the .env inside ./shell. Workers
+# should use that same virtualenv so lpcjobqueue, PocketCoffea, and this package
+# are all visible.
+local-virtualenv: true
+conda-env: false
+worker-python: "python"
+custom-setup-commands: null
