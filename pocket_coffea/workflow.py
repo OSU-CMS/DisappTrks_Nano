@@ -181,6 +181,27 @@ def _cvmfs_jet_veto_map_path(mapped_year):
     )
 
 
+def _jet_id_compute_year(processor_params, mapped_year):
+    year = str(mapped_year)
+    try:
+        if year in processor_params.jet_scale_factors.jet_id:
+            return year
+    except Exception:
+        pass
+
+    # PocketCoffea may not yet carry an explicit 2025 jet-ID correction key,
+    # while Run-3 2025 custom NanoAOD is still NanoAODv15.  Use the 2024 v15
+    # jet-ID correction as a compatibility fallback for the jet-ID recompute
+    # only; the jet-veto-map payload itself is still selected with mapped_year.
+    if year == "2025":
+        try:
+            if "2024" in processor_params.jet_scale_factors.jet_id:
+                return "2024"
+        except Exception:
+            pass
+    return year
+
+
 def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
     import correctionlib
 
@@ -193,7 +214,12 @@ def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
         # added data-taking years such as 2025.
         from pocket_coffea.lib.jets import compute_jetId
 
-        jet_id = compute_jetId(events, "Jet", processor_params, mapped_year)
+        jet_id = compute_jetId(
+            events,
+            "Jet",
+            processor_params,
+            _jet_id_compute_year(processor_params, mapped_year),
+        )
     jets = ak.with_field(jets, jet_id, "jetId_corrected")
     mask_for_veto_map = (
         (jets["jetId_corrected"] >= 6)
