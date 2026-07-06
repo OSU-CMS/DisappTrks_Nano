@@ -43,6 +43,7 @@ from disapptrks.selections import (
     search_track_cutflow_masks,
     search_track_mask,
     single_electron_trigger_mask,
+    run3_tight_lepton_veto_jet_mask,
     ss_mass10_muon_probe_pair_mask,
     ss_muon_probe_pair_mask,
     ss_mass_window_pair_mask,
@@ -257,27 +258,6 @@ def _cvmfs_jet_veto_map_path(mapped_year):
     )
 
 
-def _jet_id_compute_year(processor_params, mapped_year):
-    year = str(mapped_year)
-    try:
-        if year in processor_params.jet_scale_factors.jet_id:
-            return year
-    except Exception:
-        pass
-
-    # PocketCoffea may not yet carry an explicit 2025 jet-ID correction key,
-    # while Run-3 2025 custom NanoAOD is still NanoAODv15.  Use the 2024 v15
-    # jet-ID correction as a compatibility fallback for the jet-ID recompute
-    # only; the jet-veto-map payload itself is still selected with mapped_year.
-    if year == "2025":
-        try:
-            if "2024" in processor_params.jet_scale_factors.jet_id:
-                return "2024"
-        except Exception:
-            pass
-    return year
-
-
 def _jet_veto_map_correction_name(cset, processor_params, mapped_year):
     try:
         return processor_params.jet_scale_factors.vetomaps[str(mapped_year)]["name"]
@@ -301,22 +281,16 @@ def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
 
     jets = events["Jet"]
     if "jetId" in jets.fields:
-        jet_id = jets.jetId
+        jet_id_mask = (jets.jetId & 6) == 6
     else:
-        # Only recompute if the stored NanoAOD jetId branch is absent.  This
-        # avoids requiring a PocketCoffea jet-ID correction entry for newly
-        # added data-taking years such as 2025.
-        from pocket_coffea.lib.jets import compute_jetId
-
-        jet_id = compute_jetId(
-            events,
-            "Jet",
-            processor_params,
-            _jet_id_compute_year(processor_params, mapped_year),
-        )
-    jets = ak.with_field(jets, jet_id, "jetId_corrected")
+        # Only recompute if the stored NanoAOD jetId branch is absent.  Use the
+        # local Run-3 TightLepVeto reconstruction rather than PocketCoffea's
+        # correctionlib-backed compute_jetId helper because our Awkward-1 event
+        # loop cannot call correctionlib's awkward.transform path.
+        jet_id_mask = run3_tight_lepton_veto_jet_mask(jets)
+    jets = ak.with_field(jets, jet_id_mask, "jetId_corrected")
     mask_for_veto_map = (
-        (jets["jetId_corrected"] >= 6)
+        jets["jetId_corrected"]
         & (abs(jets.eta) < 5.19)
         & (jets.pt > 15.0)
         & ((jets["neEmEF"] + jets["chEmEF"]) < 0.9)
