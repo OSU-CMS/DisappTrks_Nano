@@ -19,8 +19,10 @@ from .fake_tracks import (
     estimate_fake_track_background,
     estimate_fake_track_background_an,
     fit_dxy_transfer_factor,
+    plot_dxy_transfer_factor,
     summed_hist_counts_edges,
     write_an_fake_track_latex,
+    write_fake_track_table34_latex,
     write_fake_track_latex,
 )
 from .schema import audit_root_file
@@ -285,6 +287,16 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
             control_region=control_cfg["control_region"],
             histogram=control_cfg["histogram"],
         )
+        if args.fit_plot:
+            plot_dxy_transfer_factor(
+                counts,
+                edges,
+                fit,
+                args.fit_plot,
+                title=f"{args.run_period} {control_cfg['control_region']} n_layers = 4",
+            )
+            print(f"Wrote {args.fit_plot}")
+
         estimates = [
             estimate_fake_track_background_an(
                 source,
@@ -356,7 +368,7 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
                 f"P_raw={estimate.raw_probability.value:.6g} ± {estimate.raw_probability.error:.6g}, "
                 f"P_fake={estimate.fake_probability.value:.6g} ± {estimate.fake_probability.error:.6g}, "
                 f"{fake_yield}"
-            )
+        )
         return 0
 
     if args.counts_json:
@@ -407,6 +419,17 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
             f"N_ctrl={estimate.control.value:.6g} ± {estimate.control.error:.6g}, "
             f"N_fake={estimate.estimate.value:.6g} ± {estimate.estimate.error:.6g}"
         )
+    return 0
+
+
+def _make_fake_track_table34_command(args: argparse.Namespace) -> int:
+    write_fake_track_table34_latex(
+        args.jsons,
+        args.output,
+        run_period=args.run_period,
+        include_table_env=args.table_env,
+    )
+    print(f"Wrote {args.output}")
     return 0
 
 
@@ -995,11 +1018,35 @@ def main():
         help="Write an AN-style LaTeX summary table.",
     )
     fake_tracks.add_argument(
+        "--fit-plot",
+        type=Path,
+        help="Write a Figure-26-style |dxy| transfer-factor fit plot.",
+    )
+    fake_tracks.add_argument(
         "--table-env",
         action="store_true",
         help="Wrap the LaTeX tabular in a table environment.",
     )
     fake_tracks.set_defaults(func=_estimate_fake_tracks_command)
+
+    fake_track_table34 = subparsers.add_parser(
+        "make-fake-track-table34",
+        help="Combine Z->mumu and Z->ee fake-track JSON summaries into an AN Table-34-style table.",
+    )
+    fake_track_table34.add_argument(
+        "jsons",
+        nargs="+",
+        type=Path,
+        help="JSON outputs from estimate-fake-tracks, usually one zmumu and one zee file.",
+    )
+    fake_track_table34.add_argument("--run-period", required=True)
+    fake_track_table34.add_argument("-o", "--output", type=Path, required=True)
+    fake_track_table34.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap the LaTeX tabular in a table environment.",
+    )
+    fake_track_table34.set_defaults(func=_make_fake_track_table34_command)
 
     dataset_json = subparsers.add_parser(
         "make-dataset-json",

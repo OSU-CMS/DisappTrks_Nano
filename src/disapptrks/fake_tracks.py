@@ -12,6 +12,7 @@ ratio of the basic-search yield to the inclusive Z->ll yield.
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from math import erf, sqrt
 from pathlib import Path
@@ -370,6 +371,92 @@ def fit_dxy_transfer_factor(
     )
 
 
+def _dxy_fit_model(xvals, amplitude: float, sigma: float, constant: float):
+    import numpy as np
+
+    return amplitude * np.exp(-0.5 * (xvals / sigma) ** 2) + constant
+
+
+def plot_dxy_transfer_factor(
+    counts,
+    edges,
+    fit: DxyTransferFactorFit,
+    path: Path,
+    *,
+    title: str | None = None,
+) -> None:
+    """Write a Figure-26-style |dxy| histogram and transfer-factor fit plot."""
+
+    import numpy as np
+
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        raise RuntimeError("matplotlib is required to write --fit-plot outputs") from exc
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    xfit = np.linspace(0.0, max(float(edges[-1]), fit.denominator_range[1]), 500)
+    yfit = _dxy_fit_model(xfit, fit.amplitude, fit.sigma, fit.constant)
+
+    fig, ax = plt.subplots(figsize=(6.4, 4.8))
+    ax.stairs(counts, edges, label="data", color="black", linewidth=1.5)
+    ax.errorbar(
+        centers,
+        counts,
+        yerr=np.sqrt(np.maximum(counts, 1.0)),
+        fmt="o",
+        color="black",
+        markersize=3,
+        linewidth=1,
+    )
+    ax.plot(
+        xfit,
+        yfit,
+        color="tab:red",
+        linewidth=2,
+        label="Gaussian + constant fit",
+    )
+
+    ax.axvspan(
+        fit.numerator_range[0],
+        fit.numerator_range[1],
+        color="tab:green",
+        alpha=0.18,
+        label="signal window",
+    )
+    ax.axvspan(
+        fit.denominator_range[0],
+        fit.denominator_range[1],
+        color="tab:blue",
+        alpha=0.10,
+        label="sideband",
+    )
+    ax.axvline(fit.fit_range[0], color="tab:red", linestyle="--", linewidth=1)
+    ax.axvline(fit.fit_range[1], color="tab:red", linestyle="--", linewidth=1)
+
+    ax.set_xlabel(r"$|d_{xy}|$ [cm]")
+    ax.set_ylabel("Tracks / bin")
+    ax.set_xlim(0.0, max(0.5, float(edges[-1])))
+    ax.set_ylim(bottom=0.0)
+    ax.set_title(title or f"{fit.control_region} transfer-factor fit")
+    ax.text(
+        0.98,
+        0.95,
+        rf"$\zeta = {fit.transfer_factor.value:.3g} \pm {fit.transfer_factor.error:.2g}$"
+        "\n"
+        rf"$\sigma = {fit.sigma:.3g}$ cm",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8, "edgecolor": "0.8"},
+    )
+    ax.legend(loc="upper right", bbox_to_anchor=(1.0, 0.78), fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
 def estimate_fake_track_background_an(
     cutflow: Mapping[str, Any],
     *,
@@ -625,5 +712,113 @@ def write_an_fake_track_latex(
             f"{fit.fit_range[0]} <= |dxy| < {fit.fit_range[1]} cm. "
             f"sigma={fit.sigma:.4g}, constant={fit.constant:.4g}.\n"
         )
+        if include_table_env:
+            out.write(r"\end{table}" + "\n")
+
+
+def _count_from_payload(value: Mapping[str, Any]) -> Count:
+    return Count(float(value["value"]), float(value.get("variance", value.get("error", 0.0) ** 2)))
+
+
+def _layer_label(layer: str) -> str:
+    return {
+        "NLayers4": "4",
+        "NLayers5": "5",
+        "NLayers6plus": r"$\geq 6$",
+        "combinedBins": "combined",
+    }.get(layer, layer)
+
+
+def _control_column_key(control_region: str) -> str:
+    lower = control_region.lower()
+    if r"\mu" in lower or "mumu" in lower or "mu" in lower:
+        return "zmumu"
+    if "ee" in lower or "electron" in lower:
+        return "zee"
+    return control_region
+
+
+def _format_scientific_pm(value: float, error: float) -> str:
+    if value == 0.0 and error == 0.0:
+        return r"$0 \pm 0$"
+
+    import math
+
+    scale_value = abs(value) if value != 0.0 else abs(error)
+    exponent = int(math.floor(math.log10(scale_value))) if scale_value > 0.0 else 0
+    mantissa = value / (10.0**exponent)
+    mantissa_error = error / (10.0**exponent)
+    return rf"$({mantissa:.2g} \pm {mantissa_error:.2g}) \times 10^{{{exponent}}}$"
+
+
+def _format_yield_pm(value: float, error: float) -> str:
+    return "$" + format_pm_latex(value, error) + "$"
+
+
+def write_fake_track_table34_latex(
+    json_paths: Sequence[Path],
+    path: Path,
+    *,
+    run_period: str,
+    include_table_env: bool = False,
+) -> None:
+    """Write an AN Table-34-style comparison of Z->mumu and Z->ee estimates."""
+
+    by_layer: dict[str, dict[str, dict[str, Count]]] = {}
+    for json_path in json_paths:
+        payload = json.loads(json_path.read_text())
+        for estimate in payload.get("estimates", []):
+            layer = estimate["layer"]
+            control = _control_column_key(estimate["control_region"])
+            by_layer.setdefault(layer, {})[control] = {
+                "p_fake": _count_from_payload(estimate["fake_probability"]),
+                "n_fake": _count_from_payload(estimate["fake_yield"])
+                if estimate.get("fake_yield") is not None
+                else Count(0.0, 0.0),
+            }
+
+    layer_order = ["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"]
+    layers = [layer for layer in layer_order if layer in by_layer] + [
+        layer for layer in by_layer if layer not in layer_order
+    ]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}[htbp]" + "\n")
+            out.write(r"\centering" + "\n")
+            out.write(r"\caption{Comparison of fake-track event probabilities and background estimates.}" + "\n")
+            out.write(r"\label{tab:fake_track_table34}" + "\n")
+
+        out.write(r"\begin{tabular}{llrrrr}" + "\n")
+        out.write(r"\hline" + "\n")
+        out.write(
+            r"run period & $n_{\mathrm{layers}}$ & "
+            r"$P_{\mathrm{fake}}(Z\to\mu\mu)$ & "
+            r"$P_{\mathrm{fake}}(Z\to ee)$ & "
+            r"$N^{\mathrm{fake}}_{\mathrm{est}}(Z\to\mu\mu)$ & "
+            r"$N^{\mathrm{fake}}_{\mathrm{est}}(Z\to ee)$ \\" + "\n"
+        )
+        out.write(r"\hline" + "\n")
+        for i, layer in enumerate(layers):
+            controls = by_layer[layer]
+            zmumu = controls.get("zmumu")
+            zee = controls.get("zee")
+
+            def get(control: dict[str, Count] | None, key: str, formatter) -> str:
+                if control is None:
+                    return "--"
+                count = control[key]
+                return formatter(count.value, count.error)
+
+            out.write(
+                f"{run_period if i == 0 else ''} & {_layer_label(layer)} & "
+                f"{get(zmumu, 'p_fake', _format_scientific_pm)} & "
+                f"{get(zee, 'p_fake', _format_scientific_pm)} & "
+                f"{get(zmumu, 'n_fake', _format_yield_pm)} & "
+                f"{get(zee, 'n_fake', _format_yield_pm)} \\\\\n"
+            )
+        out.write(r"\hline" + "\n")
+        out.write(r"\end{tabular}" + "\n")
         if include_table_env:
             out.write(r"\end{table}" + "\n")
