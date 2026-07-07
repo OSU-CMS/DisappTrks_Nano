@@ -31,10 +31,13 @@ from cuts import (
     has_disappearing_track,
     jet_veto_map,
     lepton_pveto_cuts,
+    met_hlt,
     muon_table16_cuts,
     muon_pveto_layer_cuts,
     search_diagnostic_cuts,
     search_kinematics,
+    single_electron_hlt,
+    single_muon_hlt,
     tau_pveto_diagnostic_cuts,
 )
 from cuts import (
@@ -164,6 +167,27 @@ enable_search_diagnostics = os.environ.get(
 ).lower() in ("1", "true", "yes", "on")
 category_mode = os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
 data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
+
+
+def _skim_cuts_for_mode(mode, sample):
+    sample = sample or ""
+    if mode in ("muon_pveto", "tau_mu_pveto"):
+        return [single_muon_hlt]
+    if mode in ("electron_pveto", "tau_ele_pveto"):
+        return [single_electron_hlt]
+    if mode == "fake_tracks":
+        if sample == "DATA_Muon":
+            return [single_muon_hlt]
+        if sample == "DATA_EGamma":
+            return [single_electron_hlt]
+        if sample in ("DATA_JetMET", "DATA_MET"):
+            return [met_hlt]
+    return []
+
+
+skim_cuts = _skim_cuts_for_mode(category_mode, dataset_sample)
+if os.environ.get("DISAPPTRKS_DISABLE_HLT_SKIM", "").lower() in ("1", "true", "yes", "on"):
+    skim_cuts = []
 diagnostic_categories = (
     {f"diag_{name}": [cut] for name, cut in search_diagnostic_cuts.items()}
     if enable_search_diagnostics
@@ -362,7 +386,7 @@ cfg = Configurator(
     },
     workflow=DisappTrksProcessor,
     calibrators=[],
-    skim=[],
+    skim=skim_cuts,
     preselections=data_quality_cuts,
     categories=selected_categories,
     weights={"common": {"inclusive": []}, "bysample": {}},
@@ -940,7 +964,7 @@ cfg = Configurator(
                 Axis(
                     coll="FakeZMuMuFitTrack",
                     field="dxy",
-                    bins=100,
+                    bins=25,
                     start=-0.5,
                     stop=0.5,
                     label=r"Z$\to\mu\mu$ fake-track $d_{xy}$ [cm]",
@@ -966,7 +990,7 @@ cfg = Configurator(
                 Axis(
                     coll="FakeZeeFitTrack",
                     field="dxy",
-                    bins=100,
+                    bins=25,
                     start=-0.5,
                     stop=0.5,
                     label=r"Z$\to ee$ fake-track $d_{xy}$ [cm]",

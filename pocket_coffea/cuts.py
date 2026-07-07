@@ -175,6 +175,21 @@ def _all_true(events):
     return np.ones(len(events), dtype=bool)
 
 
+def _all_false(events):
+    return np.zeros(len(events), dtype=bool)
+
+
+def _hlt_or(events, names):
+    if "HLT" not in events.fields:
+        return _all_false(events)
+
+    mask = None
+    for name in names:
+        if name in events.HLT.fields:
+            mask = events.HLT[name] if mask is None else (mask | events.HLT[name])
+    return mask if mask is not None else _all_false(events)
+
+
 def _metadata_era(events):
     return str(getattr(events, "metadata", {}).get("era", ""))
 
@@ -519,6 +534,18 @@ def _search_kinematics(events, params, **kwargs):
     )
 
 
+def _single_muon_hlt(events, params, **kwargs):
+    return _hlt_or(events, params["paths"])
+
+
+def _single_electron_hlt(events, params, **kwargs):
+    return _hlt_or(events, params["paths"])
+
+
+def _met_hlt(events, params, **kwargs):
+    return _hlt_or(events, params["paths"])
+
+
 has_disappearing_track = Cut(
     name="has_disappearing_track",
     params={"minimum": 1},
@@ -541,6 +568,50 @@ jet_veto_map = Cut(
     name="jet_veto_map",
     params={},
     function=_jet_veto_map,
+)
+
+single_muon_hlt = Cut(
+    name="single_muon_hlt",
+    params={"paths": ("IsoMu24",)},
+    function=_single_muon_hlt,
+)
+
+single_electron_hlt = Cut(
+    name="single_electron_hlt",
+    params={
+        "paths": (
+            "Ele32_WPTight_Gsf",
+            "Ele32_WPTight_Gsf_L1DoubleEG",
+            "Ele32_WPTight_Gsf_DoubleL1EG",
+        )
+    },
+    function=_single_electron_hlt,
+)
+
+met_hlt = Cut(
+    name="met_hlt",
+    params={
+        "paths": (
+            "MET105_IsoTrk50",
+            "MET120_IsoTrk50",
+            "PFMET105_IsoTrk50",
+            "PFMET120_PFMHT120_IDTight",
+            "PFMET130_PFMHT130_IDTight",
+            "PFMET140_PFMHT140_IDTight",
+            "PFMET120_PFMHT120_IDTight_PFHT60",
+            "PFMETNoMu110_PFMHTNoMu110_IDTight_FilterHF",
+            "PFMETNoMu120_PFMHTNoMu120_IDTight_FilterHF",
+            "PFMETNoMu130_PFMHTNoMu130_IDTight_FilterHF",
+            "PFMETNoMu140_PFMHTNoMu140_IDTight_FilterHF",
+            "PFMETNoMu120_PFMHTNoMu120_IDTight_PFHT60",
+            "PFMETNoMu120_PFMHTNoMu120_IDTight",
+            "PFMETNoMu130_PFMHTNoMu130_IDTight",
+            "PFMETNoMu140_PFMHTNoMu140_IDTight",
+            "PFMET250_HBHECleaned",
+            "PFMET300_HBHECleaned",
+        )
+    },
+    function=_met_hlt,
 )
 
 has_muon_tag = Cut(
