@@ -294,6 +294,59 @@ def _gauss_plus_constant_integral(amplitude: float, sigma: float, constant: floa
     return gaussian + constant * (hi - lo)
 
 
+def _fit_gauss_plus_constant(x, y):
+    import numpy as np
+    from scipy.optimize import curve_fit
+
+    def model(xvals, amplitude, sigma, constant):
+        return amplitude * np.exp(-0.5 * (xvals / sigma) ** 2) + constant
+
+    yerr = np.sqrt(np.maximum(y, 1.0))
+    p0 = [max(float(y.max() - y.min()), 1.0), 0.10, max(float(y.min()), 0.0)]
+    return curve_fit(
+        model,
+        x,
+        y,
+        p0=p0,
+        sigma=yerr,
+        absolute_sigma=True,
+        bounds=([0.0, 1.0e-4, 0.0], [np.inf, 1.0, np.inf]),
+        maxfev=20000,
+    )
+
+
+def _transfer_factor_from_fit(
+    popt,
+    pcov,
+    *,
+    numerator_ranges: Sequence[tuple[float, float]],
+    denominator_ranges: Sequence[tuple[float, float]],
+) -> Count:
+    import numpy as np
+
+    def ratio(params) -> float:
+        numerator = sum(_gauss_plus_constant_integral(*params, *r) for r in numerator_ranges)
+        denominator = sum(_gauss_plus_constant_integral(*params, *r) for r in denominator_ranges)
+        return 0.0 if denominator == 0.0 else numerator / denominator
+
+    value = ratio(popt)
+    variance = 0.0
+    try:
+        grad = []
+        for i, param in enumerate(popt):
+            step = max(abs(float(param)) * 1.0e-5, 1.0e-7)
+            shifted_hi = list(popt)
+            shifted_lo = list(popt)
+            shifted_hi[i] += step
+            shifted_lo[i] -= step
+            grad.append((ratio(shifted_hi) - ratio(shifted_lo)) / (2.0 * step))
+        grad = np.asarray(grad)
+        variance = float(grad @ pcov @ grad)
+    except Exception:
+        variance = 0.0
+    return Count(value, max(variance, 0.0))
+
+
 def fit_dxy_transfer_factor(
     counts,
     edges,
@@ -307,7 +360,6 @@ def fit_dxy_transfer_factor(
     """Fit |dxy| sideband with Gaussian(mean=0)+constant and return zeta."""
 
     import numpy as np
-    from scipy.optimize import curve_fit
 
     centers = 0.5 * (edges[:-1] + edges[1:])
     fit_mask = (centers >= fit_range[0]) & (centers < fit_range[1])
@@ -316,47 +368,14 @@ def fit_dxy_transfer_factor(
     if len(x) < 3 or float(y.sum()) <= 0.0:
         raise ValueError(f"not enough entries to fit {histogram!r} for {control_region}")
 
-    def model(xvals, amplitude, sigma, constant):
-        return amplitude * np.exp(-0.5 * (xvals / sigma) ** 2) + constant
-
-    yerr = np.sqrt(np.maximum(y, 1.0))
-    p0 = [max(float(y.max() - y.min()), 1.0), 0.10, max(float(y.min()), 0.0)]
-    popt, pcov = curve_fit(
-        model,
-        x,
-        y,
-        p0=p0,
-        sigma=yerr,
-        absolute_sigma=True,
-        bounds=([0.0, 1.0e-4, 0.0], [np.inf, 1.0, np.inf]),
-        maxfev=20000,
-    )
+    popt, pcov = _fit_gauss_plus_constant(x, y)
     amplitude, sigma, constant = (float(v) for v in popt)
-
-    numerator = _gauss_plus_constant_integral(amplitude, sigma, constant, *numerator_range)
-    denominator = _gauss_plus_constant_integral(amplitude, sigma, constant, *denominator_range)
-    value = 0.0 if denominator == 0.0 else numerator / denominator
-
-    variance = 0.0
-    try:
-        grad = []
-        for i, param in enumerate(popt):
-            step = max(abs(float(param)) * 1.0e-5, 1.0e-7)
-            shifted_hi = list(popt)
-            shifted_lo = list(popt)
-            shifted_hi[i] += step
-            shifted_lo[i] -= step
-            num_hi = _gauss_plus_constant_integral(*shifted_hi, *numerator_range)
-            den_hi = _gauss_plus_constant_integral(*shifted_hi, *denominator_range)
-            num_lo = _gauss_plus_constant_integral(*shifted_lo, *numerator_range)
-            den_lo = _gauss_plus_constant_integral(*shifted_lo, *denominator_range)
-            val_hi = 0.0 if den_hi == 0.0 else num_hi / den_hi
-            val_lo = 0.0 if den_lo == 0.0 else num_lo / den_lo
-            grad.append((val_hi - val_lo) / (2.0 * step))
-        grad = np.asarray(grad)
-        variance = float(grad @ pcov @ grad)
-    except Exception:
-        variance = 0.0
+    transfer_factor = _transfer_factor_from_fit(
+        popt,
+        pcov,
+        numerator_ranges=[numerator_range],
+        denominator_ranges=[denominator_range],
+    )
 
     return DxyTransferFactorFit(
         control_region=control_region,
@@ -367,7 +386,59 @@ def fit_dxy_transfer_factor(
         amplitude=amplitude,
         sigma=sigma,
         constant=constant,
-        transfer_factor=Count(value, max(variance, 0.0)),
+        transfer_factor=transfer_factor,
+    )
+
+
+def fit_signed_dxy_transfer_factor(
+    counts,
+    edges,
+    *,
+    control_region: str,
+    histogram: str,
+    numerator_abs_range: tuple[float, float] = (0.0, 0.02),
+    denominator_abs_range: tuple[float, float] = (0.05, 0.50),
+    fit_abs_range: tuple[float, float] = (0.10, 0.50),
+) -> DxyTransferFactorFit:
+    """Fit signed dxy sidebands, excluding central |dxy| < fit_abs_range[0]."""
+
+    import numpy as np
+
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    abs_centers = np.abs(centers)
+    fit_mask = (abs_centers >= fit_abs_range[0]) & (abs_centers < fit_abs_range[1])
+    x = centers[fit_mask]
+    y = counts[fit_mask]
+    if len(x) < 3 or float(y.sum()) <= 0.0:
+        raise ValueError(f"not enough entries to fit {histogram!r} for {control_region}")
+
+    popt, pcov = _fit_gauss_plus_constant(x, y)
+    amplitude, sigma, constant = (float(v) for v in popt)
+    numerator_ranges = [
+        (-numerator_abs_range[1], -numerator_abs_range[0]),
+        numerator_abs_range,
+    ]
+    denominator_ranges = [
+        (-denominator_abs_range[1], -denominator_abs_range[0]),
+        denominator_abs_range,
+    ]
+    transfer_factor = _transfer_factor_from_fit(
+        popt,
+        pcov,
+        numerator_ranges=numerator_ranges,
+        denominator_ranges=denominator_ranges,
+    )
+
+    return DxyTransferFactorFit(
+        control_region=control_region,
+        histogram=histogram,
+        numerator_range=numerator_abs_range,
+        denominator_range=denominator_abs_range,
+        fit_range=fit_abs_range,
+        amplitude=amplitude,
+        sigma=sigma,
+        constant=constant,
+        transfer_factor=transfer_factor,
     )
 
 
@@ -383,9 +454,16 @@ def plot_dxy_transfer_factor(
     fit: DxyTransferFactorFit,
     path: Path,
     *,
+    signed_counts=None,
+    signed_edges=None,
     title: str | None = None,
 ) -> None:
-    """Write a Figure-26-style |dxy| histogram and transfer-factor fit plot."""
+    """Write a Figure-26-style signed-dxy histogram and transfer-factor fit plot.
+
+    New outputs fit the signed ``dxy`` sidebands on both sides of zero while
+    excluding the central fit gap.  Old outputs without signed histograms fall
+    back to a mirrored visualization of the folded ``|dxy|`` histogram.
+    """
 
     import numpy as np
 
@@ -395,16 +473,27 @@ def plot_dxy_transfer_factor(
         raise RuntimeError("matplotlib is required to write --fit-plot outputs") from exc
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    xfit = np.linspace(0.0, max(float(edges[-1]), fit.denominator_range[1]), 500)
-    yfit = _dxy_fit_model(xfit, fit.amplitude, fit.sigma, fit.constant)
+    if signed_counts is None or signed_edges is None:
+        # Backward-compatible fallback for old outputs.  The sign information is
+        # not recoverable from |dxy|, so split the folded counts evenly into the
+        # two signed halves.  New fake-track outputs should provide signed dxy.
+        positive_edges = np.asarray(edges, dtype=float)
+        negative_edges = -positive_edges[::-1]
+        signed_edges = np.concatenate([negative_edges[:-1], positive_edges])
+        signed_counts = 0.5 * np.concatenate([counts[::-1], counts])
+
+    signed_counts = np.asarray(signed_counts, dtype=float)
+    signed_edges = np.asarray(signed_edges, dtype=float)
+    centers = 0.5 * (signed_edges[:-1] + signed_edges[1:])
+    xfit = np.linspace(float(signed_edges[0]), float(signed_edges[-1]), 1000)
+    yfit = _dxy_fit_model(np.abs(xfit), fit.amplitude, fit.sigma, fit.constant)
 
     fig, ax = plt.subplots(figsize=(6.4, 4.8))
-    ax.stairs(counts, edges, label="data", color="black", linewidth=1.5)
+    ax.stairs(signed_counts, signed_edges, label="data", color="black", linewidth=1.5)
     ax.errorbar(
         centers,
-        counts,
-        yerr=np.sqrt(np.maximum(counts, 1.0)),
+        signed_counts,
+        yerr=np.sqrt(np.maximum(signed_counts, 1.0)),
         fmt="o",
         color="black",
         markersize=3,
@@ -418,26 +507,33 @@ def plot_dxy_transfer_factor(
         label="Gaussian + constant fit",
     )
 
-    ax.axvspan(
-        fit.numerator_range[0],
-        fit.numerator_range[1],
-        color="tab:green",
-        alpha=0.18,
-        label="signal window",
-    )
-    ax.axvspan(
-        fit.denominator_range[0],
-        fit.denominator_range[1],
-        color="tab:blue",
-        alpha=0.10,
-        label="sideband",
-    )
-    ax.axvline(fit.fit_range[0], color="tab:red", linestyle="--", linewidth=1)
-    ax.axvline(fit.fit_range[1], color="tab:red", linestyle="--", linewidth=1)
+    for index, (lo, hi) in enumerate(
+        ((-fit.numerator_range[1], -fit.numerator_range[0]), fit.numerator_range)
+    ):
+        ax.axvspan(
+            lo,
+            hi,
+            color="tab:green",
+            alpha=0.18,
+            label="signal window" if index == 0 else None,
+        )
+    for index, (lo, hi) in enumerate(
+        ((-fit.denominator_range[1], -fit.denominator_range[0]), fit.denominator_range)
+    ):
+        ax.axvspan(
+            lo,
+            hi,
+            color="tab:blue",
+            alpha=0.10,
+            label="sideband" if index == 0 else None,
+        )
 
-    ax.set_xlabel(r"$|d_{xy}|$ [cm]")
+    for boundary in (-fit.fit_range[1], -fit.fit_range[0], fit.fit_range[0], fit.fit_range[1]):
+        ax.axvline(boundary, color="tab:red", linestyle="--", linewidth=1)
+
+    ax.set_xlabel(r"$d_{xy}$ [cm]")
     ax.set_ylabel("Tracks / bin")
-    ax.set_xlim(0.0, max(0.5, float(edges[-1])))
+    ax.set_xlim(float(signed_edges[0]), float(signed_edges[-1]))
     ax.set_ylim(bottom=0.0)
     ax.set_title(title or f"{fit.control_region} transfer-factor fit")
     ax.text(

@@ -19,6 +19,7 @@ from .fake_tracks import (
     estimate_fake_track_background,
     estimate_fake_track_background_an,
     fit_dxy_transfer_factor,
+    fit_signed_dxy_transfer_factor,
     plot_dxy_transfer_factor,
     summed_hist_counts_edges,
     write_an_fake_track_latex,
@@ -264,12 +265,14 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
             "zmumu": {
                 "control_region": r"$Z\to\mu\mu$",
                 "histogram": "fakeZMuMuFitTrack_absDxy",
+                "signed_histogram": "fakeZMuMuFitTrack_dxy",
                 "control_category": "fake_zmumu_control",
                 "sideband_category": "fake_zmumu_sideband_{layer}",
             },
             "zee": {
                 "control_region": r"$Z\to ee$",
                 "histogram": "fakeZeeFitTrack_absDxy",
+                "signed_histogram": "fakeZeeFitTrack_dxy",
                 "control_category": "fake_zee_control",
                 "sideband_category": "fake_zee_sideband_{layer}",
             },
@@ -281,18 +284,39 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
             dataset=args.dataset,
             sample=args.sample,
         )
-        fit = fit_dxy_transfer_factor(
-            counts,
-            edges,
-            control_region=control_cfg["control_region"],
-            histogram=control_cfg["histogram"],
-        )
+        try:
+            signed_counts, signed_edges = summed_hist_counts_edges(
+                outputs,
+                control_cfg["signed_histogram"],
+                dataset=args.dataset,
+                sample=args.sample,
+            )
+        except KeyError:
+            signed_counts, signed_edges = None, None
+
+        if signed_counts is None or signed_edges is None:
+            fit = fit_dxy_transfer_factor(
+                counts,
+                edges,
+                control_region=control_cfg["control_region"],
+                histogram=control_cfg["histogram"],
+            )
+        else:
+            fit = fit_signed_dxy_transfer_factor(
+                signed_counts,
+                signed_edges,
+                control_region=control_cfg["control_region"],
+                histogram=control_cfg["signed_histogram"],
+            )
+
         if args.fit_plot:
             plot_dxy_transfer_factor(
                 counts,
                 edges,
                 fit,
                 args.fit_plot,
+                signed_counts=signed_counts,
+                signed_edges=signed_edges,
                 title=f"{args.run_period} {control_cfg['control_region']} n_layers = 4",
             )
             print(f"Wrote {args.fit_plot}")
@@ -1020,7 +1044,7 @@ def main():
     fake_tracks.add_argument(
         "--fit-plot",
         type=Path,
-        help="Write a Figure-26-style |dxy| transfer-factor fit plot.",
+        help="Write a Figure-26-style signed-dxy transfer-factor fit plot.",
     )
     fake_tracks.add_argument(
         "--table-env",
