@@ -252,9 +252,12 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
             raise SystemExit("error: --an-control requires coffea files, not --counts-json")
         if not args.files:
             raise SystemExit("error: at least one coffea file is required with --an-control")
+        if args.basic_files and not args.basic_yield_category:
+            raise SystemExit("error: --basic-files requires --basic-yield-category")
 
         outputs = _load_outputs(args.files)
         source = _load_merged_cutflow(args.files)
+        basic_source = _load_merged_cutflow(args.basic_files) if args.basic_files else None
         control_cfg = {
             "zmumu": {
                 "control_region": r"$Z\to\mu\mu$",
@@ -294,6 +297,10 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
                 dataset=args.dataset,
                 sample=args.sample,
                 variation=args.variation,
+                basic_cutflow=basic_source,
+                basic_dataset=args.basic_dataset,
+                basic_sample=args.basic_sample,
+                basic_variation=args.basic_variation,
             )
             for layer in args.layers
         ]
@@ -945,6 +952,27 @@ def main():
     fake_tracks.add_argument(
         "--basic-yield-category",
         help="Optional BasicSelection yield category for normalizing Z->ll to the search sample.",
+    )
+    fake_tracks.add_argument(
+        "--basic-files",
+        nargs="+",
+        type=Path,
+        help=(
+            "Optional PocketCoffea output files containing the BasicSelection "
+            "normalization, e.g. JetMET outputs. Requires --basic-yield-category."
+        ),
+    )
+    fake_tracks.add_argument(
+        "--basic-dataset",
+        help="Restrict --basic-files to one dataset key. Defaults to --dataset when omitted.",
+    )
+    fake_tracks.add_argument(
+        "--basic-sample",
+        help="Restrict --basic-files to one sample key, e.g. DATA_JetMET. Defaults to --sample when omitted.",
+    )
+    fake_tracks.add_argument(
+        "--basic-variation",
+        help="Variation to read from --basic-files. Defaults to --variation when omitted.",
     )
     fake_tracks.add_argument(
         "--z-to-ll-yield-category",

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .summaries import cutflow_count
-from .tables import format_count
+from .tables import format_count, format_pm_latex
 
 
 @dataclass(frozen=True)
@@ -382,6 +382,10 @@ def estimate_fake_track_background_an(
     dataset: str | None = None,
     sample: str | None = None,
     variation: str = "nominal",
+    basic_cutflow: Mapping[str, Any] | None = None,
+    basic_dataset: str | None = None,
+    basic_sample: str | None = None,
+    basic_variation: str | None = None,
 ) -> ANFakeTrackEstimate:
     control_events = _count_from_cutflow(
         dict(cutflow),
@@ -403,12 +407,13 @@ def estimate_fake_track_background_an(
     basic_events = None
     fake_yield = None
     if basic_yield_category:
+        basic_source = cutflow if basic_cutflow is None else basic_cutflow
         basic_events = _count_from_cutflow(
-            dict(cutflow),
+            dict(basic_source),
             basic_yield_category,
-            dataset=dataset,
-            sample=sample,
-            variation=variation,
+            dataset=dataset if basic_dataset is None else basic_dataset,
+            sample=sample if basic_sample is None else basic_sample,
+            variation=variation if basic_variation is None else basic_variation,
         )
         fake_yield = fake_probability * basic_events
 
@@ -540,14 +545,14 @@ def write_fake_track_latex(
             p_fake = (
                 "--"
                 if estimate.p_fake_raw is None
-                else f"{estimate.p_fake_raw.value:.4g} $\\pm$ {estimate.p_fake_raw.error:.2g}"
+                else format_pm_latex(estimate.p_fake_raw.value, estimate.p_fake_raw.error)
             )
             out.write(
                 f"{run_period} & {estimate.layer} & "
-                f"{format_count(estimate.control.value)} $\\pm$ {estimate.control.error:.2g} & "
-                f"{estimate.transfer_factor.value:.4g} $\\pm$ {estimate.transfer_factor.error:.2g} & "
+                f"{format_pm_latex(estimate.control.value, estimate.control.error)} & "
+                f"{format_pm_latex(estimate.transfer_factor.value, estimate.transfer_factor.error)} & "
                 f"{p_fake} & "
-                f"{format_count(estimate.estimate.value)} $\\pm$ {estimate.estimate.error:.2g} \\\\\n"
+                f"{format_pm_latex(estimate.estimate.value, estimate.estimate.error)} \\\\\n"
             )
         out.write(r"\hline" + "\n")
         out.write(r"\end{tabular}" + "\n")
@@ -592,8 +597,14 @@ def write_an_fake_track_latex(
         out.write(r"\hline" + "\n")
 
         for estimate in estimates:
-            zeta = f"{estimate.transfer_factor.value:.4g} $\\pm$ {estimate.transfer_factor.error:.2g}"
-            p_fake = f"{estimate.fake_probability.value:.4g} $\\pm$ {estimate.fake_probability.error:.2g}"
+            zeta = format_pm_latex(
+                estimate.transfer_factor.value,
+                estimate.transfer_factor.error,
+            )
+            p_fake = format_pm_latex(
+                estimate.fake_probability.value,
+                estimate.fake_probability.error,
+            )
             row = (
                 f"{run_period} & {estimate.control_region} & {estimate.layer} & "
                 f"{format_count(estimate.control_events.value)} & "
@@ -604,7 +615,7 @@ def write_an_fake_track_latex(
                 if estimate.fake_yield is None:
                     row += " & --"
                 else:
-                    row += f" & {format_count(estimate.fake_yield.value)} $\\pm$ {estimate.fake_yield.error:.2g}"
+                    row += f" & {format_pm_latex(estimate.fake_yield.value, estimate.fake_yield.error)}"
             out.write(row + r" \\" + "\n")
 
         out.write(r"\hline" + "\n")

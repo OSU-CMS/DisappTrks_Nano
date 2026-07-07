@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from math import sqrt
 from pathlib import Path
 from typing import Any, Sequence
@@ -293,10 +294,89 @@ def format_count(value: float) -> str:
     return f"{value:.3g}"
 
 
+def _sigfig_decimal_places(value: float, significant_digits: int = 2) -> int:
+    """Return decimal places needed to keep ``significant_digits`` sig figs."""
+
+    value = abs(float(value))
+    if value == 0.0 or not math.isfinite(value):
+        return 0
+    exponent = math.floor(math.log10(value))
+    return max(significant_digits - 1 - exponent, 0)
+
+
+def _format_decimal(value: float, decimal_places: int) -> str:
+    rounded = round(float(value), decimal_places)
+    if rounded == 0.0:
+        rounded = 0.0
+    if decimal_places <= 0:
+        return str(int(round(rounded)))
+    return f"{rounded:.{decimal_places}f}"
+
+
+def format_value_with_uncertainty(
+    value: float,
+    uncertainty: float,
+    *,
+    significant_digits: int = 2,
+) -> tuple[str, str]:
+    """Round a central value and symmetric uncertainty consistently.
+
+    The uncertainty is rounded to ``significant_digits`` significant figures,
+    and the central value is rounded to the same decimal place.
+    """
+
+    uncertainty = abs(float(uncertainty))
+    if uncertainty == 0.0 or not math.isfinite(uncertainty):
+        return format_count(value), "0"
+    places = _sigfig_decimal_places(uncertainty, significant_digits)
+    return _format_decimal(value, places), _format_decimal(uncertainty, places)
+
+
+def format_pm_latex(
+    value: float,
+    uncertainty: float,
+    *,
+    significant_digits: int = 2,
+) -> str:
+    value_text, uncertainty_text = format_value_with_uncertainty(
+        value,
+        uncertainty,
+        significant_digits=significant_digits,
+    )
+    return rf"{value_text} $\pm$ {uncertainty_text}"
+
+
+def format_asymmetric_latex(
+    central: float,
+    err_up: float,
+    err_down: float,
+    *,
+    significant_digits: int = 2,
+) -> str:
+    """Format ``central^{+up}_{-down}`` with consistent significant figures."""
+
+    err_up = abs(float(err_up))
+    err_down = abs(float(err_down))
+    nonzero_errors = [
+        err for err in (err_up, err_down) if err > 0.0 and math.isfinite(err)
+    ]
+    if not nonzero_errors:
+        return rf"${format_count(central)}^{{+0}}_{{-0}}$"
+
+    places = max(
+        _sigfig_decimal_places(err, significant_digits) for err in nonzero_errors
+    )
+    central_text = "0" if float(central) == 0.0 else _format_decimal(central, places)
+    up_text = _format_decimal(err_up, places) if err_up > 0.0 else "0"
+    down_text = _format_decimal(err_down, places) if err_down > 0.0 else "0"
+    return rf"${central_text}^{{+{up_text}}}_{{-{down_text}}}$"
+
+
 def format_pveto_latex(summary: AsymmetricVetoProbability) -> str:
-    return (
-        rf"${summary.central:.4g}^{{+{summary.err_up:.2g}}}"
-        rf"_{{-{summary.err_down:.2g}}}$"
+    return format_asymmetric_latex(
+        summary.central,
+        summary.err_up,
+        summary.err_down,
     )
 
 

@@ -188,6 +188,7 @@ tau_pveto_diagnostic_categories = {
 
 common_categories = {
     "inclusive": [passthrough],
+    "basic_selection": [search_kinematics],
     "search": [search_kinematics, has_disappearing_track],
 }
 muon_pveto_categories = {
