@@ -171,9 +171,9 @@ data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 
 def _skim_cuts_for_mode(mode, sample):
     sample = sample or ""
-    if mode in ("muon_pveto", "tau_mu_pveto"):
+    if mode in ("muon_pveto", "tau_mu_pveto", "muon_backgrounds"):
         return [single_muon_hlt]
-    if mode in ("electron_pveto", "tau_ele_pveto"):
+    if mode in ("electron_pveto", "tau_ele_pveto", "egamma_backgrounds"):
         return [single_electron_hlt]
     if mode == "fake_tracks":
         if sample == "DATA_Muon":
@@ -242,6 +242,14 @@ def _categories_with_prefix(categories, *prefixes):
     }
 
 
+def _categories_with_exact_or_prefix(categories, exact=(), prefixes=()):
+    return {
+        name: cut
+        for name, cut in categories.items()
+        if name in exact or any(name.startswith(prefix) for prefix in prefixes)
+    }
+
+
 if category_mode == "muon_pveto":
     selected_categories = {
         **common_categories,
@@ -272,6 +280,32 @@ elif category_mode == "fake_tracks":
         **common_categories,
         **fake_track_categories,
     }
+elif category_mode == "muon_backgrounds":
+    selected_categories = {
+        **common_categories,
+        **muon_pveto_categories,
+        **muon_table16_categories,
+        **muon_pveto_layer_categories,
+        **_categories_with_prefix(lepton_pveto_categories, "tau_mu_"),
+        **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_mu_"),
+        **_categories_with_exact_or_prefix(
+            fake_track_categories,
+            exact=("fake_zmumu_control",),
+            prefixes=("fake_zmumu_sideband_",),
+        ),
+    }
+elif category_mode == "egamma_backgrounds":
+    selected_categories = {
+        **common_categories,
+        **_categories_with_prefix(lepton_pveto_categories, "electron_", "tau_ele_"),
+        **electron_pveto_diagnostic_categories,
+        **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_ele_"),
+        **_categories_with_exact_or_prefix(
+            fake_track_categories,
+            exact=("fake_zee_control",),
+            prefixes=("fake_zee_sideband_",),
+        ),
+    }
 elif category_mode == "all":
     selected_categories = {
         **common_categories,
@@ -287,7 +321,8 @@ else:
     raise ValueError(
         "Unknown DISAPPTRKS_CATEGORY_MODE="
         f"{category_mode!r}. Expected one of muon_pveto, electron_pveto, "
-        "tau_mu_pveto, tau_ele_pveto, fake_tracks, all."
+        "tau_mu_pveto, tau_ele_pveto, fake_tracks, muon_backgrounds, "
+        "egamma_backgrounds, all."
     )
 
 selected_categories = {
@@ -350,6 +385,8 @@ def _variables_for_mode(mode, variables):
         "tau_mu_pveto": ("nTauMu",),
         "tau_ele_pveto": ("nTauEle",),
         "fake_tracks": ("fakeZMuMuFitTrack_", "fakeZeeFitTrack_"),
+        "muon_backgrounds": ("nMuon", "nTauMu", "fakeZMuMuFitTrack_"),
+        "egamma_backgrounds": ("nElectron", "nTauEle", "fakeZeeFitTrack_"),
     }
     prefixes = prefixes_by_mode.get(mode)
     if prefixes is None:

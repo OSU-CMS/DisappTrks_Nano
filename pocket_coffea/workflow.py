@@ -420,7 +420,15 @@ class DisappTrksProcessor(BaseProcessorABC):
 
     def _mode_enabled(self, *modes):
         mode = self._category_mode()
-        return self._full_workflow_enabled() or mode == "all" or mode in modes
+        expanded_modes = {
+            "muon_backgrounds": ("muon_pveto", "tau_mu_pveto", "fake_zmumu"),
+            "egamma_backgrounds": ("electron_pveto", "tau_ele_pveto", "fake_zee"),
+        }.get(mode, (mode,))
+        return (
+            self._full_workflow_enabled()
+            or mode == "all"
+            or any(requested in expanded_modes for requested in modes)
+        )
 
     def _search_diagnostics_enabled(self):
         return os.environ.get("DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", "").lower() in (
@@ -486,7 +494,10 @@ class DisappTrksProcessor(BaseProcessorABC):
             ]
 
     def apply_object_preselection(self, variation):
-        if self._mode_enabled("muon_pveto", "fake_tracks"):
+        if (
+            self._mode_enabled("muon_pveto", "tau_mu_pveto", "fake_zmumu")
+            or self._category_mode() == "fake_tracks"
+        ):
             self.events["Muon"] = add_muon_derived_fields(self.events)
         self.events["IsoTrack"] = add_isotrack_derived_fields(self.events)
         self.events["AnalysisEvent"] = add_event_derived_fields(self.events)
@@ -748,7 +759,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 self.events[f"MuonPVetoTagProbePairSSZWindowPass_{layer}"]
             )
 
-    def _count_fake_track_fields(self):
+    def _count_fake_track_fields(self, *, controls=("basic", "zmumu", "zee")):
         fake_basic3hits_d0_signal = self.events.IsoTrack[
             fake_track_no_d0_mask(
                 self.events.IsoTrack,
@@ -763,44 +774,52 @@ class DisappTrksProcessor(BaseProcessorABC):
                 d0_region="sideband",
             )
         ]
-        self.events["nFakeBasic3HitsD0Signal"] = ak.num(fake_basic3hits_d0_signal)
-        self.events["nFakeBasic3HitsD0Sideband"] = ak.num(fake_basic3hits_d0_sideband)
-        for layer in (*PVETO_LAYERS, "combinedBins"):
-            self.events[f"nFakeControl_{layer}"] = ak.num(
-                self.events.IsoTrack[
-                    fake_track_no_d0_mask(
-                        self.events.IsoTrack,
-                        layer=layer,
-                        d0_region="sideband",
-                    )
-                ]
-            )
 
-        fake_zmumu_control = _z_to_mumu_control_mask(self.events, self.events.Muon)
-        fake_zee_control = _z_to_ee_control_mask(self.events, self.events.Electron)
-        self.events["nFakeZMuMuControl"] = ak.values_astype(fake_zmumu_control, np.int64)
-        self.events["nFakeZeeControl"] = ak.values_astype(fake_zee_control, np.int64)
-        self.events["FakeZMuMuFitTrack"] = _fake_fit_tracks_for_control(
-            self.events,
-            fake_zmumu_control,
-        )
-        self.events["FakeZeeFitTrack"] = _fake_fit_tracks_for_control(
-            self.events,
-            fake_zee_control,
-        )
-        for layer in (*PVETO_LAYERS, "combinedBins"):
-            self.events[f"nFakeZMuMuSideband_{layer}"] = _fake_track_count_for_control(
+        if "basic" in controls:
+            self.events["nFakeBasic3HitsD0Signal"] = ak.num(fake_basic3hits_d0_signal)
+            self.events["nFakeBasic3HitsD0Sideband"] = ak.num(fake_basic3hits_d0_sideband)
+            for layer in (*PVETO_LAYERS, "combinedBins"):
+                self.events[f"nFakeControl_{layer}"] = ak.num(
+                    self.events.IsoTrack[
+                        fake_track_no_d0_mask(
+                            self.events.IsoTrack,
+                            layer=layer,
+                            d0_region="sideband",
+                        )
+                    ]
+                )
+
+        if "zmumu" in controls:
+            fake_zmumu_control = _z_to_mumu_control_mask(self.events, self.events.Muon)
+            self.events["nFakeZMuMuControl"] = ak.values_astype(
+                fake_zmumu_control, np.int64
+            )
+            self.events["FakeZMuMuFitTrack"] = _fake_fit_tracks_for_control(
                 self.events,
                 fake_zmumu_control,
-                layer=layer,
-                d0_region="sideband",
             )
-            self.events[f"nFakeZeeSideband_{layer}"] = _fake_track_count_for_control(
+            for layer in (*PVETO_LAYERS, "combinedBins"):
+                self.events[f"nFakeZMuMuSideband_{layer}"] = _fake_track_count_for_control(
+                    self.events,
+                    fake_zmumu_control,
+                    layer=layer,
+                    d0_region="sideband",
+                )
+
+        if "zee" in controls:
+            fake_zee_control = _z_to_ee_control_mask(self.events, self.events.Electron)
+            self.events["nFakeZeeControl"] = ak.values_astype(fake_zee_control, np.int64)
+            self.events["FakeZeeFitTrack"] = _fake_fit_tracks_for_control(
                 self.events,
                 fake_zee_control,
-                layer=layer,
-                d0_region="sideband",
             )
+            for layer in (*PVETO_LAYERS, "combinedBins"):
+                self.events[f"nFakeZeeSideband_{layer}"] = _fake_track_count_for_control(
+                    self.events,
+                    fake_zee_control,
+                    layer=layer,
+                    d0_region="sideband",
+                )
 
     def _event_quality_masks(self):
         event_golden_json = _golden_json_mask(
@@ -1238,6 +1257,26 @@ class DisappTrksProcessor(BaseProcessorABC):
             self._store_tau_pveto_diagnostics("tau_ele_pveto")
         elif mode == "fake_tracks":
             self._count_fake_track_fields()
+        elif mode == "muon_backgrounds":
+            self._count_muon_pveto_fields()
+            self._store_muon_pveto_diagnostics()
+            self.events["nMuonLowMTTag"] = ak.num(self.events.MuonLowMTTag)
+            self.events["nTauVetoProbeTrack"] = ak.num(self.events.TauVetoProbeTrack)
+            self._count_lepton_pair_fields("TauMu")
+            self._store_tau_pveto_diagnostics("tau_mu_pveto")
+            self._count_fake_track_fields(controls=("zmumu",))
+        elif mode == "egamma_backgrounds":
+            self.events["nElectronTag"] = ak.num(self.events.ElectronTag)
+            self.events["nElectronVetoProbeTrack"] = ak.num(
+                self.events.ElectronVetoProbeTrack
+            )
+            self._count_lepton_pair_fields("Electron")
+            self._store_electron_pveto_diagnostics()
+            self.events["nElectronLowMTTag"] = ak.num(self.events.ElectronLowMTTag)
+            self.events["nTauVetoProbeTrack"] = ak.num(self.events.TauVetoProbeTrack)
+            self._count_lepton_pair_fields("TauEle")
+            self._store_tau_pveto_diagnostics("tau_ele_pveto")
+            self._count_fake_track_fields(controls=("zee",))
 
         if self._search_diagnostics_enabled():
             self._store_search_diagnostics()
