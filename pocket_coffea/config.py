@@ -322,6 +322,45 @@ def _event_count_hist(field, label, bins=50):
     )
 
 
+def _env_flag(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.lower() in ("1", "true", "yes", "on")
+
+
+def _variables_for_mode(mode, variables):
+    """Return the histogram variables needed for the active production mode.
+
+    Full diagnostic histograms dominate runtime for large production jobs.  The
+    default is therefore a minimal variable set that preserves the counts and
+    fake-track fit histograms needed by the table-making commands.  Set
+    ``DISAPPTRKS_FULL_VARIABLES=1`` for exploratory/debugging jobs that need the
+    full histogram suite.
+    """
+
+    if mode == "all" or _env_flag("DISAPPTRKS_FULL_VARIABLES"):
+        return variables
+    if _env_flag("DISAPPTRKS_DISABLE_MINIMAL_VARIABLES"):
+        return variables
+
+    prefixes_by_mode = {
+        "muon_pveto": ("nMuon",),
+        "electron_pveto": ("nElectron",),
+        "tau_mu_pveto": ("nTauMu",),
+        "tau_ele_pveto": ("nTauEle",),
+        "fake_tracks": ("fakeZMuMuFitTrack_", "fakeZeeFitTrack_"),
+    }
+    prefixes = prefixes_by_mode.get(mode)
+    if prefixes is None:
+        return variables
+    return {
+        name: variable
+        for name, variable in variables.items()
+        if any(name.startswith(prefix) for prefix in prefixes)
+    }
+
+
 lepton_pair_count_variables = {}
 for prefix, label in (
     ("Electron", "electron"),
@@ -392,7 +431,7 @@ cfg = Configurator(
     weights={"common": {"inclusive": []}, "bysample": {}},
     weights_classes=[],
     variations={"weights": {"common": {"inclusive": []}}},
-    variables={
+    variables=_variables_for_mode(category_mode, {
         "nIsoTrack": HistConf(
             [
                 Axis(
@@ -1090,6 +1129,6 @@ cfg = Configurator(
                 ),
             ]
         ),
-    },
+    }),
     columns={},
 )
