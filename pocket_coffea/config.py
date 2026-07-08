@@ -166,6 +166,13 @@ enable_search_diagnostics = os.environ.get(
     "DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", ""
 ).lower() in ("1", "true", "yes", "on")
 category_mode = os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
+parameters["disapptrks"] = {
+    "category_mode": category_mode,
+    "full_workflow": os.environ.get("DISAPPTRKS_FULL_WORKFLOW", "").lower()
+    in ("1", "true", "yes", "on"),
+    "full_variables": os.environ.get("DISAPPTRKS_FULL_VARIABLES", "").lower()
+    in ("1", "true", "yes", "on"),
+}
 data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 
 

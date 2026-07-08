@@ -408,9 +408,18 @@ def _jet_veto_map_mask(
 
 class DisappTrksProcessor(BaseProcessorABC):
     def _category_mode(self):
-        return os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
+        try:
+            return self.params.disapptrks.category_mode
+        except Exception:
+            return os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
 
     def _full_workflow_enabled(self):
+        try:
+            return bool(self.params.disapptrks.full_workflow) or bool(
+                self.params.disapptrks.full_variables
+            )
+        except Exception:
+            pass
         return (
             os.environ.get("DISAPPTRKS_FULL_WORKFLOW", "").lower()
             in ("1", "true", "yes", "on")
