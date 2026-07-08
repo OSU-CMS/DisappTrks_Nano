@@ -291,10 +291,8 @@ elif category_mode == "muon_backgrounds":
     selected_categories = {
         **common_categories,
         **muon_pveto_categories,
-        **muon_table16_categories,
         **muon_pveto_layer_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_mu_"),
-        **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_mu_"),
         **_categories_with_exact_or_prefix(
             fake_track_categories,
             exact=("fake_zmumu_control",),
@@ -305,8 +303,6 @@ elif category_mode == "egamma_backgrounds":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "electron_", "tau_ele_"),
-        **electron_pveto_diagnostic_categories,
-        **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_ele_"),
         **_categories_with_exact_or_prefix(
             fake_track_categories,
             exact=("fake_zee_control",),
