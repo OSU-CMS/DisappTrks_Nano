@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .summaries import cutflow_count
-from .tables import format_count, format_pm_latex
+from .tables import format_count, format_value_with_uncertainty
 
 
 @dataclass(frozen=True)
@@ -531,8 +531,8 @@ def plot_dxy_transfer_factor(
     for boundary in (-fit.fit_range[1], -fit.fit_range[0], fit.fit_range[0], fit.fit_range[1]):
         ax.axvline(boundary, color="tab:red", linestyle="--", linewidth=1)
 
-    ax.set_xlabel(r"$d_{xy}$ [cm]")
-    ax.set_ylabel("Tracks / bin")
+    ax.set_xlabel(r"track $d_{0}$ [cm]")
+    ax.set_ylabel("Number of tracks / 0.04 cm")
     ax.set_xlim(float(signed_edges[0]), float(signed_edges[-1]))
     ax.set_ylim(bottom=0.0)
     ax.set_title(title or f"{fit.control_region} transfer-factor fit")
@@ -844,11 +844,16 @@ def _format_scientific_pm(value: float, error: float) -> str:
     exponent = int(math.floor(math.log10(scale_value))) if scale_value > 0.0 else 0
     mantissa = value / (10.0**exponent)
     mantissa_error = error / (10.0**exponent)
-    return rf"$({mantissa:.2g} \pm {mantissa_error:.2g}) \times 10^{{{exponent}}}$"
+    mantissa_text, error_text = format_value_with_uncertainty(
+        mantissa,
+        mantissa_error,
+    )
+    return rf"$({mantissa_text} \pm {error_text}) \times 10^{{{exponent}}}$"
 
 
 def _format_yield_pm(value: float, error: float) -> str:
-    return "$" + format_pm_latex(value, error) + "$"
+    value_text, error_text = format_value_with_uncertainty(value, error)
+    return rf"${value_text} \pm {error_text}$"
 
 
 def write_fake_track_table34_latex(

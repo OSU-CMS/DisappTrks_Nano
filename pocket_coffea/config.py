@@ -954,7 +954,7 @@ cfg = Configurator(
                     bins=50,
                     start=0.0,
                     stop=0.5,
-                    label=r"Z$\to\mu\mu$ fake-track $|d_{xy}|$ [cm]",
+                    label=r"Z$\to\mu\mu$ fake-track $|d_{0}|$ [cm]",
                 )
             ],
             only_categories=["inclusive"],
@@ -967,7 +967,7 @@ cfg = Configurator(
                     bins=25,
                     start=-0.5,
                     stop=0.5,
-                    label=r"Z$\to\mu\mu$ fake-track $d_{xy}$ [cm]",
+                    label=r"Z$\to\mu\mu$ fake-track $d_{0}$ [cm]",
                 )
             ],
             only_categories=["inclusive"],
@@ -980,7 +980,7 @@ cfg = Configurator(
                     bins=50,
                     start=0.0,
                     stop=0.5,
-                    label=r"Z$\to ee$ fake-track $|d_{xy}|$ [cm]",
+                    label=r"Z$\to ee$ fake-track $|d_{0}|$ [cm]",
                 )
             ],
             only_categories=["inclusive"],
@@ -993,7 +993,7 @@ cfg = Configurator(
                     bins=25,
                     start=-0.5,
                     stop=0.5,
-                    label=r"Z$\to ee$ fake-track $d_{xy}$ [cm]",
+                    label=r"Z$\to ee$ fake-track $d_{0}$ [cm]",
                 )
             ],
             only_categories=["inclusive"],

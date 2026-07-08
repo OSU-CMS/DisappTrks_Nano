@@ -34,6 +34,7 @@ from .summaries import (
 from .tables import (
     variable_count_sum,
     write_lepton_pveto_cutflow_latex,
+    write_merged_pveto_latex,
     write_muon_cutflow_latex,
     write_muon_pveto_latex,
 )
@@ -700,6 +701,19 @@ def _make_tau_pveto_table_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _merge_pveto_tables_command(args: argparse.Namespace) -> int:
+    write_merged_pveto_latex(
+        args.tables,
+        args.output,
+        include_table_env=args.table_env,
+        keep_combined=args.keep_combined,
+        flavor=args.flavor,
+        compact_layer_labels=not args.no_compact_layer_labels,
+    )
+    print(f"Wrote {args.output}")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(prog="disapptrks")
     subparsers = parser.add_subparsers(dest="command")
@@ -947,6 +961,47 @@ def main():
         help="Wrap the tabular in a LaTeX table environment.",
     )
     tau_pveto_table.set_defaults(func=_make_tau_pveto_table_command)
+
+    merge_pveto_tables = subparsers.add_parser(
+        "merge-pveto-tables",
+        help=(
+            "Merge already-written Pveto LaTeX tables into one stacked "
+            "AN-style table with run-period blocks."
+        ),
+    )
+    merge_pveto_tables.add_argument(
+        "tables",
+        nargs="+",
+        type=Path,
+        help="Input per-period Pveto LaTeX tables, in the order to print them.",
+    )
+    merge_pveto_tables.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        required=True,
+        help="Output path for the merged Pveto LaTeX table.",
+    )
+    merge_pveto_tables.add_argument(
+        "--flavor",
+        help="Override the flavor label in every row, e.g. electron, $e$, or $\\mu$.",
+    )
+    merge_pveto_tables.add_argument(
+        "--keep-combined",
+        action="store_true",
+        help="Keep combined-bin rows. By default they are dropped to match AN summary tables.",
+    )
+    merge_pveto_tables.add_argument(
+        "--no-compact-layer-labels",
+        action="store_true",
+        help="Keep the original layer labels instead of converting to 4, 5, and $\\geq 6$.",
+    )
+    merge_pveto_tables.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap the tabular in a LaTeX table environment.",
+    )
+    merge_pveto_tables.set_defaults(func=_merge_pveto_tables_command)
 
     fake_tracks = subparsers.add_parser(
         "estimate-fake-tracks",

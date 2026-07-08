@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import math
 from math import sqrt
 from pathlib import Path
+import re
 from typing import Any, Sequence
 
 from .summaries import cutflow_count
@@ -352,9 +353,11 @@ def format_asymmetric_latex(
     err_down: float,
     *,
     significant_digits: int = 2,
+    scientific_threshold: float = 1.0e-3,
 ) -> str:
     """Format ``central^{+up}_{-down}`` with consistent significant figures."""
 
+    central = float(central)
     err_up = abs(float(err_up))
     err_down = abs(float(err_down))
     nonzero_errors = [
@@ -363,10 +366,62 @@ def format_asymmetric_latex(
     if not nonzero_errors:
         return rf"${format_count(central)}^{{+0}}_{{-0}}$"
 
+    if (
+        central != 0.0
+        and math.isfinite(central)
+        and abs(central) < scientific_threshold
+    ):
+        exponent = int(math.floor(math.log10(abs(central))))
+        scale = 10.0**exponent
+        scaled_central = central / scale
+        scaled_up = err_up / scale
+        scaled_down = err_down / scale
+        scaled_errors = [
+            err
+            for err in (scaled_up, scaled_down)
+            if err > 0.0 and math.isfinite(err)
+        ]
+        places = max(
+            _sigfig_decimal_places(err, significant_digits) for err in scaled_errors
+        )
+        central_text = _format_decimal(scaled_central, places)
+        up_text = _format_decimal(scaled_up, places) if err_up > 0.0 else "0"
+        down_text = _format_decimal(scaled_down, places) if err_down > 0.0 else "0"
+        return (
+            rf"$({central_text}^{{+{up_text}}}_{{-{down_text}}})"
+            rf" \times 10^{{{exponent}}}$"
+        )
+
+    max_error = max(nonzero_errors)
+    if central == 0.0 and max_error < scientific_threshold:
+        exponent = int(math.floor(math.log10(max_error)))
+        scale = 10.0**exponent
+        scaled_up = err_up / scale
+        scaled_down = err_down / scale
+        scaled_errors = [
+            err
+            for err in (scaled_up, scaled_down)
+            if err > 0.0 and math.isfinite(err)
+        ]
+        places = max(
+            _sigfig_decimal_places(err, significant_digits) for err in scaled_errors
+        )
+        up_text = (
+            rf"{_format_decimal(scaled_up, places)} \times 10^{{{exponent}}}"
+            if err_up > 0.0
+            else "0"
+        )
+        down_text = (
+            rf"{_format_decimal(scaled_down, places)} \times 10^{{{exponent}}}"
+            if err_down > 0.0
+            else "0"
+        )
+        return rf"$0^{{+{up_text}}}_{{-{down_text}}}$"
+
     places = max(
         _sigfig_decimal_places(err, significant_digits) for err in nonzero_errors
     )
-    central_text = "0" if float(central) == 0.0 else _format_decimal(central, places)
+    central_text = "0" if central == 0.0 else _format_decimal(central, places)
     up_text = _format_decimal(err_up, places) if err_up > 0.0 else "0"
     down_text = _format_decimal(err_down, places) if err_down > 0.0 else "0"
     return rf"${central_text}^{{+{up_text}}}_{{-{down_text}}}$"
@@ -831,3 +886,127 @@ def write_muon_pveto_latex(
             out.write(r"\end{table}" + "\n")
 
     return summaries
+
+
+def _strip_latex_row_ending(line: str) -> str:
+    line = line.strip()
+    if line.endswith(r"\\"):
+        line = line[:-2]
+    return line.strip()
+
+
+def _compact_layer_label(label: str) -> str:
+    label = label.strip()
+    normalized = label.replace(" ", "")
+    if normalized in ("4", r"$4$", r"$N_{\mathrm{layers}}=4$"):
+        return "4"
+    if normalized in ("5", r"$5$", r"$N_{\mathrm{layers}}=5$"):
+        return "5"
+    if normalized in (r"$\geq6$", r"$N_{\mathrm{layers}}\geq6$"):
+        return r"$\geq 6$"
+    return label
+
+
+_PVETO_ASYMMETRIC_RE = re.compile(
+    r"^\$?"
+    r"(?P<central>[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)"
+    r"\^\{\+(?P<up>[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\}"
+    r"_\{-(?P<down>[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\}"
+    r"\$?$"
+)
+
+
+def _normalize_pveto_latex_cell(cell: str) -> str:
+    """Normalize old Pveto cells, including e-notation, to current formatting."""
+
+    match = _PVETO_ASYMMETRIC_RE.match(cell.strip())
+    if match is None:
+        return cell
+    return format_asymmetric_latex(
+        float(match.group("central")),
+        float(match.group("up")),
+        float(match.group("down")),
+    )
+
+
+def _pveto_rows_from_latex_table(path: Path) -> list[list[str]]:
+    rows = []
+    current_run_period = ""
+    current_flavor = ""
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("\\"):
+            continue
+        if "&" not in line or r"\\" not in line:
+            continue
+        if line.lower().startswith("run period"):
+            continue
+        fields = [field.strip() for field in _strip_latex_row_ending(line).split("&")]
+        if len(fields) != 8:
+            continue
+        if fields[0]:
+            current_run_period = fields[0]
+        else:
+            fields[0] = current_run_period
+        if fields[1]:
+            current_flavor = fields[1]
+        else:
+            fields[1] = current_flavor
+        fields[7] = _normalize_pveto_latex_cell(fields[7])
+        rows.append(fields)
+    return rows
+
+
+def write_merged_pveto_latex(
+    table_paths: Sequence[Path],
+    path: Path,
+    *,
+    include_table_env: bool = False,
+    keep_combined: bool = False,
+    flavor: str | None = None,
+    compact_layer_labels: bool = True,
+) -> None:
+    """Merge per-period Pveto LaTeX tables into one stacked AN-style table."""
+
+    blocks = []
+    for table_path in table_paths:
+        block = []
+        for fields in _pveto_rows_from_latex_table(table_path):
+            if fields[2].strip().lower() == "combined" and not keep_combined:
+                continue
+            if flavor is not None:
+                fields[1] = flavor
+            if compact_layer_labels:
+                fields[2] = _compact_layer_label(fields[2])
+            block.append(fields)
+        if block:
+            blocks.append(block)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}[htbp]" + "\n")
+            out.write(r"\centering" + "\n")
+            out.write(r"\caption{Veto probability by run period.}" + "\n")
+            out.write(r"\label{tab:merged_pveto}" + "\n")
+
+        out.write(r"\begin{tabular}{llcrrrrc}" + "\n")
+        out.write(r"\hline" + "\n")
+        out.write(
+            r"run period & flavor & $n_{\mathrm{layers}}$ & "
+            r"$N_{T\&P}$ & $N^{\mathrm{veto}}_{T\&P}$ & "
+            r"$N_{SS,T\&P}$ & $N^{\mathrm{veto}}_{SS,T\&P}$ & "
+            r"$P_{\mathrm{veto}}$ \\" + "\n"
+        )
+        out.write(r"\hline" + "\n")
+        for block in blocks:
+            for row_index, fields in enumerate(block):
+                display_fields = list(fields)
+                if row_index > 0:
+                    display_fields[0] = ""
+                    display_fields[1] = ""
+                out.write(" & ".join(display_fields) + r" \\" + "\n")
+            out.write(r"\hline" + "\n")
+        out.write(r"\end{tabular}" + "\n")
+        if include_table_env:
+            out.write(r"\end{table}" + "\n")
