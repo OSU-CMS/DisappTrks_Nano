@@ -3,6 +3,7 @@ from pathlib import Path
 from disapptrks.tables import (
     CountWithVariance,
     pveto_with_asymmetric_uncertainty,
+    write_lepton_pveto_cutflow_latex,
     write_muon_cutflow_latex,
     write_muon_pveto_latex,
 )
@@ -94,3 +95,42 @@ def test_write_muon_latex_tables(tmp_path: Path):
     assert summaries["combinedBins"].numerator == 1.0
     assert summaries["NLayers4"].denominator == 2.0
     assert summaries["NLayers4"].numerator == 1.0
+
+
+def test_write_tau_pveto_an_cutflow_layout_groups_fiducial_rows(tmp_path: Path):
+    cutflow = {
+        "tau_pveto_diag_tau_ele_event_trigger": {"dataset": {"sample": {"nominal": 100.0}}},
+        "tau_pveto_diag_tau_ele_tag_pt": {"dataset": {"sample": {"nominal": 90.0}}},
+        "tau_pveto_diag_tau_ele_tag_eta2p1": {"dataset": {"sample": {"nominal": 80.0}}},
+        "tau_pveto_diag_tau_ele_tag_tight_id": {"dataset": {"sample": {"nominal": 70.0}}},
+        "tau_pveto_diag_tau_ele_tag_low_mt": {"dataset": {"sample": {"nominal": 60.0}}},
+        "tau_pveto_diag_tau_ele_track_pt30": {"dataset": {"sample": {"nominal": 50.0}}},
+        "tau_pveto_diag_tau_ele_track_eta2p1": {"dataset": {"sample": {"nominal": 49.0}}},
+        "tau_pveto_diag_tau_ele_track_fiducialECAL": {"dataset": {"sample": {"nominal": 40.0}}},
+        "tau_pveto_diag_tau_ele_track_pixelHits4": {"dataset": {"sample": {"nominal": 30.0}}},
+        "tau_pveto_diag_tau_ele_track_noMissingInner": {"dataset": {"sample": {"nominal": 20.0}}},
+        "tau_pveto_diag_tau_ele_track_noMissingMiddle": {"dataset": {"sample": {"nominal": 10.0}}},
+        "tau_pveto_diag_tau_ele_track_chargedIso0p05": {"dataset": {"sample": {"nominal": 9.0}}},
+        "tau_pveto_diag_tau_ele_track_dxy0p02": {"dataset": {"sample": {"nominal": 8.0}}},
+        "tau_pveto_diag_tau_ele_track_dz0p5": {"dataset": {"sample": {"nominal": 7.0}}},
+        "tau_pveto_diag_tau_ele_track_electronVeto": {"dataset": {"sample": {"nominal": 6.0}}},
+        "tau_pveto_diag_tau_ele_track_muonVeto": {"dataset": {"sample": {"nominal": 5.0}}},
+        "tau_pveto_diag_tau_ele_pair_masswindow": {"dataset": {"sample": {"nominal": 4.0}}},
+        "tau_pveto_diag_tau_ele_pair_os": {"dataset": {"sample": {"nominal": 3.0}}},
+        "tau_pveto_diag_tau_ele_layer_combinedBins": {"dataset": {"sample": {"nominal": 2.0}}},
+    }
+
+    path = tmp_path / "tau_ele_cutflow.tex"
+    write_lepton_pveto_cutflow_latex(
+        cutflow,
+        path,
+        mode="tau_ele",
+        dataset="dataset",
+        sample="sample",
+        layout="an22_23",
+    )
+
+    text = path.read_text()
+    assert "passing fiducial selections" in text
+    assert "tracks $|\\eta| < 2.1$" not in text
+    assert "event passes MET filters" not in text

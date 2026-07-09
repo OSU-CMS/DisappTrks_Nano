@@ -146,6 +146,87 @@ class ANFakeTrackEstimate:
         return out
 
 
+AN_FIXED_TRANSFER_FACTORS = {
+    ("2022CD", "zmumu"): Count(0.10, 0.06**2),
+    ("2022CD", "zee"): Count(0.11, 0.16**2),
+    ("2022EFG", "zmumu"): Count(0.09, 0.04**2),
+    ("2022EFG", "zee"): Count(0.10, 0.04**2),
+    ("2023C", "zmumu"): Count(0.08, 0.04**2),
+    ("2023C", "zee"): Count(0.07, 0.07**2),
+    ("2023D", "zmumu"): Count(0.09, 0.05**2),
+    ("2023D", "zee"): Count(0.09, 0.04**2),
+}
+
+AN_RUN_PERIOD_ALIASES = {
+    "2022CD": "2022CD",
+    "2022C": "2022CD",
+    "2022D": "2022CD",
+    "2022PREEE": "2022CD",
+    "2022_PRE_EE": "2022CD",
+    "2022_PREFIRE": "2022CD",
+    "2022EFG": "2022EFG",
+    "2022E": "2022EFG",
+    "2022F": "2022EFG",
+    "2022G": "2022EFG",
+    "2022POSTEE": "2022EFG",
+    "2022_POST_EE": "2022EFG",
+    "2023C": "2023C",
+    "2023PREBPIX": "2023C",
+    "2023_PRE_BPIX": "2023C",
+    "2023D": "2023D",
+    "2023POSTBPIX": "2023D",
+    "2023_POST_BPIX": "2023D",
+}
+
+AN_CONTROL_REGION_ALIASES = {
+    "ZMUMU": "zmumu",
+    "ZMM": "zmumu",
+    "MUMU": "zmumu",
+    "MUON": "zmumu",
+    "MUONS": "zmumu",
+    "ZEE": "zee",
+    "EE": "zee",
+    "EGAMMA": "zee",
+    "ELECTRON": "zee",
+    "ELECTRONS": "zee",
+}
+
+
+def _normalize_fixed_transfer_factor_key(value: str) -> str:
+    return "".join(char for char in value.upper() if char.isalnum() or char == "_")
+
+
+def fixed_an_transfer_factor_fit(run_period: str, control_region: str) -> DxyTransferFactorFit:
+    """Return the AN Section-5.2 fixed transfer factor for a period/control region."""
+
+    period_key = _normalize_fixed_transfer_factor_key(run_period)
+    control_key = _normalize_fixed_transfer_factor_key(control_region)
+    canonical_period = AN_RUN_PERIOD_ALIASES.get(period_key)
+    canonical_control = AN_CONTROL_REGION_ALIASES.get(control_key)
+    if canonical_period is None or canonical_control is None:
+        supported = ", ".join(
+            f"{period}/{control}" for period, control in sorted(AN_FIXED_TRANSFER_FACTORS)
+        )
+        raise KeyError(
+            "No fixed AN fake-track transfer factor for "
+            f"run_period={run_period!r}, control_region={control_region!r}. "
+            f"Supported canonical combinations: {supported}"
+        )
+
+    transfer_factor = AN_FIXED_TRANSFER_FACTORS[(canonical_period, canonical_control)]
+    return DxyTransferFactorFit(
+        control_region=control_region,
+        histogram=f"fixed:{canonical_period}:{canonical_control}",
+        numerator_range=(0.0, 0.02),
+        denominator_range=(0.05, 0.50),
+        fit_range=(0.10, 0.50),
+        amplitude=0.0,
+        sigma=0.0,
+        constant=0.0,
+        transfer_factor=transfer_factor,
+    )
+
+
 def _relative_variance(count: Count) -> float:
     if count.value == 0.0:
         return 0.0
@@ -803,11 +884,17 @@ def write_an_fake_track_latex(
 
         out.write(r"\hline" + "\n")
         out.write(r"\end{tabular}" + "\n")
-        out.write(
-            "% Fit: Gaussian with mean fixed to zero plus constant, "
-            f"{fit.fit_range[0]} <= |dxy| < {fit.fit_range[1]} cm. "
-            f"sigma={fit.sigma:.4g}, constant={fit.constant:.4g}.\n"
-        )
+        if fit.histogram.startswith("fixed:"):
+            out.write(
+                "% Transfer factor: fixed AN Section-5.2 value for this "
+                "run period and control region.\n"
+            )
+        else:
+            out.write(
+                "% Fit: Gaussian with mean fixed to zero plus constant, "
+                f"{fit.fit_range[0]} <= |dxy| < {fit.fit_range[1]} cm. "
+                f"sigma={fit.sigma:.4g}, constant={fit.constant:.4g}.\n"
+            )
         if include_table_env:
             out.write(r"\end{table}" + "\n")
 

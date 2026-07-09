@@ -2,6 +2,7 @@ import json
 
 from disapptrks.fake_tracks import (
     estimate_fake_track_background,
+    fixed_an_transfer_factor_fit,
     write_fake_track_latex,
 )
 
@@ -83,3 +84,11 @@ def test_fake_track_estimate_json_serializable():
     )
 
     json.dumps(estimate.as_dict())
+
+
+def test_fixed_an_transfer_factor_accepts_run_period_aliases():
+    fit = fixed_an_transfer_factor_fit("2022 CD", "zmumu")
+
+    assert fit.histogram == "fixed:2022CD:zmumu"
+    assert fit.transfer_factor.value == 0.10
+    assert fit.transfer_factor.error == 0.06

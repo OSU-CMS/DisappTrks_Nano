@@ -866,6 +866,90 @@ def fake_track_no_d0_mask(
     )
 
 
+def fake_track_sideband_cutflow_masks(
+    tracks,
+    *,
+    sideband_min: float = 0.05,
+    sideband_max: float = 0.50,
+):
+    """Return cumulative fake-track sideband candidate masks.
+
+    This is a diagnostic view of the fake-track sideband branch used for the
+    JetMET fake-track normalization.  It follows the disappearing-track-like
+    requirements with the nominal signal d0 requirement replaced by the
+    sideband ``sideband_min <= |d0| < sideband_max`` requirement.
+    """
+
+    masks = {}
+    mask = tracks.pt > 55.0
+    masks["track_pt55"] = mask
+
+    mask = mask & (abs(tracks.eta) < 2.1)
+    masks["track_eta2p1"] = mask
+
+    mask = mask & ~tracks.inECALCrack
+    masks["track_noECALCrack"] = mask
+
+    mask = mask & ~tracks.inDTWheelGap
+    masks["track_noDTWheelGap"] = mask
+
+    mask = mask & ~tracks.inCSCTransition
+    masks["track_noCSCTransition"] = mask
+
+    mask = mask & ~tracks.inTOBCrack
+    masks["track_noTOBCrack"] = mask
+
+    mask = mask & tracks.isFiducialECALTrack
+    masks["track_fiducialECAL"] = mask
+
+    mask = mask & (tracks.hp_nValidPixelHits >= 4)
+    masks["track_pixelHits4"] = mask
+
+    mask = mask & (tracks.hp_nValidHits >= 4)
+    masks["track_validHits4"] = mask
+
+    mask = mask & (tracks.missingInnerHits == 0)
+    masks["track_noMissingInner"] = mask
+
+    mask = mask & (tracks.missingMiddleHits == 0)
+    masks["track_noMissingMiddle"] = mask
+
+    mask = mask & (tracks.pfRelIso03_chg < 0.05)
+    masks["track_chargedIso0p05"] = mask
+
+    mask = mask & (abs(tracks.dz) < 0.5)
+    masks["track_dz0p5"] = mask
+
+    mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
+    masks["track_dRJet0p5"] = mask
+
+    mask = mask & (tracks.caloEnergy < 10.0)
+    masks["track_calo10"] = mask
+
+    mask = mask & (tracks.missingOuterHits >= 3)
+    masks["track_missingOuter3"] = mask
+
+    mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+    masks["track_electronVeto"] = mask
+
+    mask = mask & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+    masks["track_muonVeto"] = mask
+
+    mask = mask & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+    masks["track_tauVeto"] = mask
+
+    abs_dxy = abs(tracks.dxy)
+    mask = mask & (abs_dxy >= sideband_min) & (abs_dxy < sideband_max)
+    masks["track_d0Sideband"] = mask
+
+    masks["track_NLayers4"] = mask & layer_mask(tracks, "NLayers4")
+    masks["track_NLayers5"] = mask & layer_mask(tracks, "NLayers5")
+    masks["track_NLayers6plus"] = mask & layer_mask(tracks, "NLayers6plus")
+    masks["track_combinedBins"] = mask & layer_mask(tracks, "combinedBins")
+
+    return masks
+
+
 def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     """Return cumulative track masks for debugging the search-track selection."""
     masks = {}

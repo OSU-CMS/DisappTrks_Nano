@@ -403,6 +403,49 @@ LEPTON_PVETO_CUTFLOW_ROWS = {
     ],
 }
 
+TAU_PVETO_AN_CUTFLOW_ROWS = {
+    "tau_mu": [
+        ("tau_pveto_diag_tau_mu_event_trigger", r"event passes SingleMuon triggers"),
+        ("tau_pveto_diag_tau_mu_tag_pt", r"$\geq 1$ muons $p_T > 26~\mathrm{GeV}$"),
+        ("tau_pveto_diag_tau_mu_tag_eta2p1", r"$\geq 1$ muons $|\eta| < 2.1$"),
+        ("tau_pveto_diag_tau_mu_tag_tight_id", r"$\geq 1$ muons passing tight muon ID"),
+        ("tau_pveto_diag_tau_mu_tag_low_mt", r"$\geq 1$ muons $M_T(p_T^{\mathrm{miss}},\mu)<40~\mathrm{GeV}$"),
+        ("tau_pveto_diag_tau_mu_track_pt30", r"$\geq 1$ tracks $p_T > 30~\mathrm{GeV}$"),
+        ("tau_pveto_diag_tau_mu_track_fiducialECAL", r"$\geq 1$ tracks passing fiducial selections"),
+        ("tau_pveto_diag_tau_mu_track_pixelHits4", r"$\geq 1$ tracks number of pixel hits $\geq 4$"),
+        ("tau_pveto_diag_tau_mu_track_noMissingInner", r"$\geq 1$ tracks missing inner hits $=0$"),
+        ("tau_pveto_diag_tau_mu_track_noMissingMiddle", r"$\geq 1$ tracks missing middle hits $=0$"),
+        ("tau_pveto_diag_tau_mu_track_chargedIso0p05", r"$\geq 1$ tracks rel. PF-based iso. $<0.05$"),
+        ("tau_pveto_diag_tau_mu_track_dxy0p02", r"$\geq 1$ tracks $|d_{xy}|<0.02~\mathrm{cm}$"),
+        ("tau_pveto_diag_tau_mu_track_dz0p5", r"$\geq 1$ tracks $|d_z|<0.5~\mathrm{cm}$"),
+        ("tau_pveto_diag_tau_mu_track_electronVeto", r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,electron}}>0.15$"),
+        ("tau_pveto_diag_tau_mu_track_muonVeto", r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,\mu}}>0.15$"),
+        ("tau_pveto_diag_tau_mu_pair_masswindow", r"$=1$ track--muon pairs $15<M_Z-M_{\mathrm{track},\mu}<50~\mathrm{GeV}$"),
+        ("tau_pveto_diag_tau_mu_pair_os", r"$=1$ track--muon pairs $q_{\mathrm{track}}q_\mu<0$"),
+        ("tau_pveto_diag_tau_mu_layer_combinedBins", r"$\geq 1$ track $n_{\mathrm{layers}}\geq 4$ (three signal region bins)"),
+    ],
+    "tau_ele": [
+        ("tau_pveto_diag_tau_ele_event_trigger", r"event passes SingleElectron/EGamma triggers"),
+        ("tau_pveto_diag_tau_ele_tag_pt", r"$\geq 1$ electrons $p_T > 32~\mathrm{GeV}$"),
+        ("tau_pveto_diag_tau_ele_tag_eta2p1", r"$\geq 1$ electrons $|\eta| < 2.1$"),
+        ("tau_pveto_diag_tau_ele_tag_tight_id", r"$\geq 1$ electrons passing tight electron ID"),
+        ("tau_pveto_diag_tau_ele_tag_low_mt", r"$\geq 1$ electrons $M_T(p_T^{\mathrm{miss}},e)<40~\mathrm{GeV}$"),
+        ("tau_pveto_diag_tau_ele_track_pt30", r"$\geq 1$ tracks $p_T > 30~\mathrm{GeV}$"),
+        ("tau_pveto_diag_tau_ele_track_fiducialECAL", r"$\geq 1$ tracks passing fiducial selections"),
+        ("tau_pveto_diag_tau_ele_track_pixelHits4", r"$\geq 1$ tracks number of pixel hits $\geq 4$"),
+        ("tau_pveto_diag_tau_ele_track_noMissingInner", r"$\geq 1$ tracks missing inner hits $=0$"),
+        ("tau_pveto_diag_tau_ele_track_noMissingMiddle", r"$\geq 1$ tracks missing middle hits $=0$"),
+        ("tau_pveto_diag_tau_ele_track_chargedIso0p05", r"$\geq 1$ tracks rel. PF-based iso. $<0.05$"),
+        ("tau_pveto_diag_tau_ele_track_dxy0p02", r"$\geq 1$ tracks $|d_{xy}|<0.02~\mathrm{cm}$"),
+        ("tau_pveto_diag_tau_ele_track_dz0p5", r"$\geq 1$ tracks $|d_z|<0.5~\mathrm{cm}$"),
+        ("tau_pveto_diag_tau_ele_track_electronVeto", r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,electron}}>0.15$"),
+        ("tau_pveto_diag_tau_ele_track_muonVeto", r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,\mu}}>0.15$"),
+        ("tau_pveto_diag_tau_ele_pair_masswindow", r"$=1$ track--electron pairs $15<M_Z-M_{\mathrm{track},e}<50~\mathrm{GeV}$"),
+        ("tau_pveto_diag_tau_ele_pair_os", r"$=1$ track--electron pairs $q_{\mathrm{track}}q_e<0$"),
+        ("tau_pveto_diag_tau_ele_layer_combinedBins", r"$\geq 1$ track $n_{\mathrm{layers}}\geq 4$ (three signal region bins)"),
+    ],
+}
+
 DISPLAY_LAYER = {
     "NLayers4": r"$N_{\mathrm{layers}}=4$",
     "NLayers5": r"$N_{\mathrm{layers}}=5$",
@@ -942,9 +985,17 @@ def write_lepton_pveto_cutflow_latex(
     sample: str | None = None,
     variation: str = "nominal",
     include_table_env: bool = False,
+    layout: str = "diagnostic",
 ) -> None:
     """Write a compact lepton/tau Pveto diagnostic cutflow table."""
-    if mode not in LEPTON_PVETO_CUTFLOW_ROWS:
+    if layout == "diagnostic":
+        row_map = LEPTON_PVETO_CUTFLOW_ROWS
+    elif layout == "an22_23":
+        row_map = TAU_PVETO_AN_CUTFLOW_ROWS
+    else:
+        raise ValueError(f"unknown lepton Pveto cutflow layout: {layout}")
+
+    if mode not in row_map:
         raise ValueError(f"unknown lepton Pveto cutflow mode: {mode}")
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -959,7 +1010,7 @@ def write_lepton_pveto_cutflow_latex(
                 variation=variation,
             ),
         )
-        for category, label in LEPTON_PVETO_CUTFLOW_ROWS[mode]
+        for category, label in row_map[mode]
     ]
 
     with path.open("w") as out:
@@ -1074,7 +1125,7 @@ def write_muon_pveto_latex(
             ]
             summary = (
                 combined_pveto_from_layer_counts(component_counts)
-                if component_counts
+                if len(component_counts) == 3
                 else pveto_with_asymmetric_uncertainty(
                     den_os=CountWithVariance(den_os_value, den_os_value),
                     num_os=CountWithVariance(num_os_value, num_os_value),
