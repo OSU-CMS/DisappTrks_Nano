@@ -21,6 +21,7 @@ from disapptrks.selections import (
     electron_tag_progression_masks,
     electron_tag_mask,
     fake_track_no_d0_mask,
+    fake_track_sideband_cutflow_masks,
     generic_probe_pair_layer_mask,
     invariant_mass,
     lepton_veto_probe_track_mask,
@@ -1244,6 +1245,17 @@ class DisappTrksProcessor(BaseProcessorABC):
             diagnostics[f"eventKinematics_{name}"] = event_search_kinematics & mask
         self.events["SearchDiag"] = ak.zip(diagnostics)
 
+    def _store_fake_track_diagnostics(self):
+        event_search_kinematics = search_event_cutflow_masks(
+            self.events.AnalysisEvent
+        )["event_dijetDphi2p5"]
+        diagnostics = {}
+        for name, mask in fake_track_sideband_cutflow_masks(self.events.IsoTrack).items():
+            n_name = f"nFakeDiag{name[0].upper()}{name[1:]}"
+            self.events[n_name] = ak.num(self.events.IsoTrack[mask])
+            diagnostics[name] = event_search_kinematics & (self.events[n_name] >= 1)
+        self.events["FakeTrackDiag"] = ak.zip(diagnostics)
+
     def _count_objects_mode_aware(self, variation):
         mode = self._category_mode()
         self._count_common_search_fields()
@@ -1293,6 +1305,8 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         if self._search_diagnostics_enabled():
             self._store_search_diagnostics()
+            if mode == "fake_tracks":
+                self._store_fake_track_diagnostics()
 
     def count_objects(self, variation):
         if self._category_mode() != "all" and not self._full_workflow_enabled():
@@ -1872,6 +1886,8 @@ class DisappTrksProcessor(BaseProcessorABC):
         for name, mask in track_diagnostics.items():
             diagnostics[f"eventKinematics_{name}"] = event_search_kinematics & mask
         self.events["SearchDiag"] = ak.zip(diagnostics)
+        if self._search_diagnostics_enabled() and self._category_mode() == "fake_tracks":
+            self._store_fake_track_diagnostics()
 
     def define_common_variables_before_presel(self, variation):
         pass

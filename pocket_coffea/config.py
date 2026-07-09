@@ -35,6 +35,7 @@ from cuts import (
     muon_table16_cuts,
     muon_pveto_layer_cuts,
     EVENT_DIAGNOSTIC_FIELDS,
+    fake_track_diagnostic_cuts,
     search_diagnostic_cuts,
     search_kinematics,
     single_electron_hlt,
@@ -209,6 +210,14 @@ if enable_search_diagnostics:
     }
 else:
     diagnostic_categories = {}
+fake_track_diagnostic_categories = (
+    {
+        f"fake_track_diag_{name}": [cut]
+        for name, cut in fake_track_diagnostic_cuts.items()
+    }
+    if enable_search_diagnostics and category_mode == "fake_tracks"
+    else {}
+)
 muon_pveto_layer_categories = {
     name: [cut] for name, cut in muon_pveto_layer_cuts.items()
 }
@@ -340,6 +349,7 @@ else:
 selected_categories = {
     **selected_categories,
     **diagnostic_categories,
+    **fake_track_diagnostic_categories,
 }
 
 pveto_layers = ("NLayers4", "NLayers5", "NLayers6plus")

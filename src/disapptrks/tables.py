@@ -252,11 +252,11 @@ LEPTON_PVETO_CUTFLOW_ROWS = {
         ),
         (
             "electron_pveto_diag_electron_dxy",
-            r"$\geq 1$ electrons passing barrel/endcap $d_{xy}$ cuts",
+            r"$\geq 1$ electrons $|d_{xy}|<0.05~\mathrm{cm}$ (EB) or $<0.10~\mathrm{cm}$ (EE)",
         ),
         (
             "electron_pveto_diag_electron_dz",
-            r"$\geq 1$ electrons passing barrel/endcap $d_z$ cuts",
+            r"$\geq 1$ electrons $|d_z|<0.10~\mathrm{cm}$ (EB) or $<0.20~\mathrm{cm}$ (EE)",
         ),
         ("electron_pveto_diag_electron_selected_tag", r"$\geq 1$ selected electron tags"),
         ("electron_pveto_diag_track_pt30", r"$\geq 1$ tracks $p_T > 30~\mathrm{GeV}$"),

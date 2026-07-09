@@ -44,6 +44,33 @@ TRACK_DIAGNOSTIC_FIELDS = [
     "track_tauVeto",
 ]
 
+FAKE_TRACK_DIAGNOSTIC_FIELDS = [
+    "track_pt55",
+    "track_eta2p1",
+    "track_noECALCrack",
+    "track_noDTWheelGap",
+    "track_noCSCTransition",
+    "track_noTOBCrack",
+    "track_fiducialECAL",
+    "track_pixelHits4",
+    "track_validHits4",
+    "track_noMissingInner",
+    "track_noMissingMiddle",
+    "track_chargedIso0p05",
+    "track_dz0p5",
+    "track_dRJet0p5",
+    "track_calo10",
+    "track_missingOuter3",
+    "track_electronVeto",
+    "track_muonVeto",
+    "track_tauVeto",
+    "track_d0Sideband",
+    "track_NLayers4",
+    "track_NLayers5",
+    "track_NLayers6plus",
+    "track_combinedBins",
+]
+
 COMBINED_DIAGNOSTIC_FIELDS = [
     f"eventKinematics_{field}" for field in TRACK_DIAGNOSTIC_FIELDS
 ]
@@ -512,6 +539,10 @@ def _search_diagnostic(events, params, **kwargs):
     return events.SearchDiag[params["field"]]
 
 
+def _fake_track_diagnostic(events, params, **kwargs):
+    return events.FakeTrackDiag[params["field"]]
+
+
 def _muon_table16_diagnostic(events, params, **kwargs):
     return events.MuonTable16Diag[params["field"]]
 
@@ -886,6 +917,15 @@ search_diagnostic_cuts = {
         function=_search_diagnostic,
     )
     for field in SEARCH_DIAGNOSTIC_FIELDS
+}
+
+fake_track_diagnostic_cuts = {
+    field: Cut(
+        name=f"fake_track_diag_{field}",
+        params={"field": field},
+        function=_fake_track_diagnostic,
+    )
+    for field in FAKE_TRACK_DIAGNOSTIC_FIELDS
 }
 
 muon_table16_cuts = {
