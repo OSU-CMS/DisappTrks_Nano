@@ -173,6 +173,7 @@ TAU_PVETO_DIAGNOSTIC_FIELDS = [
     "tag_pt",
     "tag_eta2p1",
     "tag_tight_id",
+    "tag_selected",
     "tag_low_mt",
     "track_pt30",
     "track_eta2p1",

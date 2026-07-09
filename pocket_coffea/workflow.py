@@ -694,11 +694,9 @@ class DisappTrksProcessor(BaseProcessorABC):
             ]
 
         if self._mode_enabled("tau_mu_pveto"):
-            tau_mu_tag_mask = (
-                (self.events.Muon.pt > 26.0)
-                & (abs(self.events.Muon.eta) < 2.1)
-                & self.events.Muon.tightId
-            )
+            tau_mu_tag_mask = muon_tag_progression_masks(self.events.Muon)[
+                "muon_selected_tag"
+            ]
             self.events["MuonLowMTTag"] = self.events.Muon[tau_mu_tag_mask][
                 low_mt_mask(self.events.Muon[tau_mu_tag_mask], tag_met)
             ]
@@ -1265,13 +1263,13 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         if mode == "tau_mu_pveto":
             event_trigger = event_golden_json & self.events.HLT.IsoMu24
-            tau_mu_tag_masks = {"tag_pt": self.events.Muon.pt > 26.0}
-            tau_mu_tag_masks["tag_eta2p1"] = tau_mu_tag_masks["tag_pt"] & (
-                abs(self.events.Muon.eta) < 2.1
-            )
-            tau_mu_tag_masks["tag_tight_id"] = (
-                tau_mu_tag_masks["tag_eta2p1"] & self.events.Muon.tightId
-            )
+            muon_tag_masks = muon_tag_progression_masks(self.events.Muon)
+            tau_mu_tag_masks = {
+                "tag_pt": muon_tag_masks["muon_pt26"],
+                "tag_eta2p1": muon_tag_masks["muon_eta2p1"],
+                "tag_tight_id": muon_tag_masks["muon_tight_id"],
+                "tag_selected": muon_tag_masks["muon_selected_tag"],
+            }
             store(
                 collection="TauMuPVetoDiag",
                 tag_source=self.events.Muon,

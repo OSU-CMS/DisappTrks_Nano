@@ -4,6 +4,7 @@ from disapptrks.tables import (
     CountWithVariance,
     pveto_with_asymmetric_uncertainty,
     write_lepton_pveto_cutflow_latex,
+    write_fake_track_basic_cutflow_latex,
     write_muon_cutflow_latex,
     write_muon_pveto_latex,
 )
@@ -134,3 +135,43 @@ def test_write_tau_pveto_an_cutflow_layout_groups_fiducial_rows(tmp_path: Path):
     assert "passing fiducial selections" in text
     assert "tracks $|\\eta| < 2.1$" not in text
     assert "event passes MET filters" not in text
+
+
+def test_write_fake_track_basic_cutflow_uses_an_table17_row_names(tmp_path: Path):
+    cutflow = {
+        "initial": {"dataset": {"sample": {"nominal": 100.0}}},
+        "skim": {"dataset": {"sample": {"nominal": 90.0}}},
+        "presel": {"dataset": {"sample": {"nominal": 80.0}}},
+        "inclusive": {"dataset": {"sample": {"nominal": 70.0}}},
+        "diag_event_metNoMu120": {"dataset": {"sample": {"nominal": 60.0}}},
+        "diag_event_leadingJet110": {"dataset": {"sample": {"nominal": 50.0}}},
+        "diag_event_jetMetDphi0p5": {"dataset": {"sample": {"nominal": 40.0}}},
+        "diag_event_dijetDphi2p5": {"dataset": {"sample": {"nominal": 30.0}}},
+        "basic_selection": {"dataset": {"sample": {"nominal": 20.0}}},
+        "fake_control_combinedBins": {"dataset": {"sample": {"nominal": 10.0}}},
+    }
+
+    path = tmp_path / "basic_cutflow.tex"
+    write_fake_track_basic_cutflow_latex(
+        cutflow,
+        path,
+        dataset="dataset",
+        sample="sample",
+    )
+
+    labels = [
+        line.split(" & ", maxsplit=1)[0]
+        for line in path.read_text().splitlines()
+        if " & " in line and not line.startswith("Cut/category")
+    ]
+
+    assert labels == [
+        r"initial events",
+        r"event passes JetMET/MET triggers",
+        r"event passes golden JSON, MET filters, and jet veto map",
+        r"inclusive analysis category after preselections",
+        r"$p_T^{\mathrm{miss,no}\,\mu}>120~\mathrm{GeV}$",
+        r"leading jet $p_T>110~\mathrm{GeV}$",
+        r"$\Delta\phi(\mathrm{leading~jet},\vec{p}_T^{\mathrm{miss,no}\,\mu})>0.5$",
+        r"maximum dijet $\Delta\phi<2.5$",
+    ]

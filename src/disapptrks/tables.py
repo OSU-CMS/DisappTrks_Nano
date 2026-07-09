@@ -130,85 +130,6 @@ FAKE_TRACK_BASIC_CUTFLOW_ROWS = [
         "diag_event_dijetDphi2p5",
         r"maximum dijet $\Delta\phi<2.5$",
     ),
-    ("basic_selection", r"event passes BasicSelection"),
-    ("fake_track_diag_track_pt55", r"$\geq 1$ tracks $p_T>55~\mathrm{GeV}$"),
-    ("fake_track_diag_track_eta2p1", r"$\geq 1$ tracks $|\eta|<2.1$"),
-    (
-        "fake_track_diag_track_noECALCrack",
-        r"$\geq 1$ tracks outside the ECAL crack",
-    ),
-    (
-        "fake_track_diag_track_noDTWheelGap",
-        r"$\geq 1$ tracks outside DT wheel gaps",
-    ),
-    (
-        "fake_track_diag_track_noCSCTransition",
-        r"$\geq 1$ tracks outside CSC transition regions",
-    ),
-    (
-        "fake_track_diag_track_noTOBCrack",
-        r"$\geq 1$ tracks outside TOB cracks",
-    ),
-    (
-        "fake_track_diag_track_fiducialECAL",
-        r"$\geq 1$ tracks fiducial to the ECAL",
-    ),
-    (
-        "fake_track_diag_track_pixelHits4",
-        r"$\geq 1$ tracks number of pixel hits $\geq 4$",
-    ),
-    (
-        "fake_track_diag_track_validHits4",
-        r"$\geq 1$ tracks number of valid hits $\geq 4$",
-    ),
-    (
-        "fake_track_diag_track_noMissingInner",
-        r"$\geq 1$ tracks missing inner hits $=0$",
-    ),
-    (
-        "fake_track_diag_track_noMissingMiddle",
-        r"$\geq 1$ tracks missing middle hits $=0$",
-    ),
-    (
-        "fake_track_diag_track_chargedIso0p05",
-        r"$\geq 1$ tracks rel. PF-based iso. $<0.05$",
-    ),
-    (
-        "fake_track_diag_track_dz0p5",
-        r"$\geq 1$ tracks $|d_z|<0.5~\mathrm{cm}$",
-    ),
-    (
-        "fake_track_diag_track_dRJet0p5",
-        r"$\geq 1$ track--jet pairs $\Delta R_{\mathrm{track,jet}}>0.5$",
-    ),
-    (
-        "fake_track_diag_track_calo10",
-        r"$\geq 1$ tracks $E_{\mathrm{calo}}<10~\mathrm{GeV}$",
-    ),
-    (
-        "fake_track_diag_track_missingOuter3",
-        r"$\geq 1$ tracks missing outer hits $\geq 3$",
-    ),
-    (
-        "fake_track_diag_track_electronVeto",
-        r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,electron}}>0.15$",
-    ),
-    (
-        "fake_track_diag_track_muonVeto",
-        r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,\mu}}>0.15$",
-    ),
-    (
-        "fake_track_diag_track_tauVeto",
-        r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,had.~tau}}>0.15$",
-    ),
-    (
-        "fake_track_diag_track_d0Sideband",
-        r"$\geq 1$ tracks with $0.05<|d_0|<0.5~\mathrm{cm}$",
-    ),
-    (
-        "fake_track_diag_track_combinedBins",
-        r"$\geq 1$ tracks with $N_{\mathrm{layers}}\geq 4$",
-    ),
 ]
 
 FAKE_TRACK_CONTROL_CUTFLOW_ROWS = [
@@ -350,6 +271,10 @@ LEPTON_PVETO_CUTFLOW_ROWS = {
         ("tau_pveto_diag_tau_mu_tag_pt", r"$\geq 1$ muons $p_T > 26~\mathrm{GeV}$"),
         ("tau_pveto_diag_tau_mu_tag_eta2p1", r"$\geq 1$ muons $|\eta| < 2.1$"),
         ("tau_pveto_diag_tau_mu_tag_tight_id", r"$\geq 1$ muons passing tight muon ID"),
+        (
+            "tau_pveto_diag_tau_mu_tag_selected",
+            r"$\geq 1$ muons with rel. PF iso. $<0.15$ and trigger-object match",
+        ),
         ("tau_pveto_diag_tau_mu_tag_low_mt", r"$\geq 1$ muons $M_T(p_T^{\mathrm{miss}},\mu)<40~\mathrm{GeV}$"),
         ("tau_pveto_diag_tau_mu_track_pt30", r"$\geq 1$ tracks $p_T > 30~\mathrm{GeV}$"),
         ("tau_pveto_diag_tau_mu_track_eta2p1", r"$\geq 1$ tracks $|\eta| < 2.1$"),
@@ -409,6 +334,10 @@ TAU_PVETO_AN_CUTFLOW_ROWS = {
         ("tau_pveto_diag_tau_mu_tag_pt", r"$\geq 1$ muons $p_T > 26~\mathrm{GeV}$"),
         ("tau_pveto_diag_tau_mu_tag_eta2p1", r"$\geq 1$ muons $|\eta| < 2.1$"),
         ("tau_pveto_diag_tau_mu_tag_tight_id", r"$\geq 1$ muons passing tight muon ID"),
+        (
+            "tau_pveto_diag_tau_mu_tag_selected",
+            r"$\geq 1$ muons with rel. PF iso. $<0.15$ and trigger-object match",
+        ),
         ("tau_pveto_diag_tau_mu_tag_low_mt", r"$\geq 1$ muons $M_T(p_T^{\mathrm{miss}},\mu)<40~\mathrm{GeV}$"),
         ("tau_pveto_diag_tau_mu_track_pt30", r"$\geq 1$ tracks $p_T > 30~\mathrm{GeV}$"),
         ("tau_pveto_diag_tau_mu_track_fiducialECAL", r"$\geq 1$ tracks passing fiducial selections"),
@@ -874,13 +803,11 @@ def write_fake_track_basic_cutflow_latex(
     variation: str = "nominal",
     include_table_env: bool = False,
 ) -> None:
-    """Write the JetMET/basic-selection cutflow used by the fake-track estimate.
+    """Write the AN Table 17 JetMET/basic-selection event cutflow.
 
     This table is a true event cutflow through BasicSelection when the input
     output contains the ``diag_event_*`` categories produced with
-    ``DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS=1``.  It then appends the
-    fake-track category yields used by the estimate; those appended rows are
-    not mutually sequential cuts.
+    ``DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS=1``.
     """
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -914,22 +841,6 @@ def write_fake_track_basic_cutflow_latex(
         )
         for category, label in FAKE_TRACK_BASIC_CUTFLOW_ROWS
     ]
-    control_rows = [
-        (
-            label,
-            _category_count(
-                cutflow,
-                category,
-                dataset=dataset,
-                sample=sample,
-                variation=variation,
-            ),
-        )
-        for category, label in FAKE_TRACK_CONTROL_CUTFLOW_ROWS
-    ]
-
-    basic = count("basic_selection")
-
     with path.open("w") as out:
         if include_table_env:
             out.write(r"\begin{table}[htbp]" + "\n")
@@ -955,20 +866,6 @@ def write_fake_track_basic_cutflow_latex(
                 f"{eff_prev:.4f} & {eff_total:.4f} \\\\\n"
             )
             previous = value
-
-        if control_rows:
-            out.write(r"\hline" + "\n")
-            out.write(
-                r"\multicolumn{4}{l}{Fake-track estimate control categories "
-                r"(not sequential cuts)} \\" + "\n"
-            )
-            out.write(r"\hline" + "\n")
-            for label, value in control_rows:
-                frac_basic = value / basic if basic else 0.0
-                out.write(
-                    f"{label} & {format_count(value)} & "
-                    f"-- & {frac_basic:.4f} \\\\\n"
-                )
 
         out.write(r"\hline" + "\n")
         out.write(r"\end{tabular}" + "\n")

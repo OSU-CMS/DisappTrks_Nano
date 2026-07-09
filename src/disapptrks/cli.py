@@ -25,6 +25,7 @@ from .fake_tracks import (
     summed_hist_counts_edges,
     write_an_fake_track_latex,
     write_fake_track_table34_latex,
+    write_fake_track_z_control_latex,
     write_fake_track_latex,
 )
 from .schema import audit_root_file
@@ -368,6 +369,15 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
             for layer in args.layers
         ]
 
+        if args.z_control_tex:
+            write_fake_track_z_control_latex(
+                estimates,
+                args.z_control_tex,
+                run_period=args.run_period,
+                include_table_env=args.table_env,
+            )
+            print(f"Wrote {args.z_control_tex}")
+
         if args.output_json:
             args.output_json.parent.mkdir(parents=True, exist_ok=True)
             payload = {
@@ -422,8 +432,11 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
                 f"P_raw={estimate.raw_probability.value:.6g} ± {estimate.raw_probability.error:.6g}, "
                 f"P_fake={estimate.fake_probability.value:.6g} ± {estimate.fake_probability.error:.6g}, "
                 f"{fake_yield}"
-        )
+            )
         return 0
+
+    if args.z_control_tex:
+        raise SystemExit("error: --z-control-tex requires --an-control")
 
     if args.counts_json:
         source = json.loads(args.counts_json.read_text())
@@ -1163,6 +1176,14 @@ def main():
         help=(
             "Write a JetMET/basic-selection cutflow table for the fake-track "
             "normalization. With --an-control this is read from --basic-files."
+        ),
+    )
+    fake_tracks.add_argument(
+        "--z-control-tex",
+        type=Path,
+        help=(
+            "With --an-control, write a Tables-32/33-style Z-control input "
+            "table with N_Z and sideband counts by layer."
         ),
     )
     fake_tracks.add_argument(

@@ -899,6 +899,58 @@ def write_an_fake_track_latex(
             out.write(r"\end{table}" + "\n")
 
 
+def write_fake_track_z_control_latex(
+    estimates: Sequence[ANFakeTrackEstimate],
+    path: Path,
+    *,
+    run_period: str,
+    include_table_env: bool = False,
+) -> None:
+    """Write the Z-control-region inputs used by the AN fake-track estimate.
+
+    These are the Tables-32/33-style ingredients: the inclusive Z control count
+    and the disappearing-track sideband counts in each layer bin.  They are
+    intentionally separate from the JetMET/basic-selection cutflow because they
+    are not a sequential selection on the JetMET sample.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}[htbp]" + "\n")
+            out.write(r"\centering" + "\n")
+            out.write(r"\caption{Fake-track Z-control-region inputs.}" + "\n")
+            out.write(r"\label{tab:fake_track_z_control}" + "\n")
+
+        out.write(r"\begin{tabular}{llcrrr}" + "\n")
+        out.write(r"\hline" + "\n")
+        out.write(
+            r"run period & control & $n_{\mathrm{layers}}$ & "
+            r"$N_Z$ & $N_{\mathrm{sideband}}$ & "
+            r"$N_{\mathrm{sideband}}/N_Z$ \\" + "\n"
+        )
+        out.write(r"\hline" + "\n")
+        first = True
+        for estimate in estimates:
+            raw_probability = format_pm_latex(
+                estimate.raw_probability.value,
+                estimate.raw_probability.error,
+            )
+            out.write(
+                f"{run_period if first else ''} & "
+                f"{estimate.control_region if first else ''} & "
+                f"{_layer_label(estimate.layer)} & "
+                f"{format_count(estimate.control_events.value)} & "
+                f"{format_count(estimate.sideband_events.value)} & "
+                f"{raw_probability} \\\\\n"
+            )
+            first = False
+        out.write(r"\hline" + "\n")
+        out.write(r"\end{tabular}" + "\n")
+        if include_table_env:
+            out.write(r"\end{table}" + "\n")
+
+
 def _count_from_payload(value: Mapping[str, Any]) -> Count:
     return Count(float(value["value"]), float(value.get("variance", value.get("error", 0.0) ** 2)))
 
