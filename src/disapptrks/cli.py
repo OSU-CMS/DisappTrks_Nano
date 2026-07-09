@@ -20,6 +20,7 @@ from .fake_tracks import (
     estimate_fake_track_background_an,
     fit_dxy_transfer_factor,
     fit_signed_dxy_transfer_factor,
+    fixed_an_transfer_factor_fit,
     plot_dxy_transfer_factor,
     summed_hist_counts_edges,
     write_an_fake_track_latex,
@@ -296,36 +297,44 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
             },
         }[args.an_control]
 
-        counts, edges = summed_hist_counts_edges(
-            outputs,
-            control_cfg["histogram"],
-            dataset=args.dataset,
-            sample=args.sample,
-        )
-        try:
-            signed_counts, signed_edges = summed_hist_counts_edges(
+        counts = edges = signed_counts = signed_edges = None
+        if args.transfer_factor_source == "fixed":
+            if args.fit_plot:
+                raise SystemExit(
+                    "error: --fit-plot requires --transfer-factor-source fit"
+                )
+            fit = fixed_an_transfer_factor_fit(args.run_period, args.an_control)
+        else:
+            counts, edges = summed_hist_counts_edges(
                 outputs,
-                control_cfg["signed_histogram"],
+                control_cfg["histogram"],
                 dataset=args.dataset,
                 sample=args.sample,
             )
-        except KeyError:
-            signed_counts, signed_edges = None, None
+            try:
+                signed_counts, signed_edges = summed_hist_counts_edges(
+                    outputs,
+                    control_cfg["signed_histogram"],
+                    dataset=args.dataset,
+                    sample=args.sample,
+                )
+            except KeyError:
+                signed_counts, signed_edges = None, None
 
-        if signed_counts is None or signed_edges is None:
-            fit = fit_dxy_transfer_factor(
-                counts,
-                edges,
-                control_region=control_cfg["control_region"],
-                histogram=control_cfg["histogram"],
-            )
-        else:
-            fit = fit_signed_dxy_transfer_factor(
-                signed_counts,
-                signed_edges,
-                control_region=control_cfg["control_region"],
-                histogram=control_cfg["signed_histogram"],
-            )
+            if signed_counts is None or signed_edges is None:
+                fit = fit_dxy_transfer_factor(
+                    counts,
+                    edges,
+                    control_region=control_cfg["control_region"],
+                    histogram=control_cfg["histogram"],
+                )
+            else:
+                fit = fit_signed_dxy_transfer_factor(
+                    signed_counts,
+                    signed_edges,
+                    control_region=control_cfg["control_region"],
+                    histogram=control_cfg["signed_histogram"],
+                )
 
         if args.fit_plot:
             plot_dxy_transfer_factor(
@@ -392,10 +401,13 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
             )
             print(f"Wrote {args.output_tex}")
 
+        source_detail = f"{args.transfer_factor_source} transfer factor"
+        if args.transfer_factor_source == "fit":
+            source_detail += f", fit sigma={fit.sigma:.6g}"
         print(
             f"{control_cfg['control_region']}: "
             f"zeta={fit.transfer_factor.value:.6g} ± {fit.transfer_factor.error:.6g} "
-            f"(fit sigma={fit.sigma:.6g})"
+            f"({source_detail})"
         )
         for estimate in estimates:
             fake_yield = (
@@ -658,6 +670,7 @@ def _make_lepton_pveto_table_command(args: argparse.Namespace) -> int:
             sample=args.sample,
             variation=args.variation,
             include_table_env=args.table_env,
+            layout=args.cutflow_layout,
         )
         print(f"Wrote {args.cutflow_tex}")
 
@@ -897,6 +910,15 @@ def main():
         help="Also write a compact diagnostic cutflow LaTeX table.",
     )
     lepton_pveto_table.add_argument(
+        "--cutflow-layout",
+        choices=["diagnostic", "an22_23"],
+        default="diagnostic",
+        help=(
+            "Cutflow row layout. Use an22_23 for tau electron/muon legs in "
+            "the compact AN Table 22/23 order."
+        ),
+    )
+    lepton_pveto_table.add_argument(
         "--table-env",
         action="store_true",
         help="Wrap the tabular in a LaTeX table environment.",
@@ -1057,7 +1079,16 @@ def main():
         choices=["zmumu", "zee"],
         help=(
             "Use the Chapter-5 fake-track method for a Z->ll control region: "
-            "P_fake = zeta * N_sideband / N_Z, with zeta from the 4-layer |d0| fit."
+            "P_fake = zeta * N_sideband / N_Z."
+        ),
+    )
+    fake_tracks.add_argument(
+        "--transfer-factor-source",
+        choices=["fixed", "fit"],
+        default="fixed",
+        help=(
+            "For --an-control, use fixed AN Section-5.2 zeta values by "
+            "run period/control region, or refit zeta from the input outputs."
         ),
     )
     fake_tracks.add_argument(

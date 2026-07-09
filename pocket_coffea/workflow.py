@@ -21,7 +21,6 @@ from disapptrks.selections import (
     electron_tag_progression_masks,
     electron_tag_mask,
     fake_track_no_d0_mask,
-    fake_track_sideband_cutflow_masks,
     generic_probe_pair_layer_mask,
     invariant_mass,
     lepton_veto_probe_track_mask,
@@ -54,6 +53,80 @@ from disapptrks.selections import (
     tau_veto_probe_track_mask,
     z_window_muon_probe_pair_mask,
 )
+
+try:
+    from disapptrks.selections import fake_track_sideband_cutflow_masks
+except ImportError:
+
+    def _fake_track_layer_mask(tracks, layer: str):
+        layers = tracks.hp_nValidTrackerHits
+        if "hp_trackerLayersWithMeasurement" in tracks.fields:
+            layers = tracks.hp_trackerLayersWithMeasurement
+        if layer == "NLayers4":
+            return layers == 4
+        if layer == "NLayers5":
+            return layers == 5
+        if layer == "NLayers6plus":
+            return layers >= 6
+        if layer == "combinedBins":
+            return layers >= 4
+        raise ValueError(f"unknown layer bin: {layer}")
+
+    def fake_track_sideband_cutflow_masks(
+        tracks,
+        *,
+        sideband_min: float = 0.05,
+        sideband_max: float = 0.50,
+    ):
+        """Compatibility fallback for older installed disapptrks.selections."""
+
+        masks = {}
+        mask = tracks.pt > 55.0
+        masks["track_pt55"] = mask
+        mask = mask & (abs(tracks.eta) < 2.1)
+        masks["track_eta2p1"] = mask
+        mask = mask & ~tracks.inECALCrack
+        masks["track_noECALCrack"] = mask
+        mask = mask & ~tracks.inDTWheelGap
+        masks["track_noDTWheelGap"] = mask
+        mask = mask & ~tracks.inCSCTransition
+        masks["track_noCSCTransition"] = mask
+        mask = mask & ~tracks.inTOBCrack
+        masks["track_noTOBCrack"] = mask
+        mask = mask & tracks.isFiducialECALTrack
+        masks["track_fiducialECAL"] = mask
+        mask = mask & (tracks.hp_nValidPixelHits >= 4)
+        masks["track_pixelHits4"] = mask
+        mask = mask & (tracks.hp_nValidHits >= 4)
+        masks["track_validHits4"] = mask
+        mask = mask & (tracks.missingInnerHits == 0)
+        masks["track_noMissingInner"] = mask
+        mask = mask & (tracks.missingMiddleHits == 0)
+        masks["track_noMissingMiddle"] = mask
+        mask = mask & (tracks.pfRelIso03_chg < 0.05)
+        masks["track_chargedIso0p05"] = mask
+        mask = mask & (abs(tracks.dz) < 0.5)
+        masks["track_dz0p5"] = mask
+        mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
+        masks["track_dRJet0p5"] = mask
+        mask = mask & (tracks.caloEnergy < 10.0)
+        masks["track_calo10"] = mask
+        mask = mask & (tracks.missingOuterHits >= 3)
+        masks["track_missingOuter3"] = mask
+        mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+        masks["track_electronVeto"] = mask
+        mask = mask & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+        masks["track_muonVeto"] = mask
+        mask = mask & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+        masks["track_tauVeto"] = mask
+        abs_dxy = abs(tracks.dxy)
+        mask = mask & (abs_dxy >= sideband_min) & (abs_dxy < sideband_max)
+        masks["track_d0Sideband"] = mask
+        masks["track_NLayers4"] = mask & _fake_track_layer_mask(tracks, "NLayers4")
+        masks["track_NLayers5"] = mask & _fake_track_layer_mask(tracks, "NLayers5")
+        masks["track_NLayers6plus"] = mask & _fake_track_layer_mask(tracks, "NLayers6plus")
+        masks["track_combinedBins"] = mask & _fake_track_layer_mask(tracks, "combinedBins")
+        return masks
 
 PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
 ELECTRON_MASS = 0.000511
