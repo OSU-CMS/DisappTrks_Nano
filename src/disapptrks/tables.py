@@ -131,6 +131,84 @@ FAKE_TRACK_BASIC_CUTFLOW_ROWS = [
         r"maximum dijet $\Delta\phi<2.5$",
     ),
     ("basic_selection", r"event passes BasicSelection"),
+    ("fake_track_diag_track_pt55", r"$\geq 1$ tracks $p_T>55~\mathrm{GeV}$"),
+    ("fake_track_diag_track_eta2p1", r"$\geq 1$ tracks $|\eta|<2.1$"),
+    (
+        "fake_track_diag_track_noECALCrack",
+        r"$\geq 1$ tracks outside the ECAL crack",
+    ),
+    (
+        "fake_track_diag_track_noDTWheelGap",
+        r"$\geq 1$ tracks outside DT wheel gaps",
+    ),
+    (
+        "fake_track_diag_track_noCSCTransition",
+        r"$\geq 1$ tracks outside CSC transition regions",
+    ),
+    (
+        "fake_track_diag_track_noTOBCrack",
+        r"$\geq 1$ tracks outside TOB cracks",
+    ),
+    (
+        "fake_track_diag_track_fiducialECAL",
+        r"$\geq 1$ tracks fiducial to the ECAL",
+    ),
+    (
+        "fake_track_diag_track_pixelHits4",
+        r"$\geq 1$ tracks number of pixel hits $\geq 4$",
+    ),
+    (
+        "fake_track_diag_track_validHits4",
+        r"$\geq 1$ tracks number of valid hits $\geq 4$",
+    ),
+    (
+        "fake_track_diag_track_noMissingInner",
+        r"$\geq 1$ tracks missing inner hits $=0$",
+    ),
+    (
+        "fake_track_diag_track_noMissingMiddle",
+        r"$\geq 1$ tracks missing middle hits $=0$",
+    ),
+    (
+        "fake_track_diag_track_chargedIso0p05",
+        r"$\geq 1$ tracks rel. PF-based iso. $<0.05$",
+    ),
+    (
+        "fake_track_diag_track_dz0p5",
+        r"$\geq 1$ tracks $|d_z|<0.5~\mathrm{cm}$",
+    ),
+    (
+        "fake_track_diag_track_dRJet0p5",
+        r"$\geq 1$ track--jet pairs $\Delta R_{\mathrm{track,jet}}>0.5$",
+    ),
+    (
+        "fake_track_diag_track_calo10",
+        r"$\geq 1$ tracks $E_{\mathrm{calo}}<10~\mathrm{GeV}$",
+    ),
+    (
+        "fake_track_diag_track_missingOuter3",
+        r"$\geq 1$ tracks missing outer hits $\geq 3$",
+    ),
+    (
+        "fake_track_diag_track_electronVeto",
+        r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,electron}}>0.15$",
+    ),
+    (
+        "fake_track_diag_track_muonVeto",
+        r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,\mu}}>0.15$",
+    ),
+    (
+        "fake_track_diag_track_tauVeto",
+        r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,had.~tau}}>0.15$",
+    ),
+    (
+        "fake_track_diag_track_d0Sideband",
+        r"$\geq 1$ tracks with $0.05<|d_0|<0.5~\mathrm{cm}$",
+    ),
+    (
+        "fake_track_diag_track_combinedBins",
+        r"$\geq 1$ tracks with $N_{\mathrm{layers}}\geq 4$",
+    ),
 ]
 
 FAKE_TRACK_CONTROL_CUTFLOW_ROWS = [
@@ -763,16 +841,33 @@ def write_fake_track_basic_cutflow_latex(
     """
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [
-        (
-            label,
-            _category_count(
+
+    def count(category: str) -> float:
+        value = _category_count(
+            cutflow,
+            category,
+            dataset=dataset,
+            sample=sample,
+            variation=variation,
+        )
+        if value == 0.0 and category in {"initial", "skim", "presel"} and sample is not None:
+            # PocketCoffea stores the bookkeeping stages with a simpler nesting
+            # than analysis categories in some outputs, often without the sample
+            # level.  Retry without the sample filter so these rows do not
+            # appear spuriously empty in data cutflows.
+            value = _category_count(
                 cutflow,
                 category,
                 dataset=dataset,
-                sample=sample,
+                sample=None,
                 variation=variation,
-            ),
+            )
+        return value
+
+    rows = [
+        (
+            label,
+            count(category),
         )
         for category, label in FAKE_TRACK_BASIC_CUTFLOW_ROWS
     ]
@@ -790,13 +885,7 @@ def write_fake_track_basic_cutflow_latex(
         for category, label in FAKE_TRACK_CONTROL_CUTFLOW_ROWS
     ]
 
-    basic = _category_count(
-        cutflow,
-        "basic_selection",
-        dataset=dataset,
-        sample=sample,
-        variation=variation,
-    )
+    basic = count("basic_selection")
 
     with path.open("w") as out:
         if include_table_env:
@@ -831,15 +920,12 @@ def write_fake_track_basic_cutflow_latex(
                 r"(not sequential cuts)} \\" + "\n"
             )
             out.write(r"\hline" + "\n")
-            previous = basic
             for label, value in control_rows:
-                eff_prev = value / previous if previous else 1.0
                 frac_basic = value / basic if basic else 0.0
                 out.write(
                     f"{label} & {format_count(value)} & "
-                    f"{eff_prev:.4f} & {frac_basic:.4f} \\\\\n"
+                    f"-- & {frac_basic:.4f} \\\\\n"
                 )
-                previous = value
 
         out.write(r"\hline" + "\n")
         out.write(r"\end{tabular}" + "\n")
