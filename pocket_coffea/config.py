@@ -172,6 +172,7 @@ parameters["disapptrks"] = {
     in ("1", "true", "yes", "on"),
     "full_variables": os.environ.get("DISAPPTRKS_FULL_VARIABLES", "").lower()
     in ("1", "true", "yes", "on"),
+    "search_diagnostics": enable_search_diagnostics,
 }
 data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 

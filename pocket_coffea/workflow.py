@@ -440,6 +440,10 @@ class DisappTrksProcessor(BaseProcessorABC):
         )
 
     def _search_diagnostics_enabled(self):
+        try:
+            return bool(self.params.disapptrks.search_diagnostics)
+        except Exception:
+            pass
         return os.environ.get("DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", "").lower() in (
             "1",
             "true",
