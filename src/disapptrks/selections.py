@@ -29,7 +29,7 @@ def isomu24_trigger_object_mask(
     trigobjs,
     *,
     iso_bit: int = 1 << 1,
-    single_muon_bit: int = 1 << 2,
+    single_muon_bits: tuple[int, ...] = (1 << 2, 1 << 3),
 ):
     """NanoAOD trigger objects corresponding to the isolated SingleMuon leg.
 
@@ -39,14 +39,24 @@ def isomu24_trigger_object_mask(
     ``hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered`` filter.  NanoAOD
     stores the trigger-object collection/filter information as compact
     ``TrigObj`` IDs and filter bits.  For ``HLT_IsoMu24``, the closest NanoAOD
-    equivalent is a muon trigger object carrying both the isolated-muon and
-    SingleMuon filter bits.
+    equivalent is a muon trigger object carrying the isolated-muon bit and a
+    SingleMuon-path bit.
+
+    Run-3 NanoAOD samples are not fully uniform in which SingleMuon path bit is
+    set.  The 2022--2024 samples we checked use bit 2, while 2025 samples can
+    carry the isolated-muon bit together with bit 3 and no bit 2.  Accept both
+    to keep the matching tied to the isolated SingleMuon trigger object without
+    rejecting all 2025 muon tags.
     """
+
+    single_muon_match = False
+    for bit in single_muon_bits:
+        single_muon_match = single_muon_match | ((trigobjs.filterBits & bit) != 0)
 
     return (
         (trigobjs.id == 13)
         & ((trigobjs.filterBits & iso_bit) != 0)
-        & ((trigobjs.filterBits & single_muon_bit) != 0)
+        & single_muon_match
     )
 
 

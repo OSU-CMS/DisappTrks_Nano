@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .summaries import cutflow_count
-from .tables import format_count, format_value_with_uncertainty
+from .tables import format_count, format_pm_latex, format_value_with_uncertainty
 
 
 @dataclass(frozen=True)
