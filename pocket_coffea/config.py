@@ -198,7 +198,11 @@ def _skim_cuts_for_mode(mode, sample):
 skim_cuts = _skim_cuts_for_mode(category_mode, dataset_sample)
 if os.environ.get("DISAPPTRKS_DISABLE_HLT_SKIM", "").lower() in ("1", "true", "yes", "on"):
     skim_cuts = []
-if enable_search_diagnostics:
+enable_generic_diagnostics = enable_search_diagnostics and category_mode in (
+    "fake_tracks",
+    "all",
+)
+if enable_generic_diagnostics:
     diagnostic_fields = (
         EVENT_DIAGNOSTIC_FIELDS
         if category_mode == "fake_tracks"
