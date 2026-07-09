@@ -115,6 +115,52 @@ MUON_CUTFLOW_ROWS = [
     ),
 ]
 
+FAKE_TRACK_BASIC_CUTFLOW_ROWS = [
+    ("initial", r"initial events"),
+    ("skim", r"event passes JetMET/MET triggers"),
+    ("presel", r"event passes golden JSON, MET filters, and jet veto map"),
+    ("inclusive", r"inclusive analysis category after preselections"),
+    ("diag_event_metNoMu120", r"$p_T^{\mathrm{miss,no}\,\mu}>120~\mathrm{GeV}$"),
+    ("diag_event_leadingJet110", r"leading jet $p_T>110~\mathrm{GeV}$"),
+    (
+        "diag_event_jetMetDphi0p5",
+        r"$\Delta\phi(\mathrm{leading~jet},\vec{p}_T^{\mathrm{miss,no}\,\mu})>0.5$",
+    ),
+    (
+        "diag_event_dijetDphi2p5",
+        r"maximum dijet $\Delta\phi<2.5$",
+    ),
+    ("basic_selection", r"event passes BasicSelection"),
+]
+
+FAKE_TRACK_CONTROL_CUTFLOW_ROWS = [
+    ("search", r"event passes search selection"),
+    (
+        "fake_basic3hits_d0_signal",
+        r"$\geq 1$ basic 3-hit tracks with $|d_0|<0.02~\mathrm{cm}$",
+    ),
+    (
+        "fake_basic3hits_d0_sideband",
+        r"$\geq 1$ basic 3-hit tracks with $0.05<|d_0|<0.5~\mathrm{cm}$",
+    ),
+    (
+        "fake_control_NLayers4",
+        r"$\geq 1$ fake-track sideband candidates with $N_{\mathrm{layers}}=4$",
+    ),
+    (
+        "fake_control_NLayers5",
+        r"$\geq 1$ fake-track sideband candidates with $N_{\mathrm{layers}}=5$",
+    ),
+    (
+        "fake_control_NLayers6plus",
+        r"$\geq 1$ fake-track sideband candidates with $N_{\mathrm{layers}}\geq 6$",
+    ),
+    (
+        "fake_control_combinedBins",
+        r"$\geq 1$ fake-track sideband candidates with $N_{\mathrm{layers}}\geq 4$",
+    ),
+]
+
 LEPTON_PVETO_CUTFLOW_ROWS = {
     "electron": [
         ("electron_pveto_diag_event_singleele_trigger", r"event passes SingleElectron triggers"),
@@ -691,6 +737,109 @@ def write_muon_cutflow_latex(
                 f"{eff_prev:.4f} & {eff_total:.4f} \\\\\n"
             )
             previous = value
+
+        out.write(r"\hline" + "\n")
+        out.write(r"\end{tabular}" + "\n")
+        if include_table_env:
+            out.write(r"\end{table}" + "\n")
+
+
+def write_fake_track_basic_cutflow_latex(
+    cutflow: dict[str, Any],
+    path: Path,
+    *,
+    dataset: str | None = None,
+    sample: str | None = None,
+    variation: str = "nominal",
+    include_table_env: bool = False,
+) -> None:
+    """Write the JetMET/basic-selection cutflow used by the fake-track estimate.
+
+    This table is a true event cutflow through BasicSelection when the input
+    output contains the ``diag_event_*`` categories produced with
+    ``DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS=1``.  It then appends the
+    fake-track category yields used by the estimate; those appended rows are
+    not mutually sequential cuts.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        (
+            label,
+            _category_count(
+                cutflow,
+                category,
+                dataset=dataset,
+                sample=sample,
+                variation=variation,
+            ),
+        )
+        for category, label in FAKE_TRACK_BASIC_CUTFLOW_ROWS
+    ]
+    control_rows = [
+        (
+            label,
+            _category_count(
+                cutflow,
+                category,
+                dataset=dataset,
+                sample=sample,
+                variation=variation,
+            ),
+        )
+        for category, label in FAKE_TRACK_CONTROL_CUTFLOW_ROWS
+    ]
+
+    basic = _category_count(
+        cutflow,
+        "basic_selection",
+        dataset=dataset,
+        sample=sample,
+        variation=variation,
+    )
+
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}[htbp]" + "\n")
+            out.write(r"\centering" + "\n")
+            out.write(r"\caption{Fake-track BasicSelection cutflow.}" + "\n")
+            out.write(r"\label{tab:fake_track_basic_cutflow}" + "\n")
+
+        out.write(r"\begin{tabular}{lrrr}" + "\n")
+        out.write(r"\hline" + "\n")
+        out.write(
+            r"Cut/category & Events & $\epsilon_{\mathrm{prev}}$ & "
+            r"$\epsilon_{\mathrm{total}}$ \\" + "\n"
+        )
+        out.write(r"\hline" + "\n")
+
+        previous = None
+        first = rows[0][1] if rows else 0.0
+        for label, value in rows:
+            eff_prev = value / previous if previous else 1.0
+            eff_total = value / first if first else 0.0
+            out.write(
+                f"{label} & {format_count(value)} & "
+                f"{eff_prev:.4f} & {eff_total:.4f} \\\\\n"
+            )
+            previous = value
+
+        if control_rows:
+            out.write(r"\hline" + "\n")
+            out.write(
+                r"\multicolumn{4}{l}{Fake-track estimate control categories "
+                r"(not sequential cuts)} \\" + "\n"
+            )
+            out.write(r"\hline" + "\n")
+            previous = basic
+            for label, value in control_rows:
+                eff_prev = value / previous if previous else 1.0
+                frac_basic = value / basic if basic else 0.0
+                out.write(
+                    f"{label} & {format_count(value)} & "
+                    f"{eff_prev:.4f} & {frac_basic:.4f} \\\\\n"
+                )
+                previous = value
 
         out.write(r"\hline" + "\n")
         out.write(r"\end{tabular}" + "\n")

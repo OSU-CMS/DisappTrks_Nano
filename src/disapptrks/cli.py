@@ -33,6 +33,7 @@ from .summaries import (
 )
 from .tables import (
     variable_count_sum,
+    write_fake_track_basic_cutflow_latex,
     write_lepton_pveto_cutflow_latex,
     write_merged_pveto_latex,
     write_muon_cutflow_latex,
@@ -262,6 +263,22 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
         outputs = _load_outputs(args.files)
         source = _load_merged_cutflow(args.files)
         basic_source = _load_merged_cutflow(args.basic_files) if args.basic_files else None
+        if args.basic_cutflow_tex:
+            if basic_source is None:
+                raise SystemExit(
+                    "error: --basic-cutflow-tex requires --basic-files when using --an-control"
+                )
+            write_fake_track_basic_cutflow_latex(
+                basic_source,
+                args.basic_cutflow_tex,
+                dataset=args.dataset if args.basic_dataset is None else args.basic_dataset,
+                sample=args.sample if args.basic_sample is None else args.basic_sample,
+                variation=args.variation
+                if args.basic_variation is None
+                else args.basic_variation,
+                include_table_env=args.table_env,
+            )
+            print(f"Wrote {args.basic_cutflow_tex}")
         control_cfg = {
             "zmumu": {
                 "control_region": r"$Z\to\mu\mu$",
@@ -404,6 +421,19 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
             raise SystemExit("error: at least one coffea file is required unless --counts-json is used")
         source = _load_merged_cutflow(args.files)
         source_is_cutflow = True
+
+    if args.basic_cutflow_tex:
+        if not source_is_cutflow:
+            raise SystemExit("error: --basic-cutflow-tex requires coffea input, not --counts-json")
+        write_fake_track_basic_cutflow_latex(
+            source,
+            args.basic_cutflow_tex,
+            dataset=args.dataset,
+            sample=args.sample,
+            variation=args.variation,
+            include_table_env=args.table_env,
+        )
+        print(f"Wrote {args.basic_cutflow_tex}")
 
     estimates = [
         estimate_fake_track_background(
@@ -1095,6 +1125,14 @@ def main():
         "--output-tex",
         type=Path,
         help="Write an AN-style LaTeX summary table.",
+    )
+    fake_tracks.add_argument(
+        "--basic-cutflow-tex",
+        type=Path,
+        help=(
+            "Write a JetMET/basic-selection cutflow table for the fake-track "
+            "normalization. With --an-control this is read from --basic-files."
+        ),
     )
     fake_tracks.add_argument(
         "--fit-plot",
