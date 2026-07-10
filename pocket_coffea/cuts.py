@@ -73,6 +73,34 @@ FAKE_TRACK_DIAGNOSTIC_FIELDS = [
     "track_combinedBins",
 ]
 
+FAKE_ZMUMU_DIAGNOSTIC_FIELDS = [
+    "event_trigger",
+    "muon_pt26",
+    "muon_eta2p1",
+    "muon_tight_id",
+    "muon_selected_tag",
+    "z_os_window",
+    "sideband_NLayers4",
+    "sideband_NLayers5",
+    "sideband_NLayers6plus",
+    "sideband_combinedBins",
+]
+
+FAKE_ZEE_DIAGNOSTIC_FIELDS = [
+    "event_trigger",
+    "electron_pt25",
+    "electron_eta2p1",
+    "electron_tight_id",
+    "electron_dxy",
+    "electron_dz",
+    "electron_pt32",
+    "z_os_window",
+    "sideband_NLayers4",
+    "sideband_NLayers5",
+    "sideband_NLayers6plus",
+    "sideband_combinedBins",
+]
+
 COMBINED_DIAGNOSTIC_FIELDS = [
     f"eventKinematics_{field}" for field in TRACK_DIAGNOSTIC_FIELDS
 ]
@@ -546,6 +574,10 @@ def _fake_track_diagnostic(events, params, **kwargs):
     return events.FakeTrackDiag[params["field"]]
 
 
+def _fake_z_control_diagnostic(events, params, **kwargs):
+    return events[params["collection"]][params["field"]]
+
+
 def _muon_table16_diagnostic(events, params, **kwargs):
     return events.MuonTable16Diag[params["field"]]
 
@@ -932,6 +964,19 @@ fake_track_diagnostic_cuts = {
         function=_fake_track_diagnostic,
     )
     for field in FAKE_TRACK_DIAGNOSTIC_FIELDS
+}
+
+fake_z_control_diagnostic_cuts = {
+    f"{mode}_{field}": Cut(
+        name=f"fake_{mode}_diag_{field}",
+        params={"collection": collection, "field": field},
+        function=_fake_z_control_diagnostic,
+    )
+    for mode, collection, fields in (
+        ("zmumu", "FakeZMuMuDiag", FAKE_ZMUMU_DIAGNOSTIC_FIELDS),
+        ("zee", "FakeZeeDiag", FAKE_ZEE_DIAGNOSTIC_FIELDS),
+    )
+    for field in fields
 }
 
 muon_table16_cuts = {

@@ -36,6 +36,7 @@ from cuts import (
     muon_pveto_layer_cuts,
     EVENT_DIAGNOSTIC_FIELDS,
     fake_track_diagnostic_cuts,
+    fake_z_control_diagnostic_cuts,
     search_diagnostic_cuts,
     search_kinematics,
     single_electron_hlt,
@@ -222,6 +223,9 @@ fake_track_diagnostic_categories = (
     if enable_search_diagnostics and category_mode == "fake_tracks"
     else {}
 )
+fake_z_control_diagnostic_categories = {
+    cut.name: [cut] for cut in fake_z_control_diagnostic_cuts.values()
+}
 muon_pveto_layer_categories = {
     name: [cut] for name, cut in muon_pveto_layer_cuts.items()
 }
@@ -308,6 +312,7 @@ elif category_mode == "fake_tracks":
     selected_categories = {
         **common_categories,
         **fake_track_categories,
+        **fake_z_control_diagnostic_categories,
     }
 elif category_mode == "muon_backgrounds":
     selected_categories = {
@@ -320,6 +325,7 @@ elif category_mode == "muon_backgrounds":
             exact=("fake_zmumu_control",),
             prefixes=("fake_zmumu_sideband_",),
         ),
+        **_categories_with_prefix(fake_z_control_diagnostic_categories, "fake_zmumu_"),
     }
 elif category_mode == "egamma_backgrounds":
     selected_categories = {
@@ -330,6 +336,7 @@ elif category_mode == "egamma_backgrounds":
             exact=("fake_zee_control",),
             prefixes=("fake_zee_sideband_",),
         ),
+        **_categories_with_prefix(fake_z_control_diagnostic_categories, "fake_zee_"),
     }
 elif category_mode == "all":
     selected_categories = {
@@ -341,6 +348,7 @@ elif category_mode == "all":
         **electron_pveto_diagnostic_categories,
         **tau_pveto_diagnostic_categories,
         **muon_pveto_layer_categories,
+        **fake_z_control_diagnostic_categories,
     }
 else:
     raise ValueError(

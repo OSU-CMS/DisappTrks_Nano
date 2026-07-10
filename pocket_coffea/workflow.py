@@ -208,6 +208,35 @@ def _z_to_mumu_control_mask(events, muons):
     return _single_muon_trigger_mask(events) & (ak.num(selected) == 2) & ak.any(os_z, axis=1)
 
 
+def _z_to_mumu_control_diagnostics(events, muons):
+    trigger = _single_muon_trigger_mask(events)
+    muon_masks = muon_tag_progression_masks(muons)
+    selected = muons[muon_masks["muon_selected_tag"]]
+    first, second = ak.unzip(ak.combinations(selected, 2, axis=1))
+    pair_mass = invariant_mass(first, second, first_mass=MUON_MASS, second_mass=MUON_MASS)
+    os_z = (first.charge * second.charge < 0) & (abs(pair_mass - Z_MASS) < 10.0)
+    z_os_window = trigger & (ak.num(selected) == 2) & ak.any(os_z, axis=1)
+    diagnostics = {
+        "event_trigger": trigger,
+        "muon_pt26": trigger & (ak.num(muons[muon_masks["muon_pt26"]]) >= 2),
+        "muon_eta2p1": trigger & (ak.num(muons[muon_masks["muon_eta2p1"]]) >= 2),
+        "muon_tight_id": trigger & (ak.num(muons[muon_masks["muon_tight_id"]]) >= 2),
+        "muon_selected_tag": trigger & (ak.num(selected) == 2),
+        "z_os_window": z_os_window,
+    }
+    for layer in (*PVETO_LAYERS, "combinedBins"):
+        diagnostics[f"sideband_{layer}"] = (
+            _fake_track_count_for_control(
+                events,
+                z_os_window,
+                layer=layer,
+                d0_region="sideband",
+            )
+            >= 1
+        )
+    return diagnostics
+
+
 def _z_electron_tag_mask(electrons, *, pt_min=25.0, eta_max=2.1):
     abs_sc_eta = abs(electrons.eta + electrons.deltaEtaSC)
     barrel = abs_sc_eta <= 1.479
@@ -243,6 +272,61 @@ def _z_to_ee_control_mask(events, electrons):
         & ak.any(selected.pt > 32.0, axis=1)
         & ak.any(os_z, axis=1)
     )
+
+
+def _z_to_ee_control_diagnostics(events, electrons):
+    trigger = single_electron_trigger_mask(events)
+    abs_sc_eta = abs(electrons.eta + electrons.deltaEtaSC)
+    barrel = abs_sc_eta <= 1.479
+    endcap = abs_sc_eta > 1.479
+    dxy_ok = (barrel & (abs(electrons.dxy) < 0.05)) | (
+        endcap & (abs(electrons.dxy) < 0.10)
+    )
+    dz_ok = (barrel & (abs(electrons.dz) < 0.10)) | (
+        endcap & (abs(electrons.dz) < 0.20)
+    )
+    mask = electrons.pt > 25.0
+    electron_pt25 = trigger & (ak.num(electrons[mask]) >= 2)
+    mask = mask & (abs(electrons.eta) < 2.1)
+    electron_eta2p1 = trigger & (ak.num(electrons[mask]) >= 2)
+    mask = mask & (electrons.cutBased >= 4)
+    electron_tight_id = trigger & (ak.num(electrons[mask]) >= 2)
+    mask = mask & dxy_ok
+    electron_dxy = trigger & (ak.num(electrons[mask]) >= 2)
+    mask = mask & dz_ok
+    selected = electrons[mask]
+    electron_dz = trigger & (ak.num(selected) >= 2)
+    electron_pt32 = electron_dz & ak.any(selected.pt > 32.0, axis=1)
+    first, second = ak.unzip(ak.combinations(selected, 2, axis=1))
+    pair_mass = invariant_mass(
+        first,
+        second,
+        first_mass=ELECTRON_MASS,
+        second_mass=ELECTRON_MASS,
+    )
+    os_z = (first.charge * second.charge < 0) & (abs(pair_mass - Z_MASS) < 10.0)
+    z_os_window = electron_pt32 & (ak.num(selected) == 2) & ak.any(os_z, axis=1)
+    diagnostics = {
+        "event_trigger": trigger,
+        "electron_pt25": electron_pt25,
+        "electron_eta2p1": electron_eta2p1,
+        "electron_tight_id": electron_tight_id,
+        "electron_dxy": electron_dxy,
+        "electron_dz": electron_dz,
+        "electron_pt32": electron_pt32,
+        "z_os_window": z_os_window,
+    }
+    for layer in (*PVETO_LAYERS, "combinedBins"):
+        diagnostics[f"sideband_{layer}"] = (
+            _fake_track_count_for_control(
+                events,
+                z_os_window,
+                layer=layer,
+                d0_region="sideband",
+            )
+            >= 1
+        )
+    return diagnostics
 
 
 def _fake_track_count_for_control(events, control_mask, *, layer, d0_region):
@@ -879,6 +963,9 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events["nFakeZMuMuControl"] = ak.values_astype(
                 fake_zmumu_control, np.int64
             )
+            self.events["FakeZMuMuDiag"] = ak.zip(
+                _z_to_mumu_control_diagnostics(self.events, self.events.Muon)
+            )
             self.events["FakeZMuMuFitTrack"] = _fake_fit_tracks_for_control(
                 self.events,
                 fake_zmumu_control,
@@ -894,6 +981,9 @@ class DisappTrksProcessor(BaseProcessorABC):
         if "zee" in controls:
             fake_zee_control = _z_to_ee_control_mask(self.events, self.events.Electron)
             self.events["nFakeZeeControl"] = ak.values_astype(fake_zee_control, np.int64)
+            self.events["FakeZeeDiag"] = ak.zip(
+                _z_to_ee_control_diagnostics(self.events, self.events.Electron)
+            )
             self.events["FakeZeeFitTrack"] = _fake_fit_tracks_for_control(
                 self.events,
                 fake_zee_control,
@@ -1522,6 +1612,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         fake_zee_control = _z_to_ee_control_mask(self.events, self.events.Electron)
         self.events["nFakeZMuMuControl"] = ak.values_astype(fake_zmumu_control, np.int64)
         self.events["nFakeZeeControl"] = ak.values_astype(fake_zee_control, np.int64)
+        self.events["FakeZMuMuDiag"] = ak.zip(
+            _z_to_mumu_control_diagnostics(self.events, self.events.Muon)
+        )
+        self.events["FakeZeeDiag"] = ak.zip(
+            _z_to_ee_control_diagnostics(self.events, self.events.Electron)
+        )
         self.events["FakeZMuMuFitTrack"] = _fake_fit_tracks_for_control(
             self.events,
             fake_zmumu_control,

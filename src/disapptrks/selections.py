@@ -67,8 +67,13 @@ def add_muon_derived_fields(events, *, trigger_match_dr: float = 0.3):
     muons = events.Muon
     isomu24_objects = isomu24_trigger_object_mask(events.TrigObj)
     d_r_min_isomu24 = minimum_delta_r(muons, events.TrigObj, isomu24_objects)
-    matched_isomu24 = (
+    hlt_isomu24 = (
         events.HLT.IsoMu24
+        if "HLT" in events.fields and "IsoMu24" in events.HLT.fields
+        else _event_bool_like(events, False)
+    )
+    matched_isomu24 = (
+        hlt_isomu24
         & (d_r_min_isomu24 >= 0.0)
         & (d_r_min_isomu24 < trigger_match_dr)
     )

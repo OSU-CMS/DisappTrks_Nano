@@ -162,6 +162,74 @@ FAKE_TRACK_CONTROL_CUTFLOW_ROWS = [
     ),
 ]
 
+FAKE_TRACK_Z_CONTROL_CUTFLOW_ROWS = {
+    "zmumu": [
+        ("fake_zmumu_diag_event_trigger", r"event passes SingleMuon triggers"),
+        ("fake_zmumu_diag_muon_pt26", r"$\geq 2$ muons $p_T>26~\mathrm{GeV}$"),
+        ("fake_zmumu_diag_muon_eta2p1", r"$\geq 2$ muons $|\eta|<2.1$"),
+        ("fake_zmumu_diag_muon_tight_id", r"$\geq 2$ muons passing tight muon ID"),
+        (
+            "fake_zmumu_diag_muon_selected_tag",
+            r"$=2$ selected muons with rel. PF iso. $<0.15$ and trigger-object match",
+        ),
+        (
+            "fake_zmumu_diag_z_os_window",
+            r"$=2$ selected muons with OS $|M_{\mu\mu}-M_Z|<10~\mathrm{GeV}$",
+        ),
+        (
+            "fake_zmumu_diag_sideband_NLayers4",
+            r"$\geq 1$ sideband fake-track candidates with $N_{\mathrm{layers}}=4$",
+        ),
+        (
+            "fake_zmumu_diag_sideband_NLayers5",
+            r"$\geq 1$ sideband fake-track candidates with $N_{\mathrm{layers}}=5$",
+        ),
+        (
+            "fake_zmumu_diag_sideband_NLayers6plus",
+            r"$\geq 1$ sideband fake-track candidates with $N_{\mathrm{layers}}\geq 6$",
+        ),
+        (
+            "fake_zmumu_diag_sideband_combinedBins",
+            r"$\geq 1$ sideband fake-track candidates with $N_{\mathrm{layers}}\geq 4$",
+        ),
+    ],
+    "zee": [
+        ("fake_zee_diag_event_trigger", r"event passes SingleElectron/EGamma triggers"),
+        ("fake_zee_diag_electron_pt25", r"$\geq 2$ electrons $p_T>25~\mathrm{GeV}$"),
+        ("fake_zee_diag_electron_eta2p1", r"$\geq 2$ electrons $|\eta|<2.1$"),
+        ("fake_zee_diag_electron_tight_id", r"$\geq 2$ electrons passing tight electron ID"),
+        (
+            "fake_zee_diag_electron_dxy",
+            r"$\geq 2$ electrons passing barrel/endcap $d_{xy}$ cuts",
+        ),
+        (
+            "fake_zee_diag_electron_dz",
+            r"$\geq 2$ electrons passing barrel/endcap $d_z$ cuts",
+        ),
+        ("fake_zee_diag_electron_pt32", r"$\geq 1$ selected electrons $p_T>32~\mathrm{GeV}$"),
+        (
+            "fake_zee_diag_z_os_window",
+            r"$=2$ selected electrons with OS $|M_{ee}-M_Z|<10~\mathrm{GeV}$",
+        ),
+        (
+            "fake_zee_diag_sideband_NLayers4",
+            r"$\geq 1$ sideband fake-track candidates with $N_{\mathrm{layers}}=4$",
+        ),
+        (
+            "fake_zee_diag_sideband_NLayers5",
+            r"$\geq 1$ sideband fake-track candidates with $N_{\mathrm{layers}}=5$",
+        ),
+        (
+            "fake_zee_diag_sideband_NLayers6plus",
+            r"$\geq 1$ sideband fake-track candidates with $N_{\mathrm{layers}}\geq 6$",
+        ),
+        (
+            "fake_zee_diag_sideband_combinedBins",
+            r"$\geq 1$ sideband fake-track candidates with $N_{\mathrm{layers}}\geq 4$",
+        ),
+    ],
+}
+
 LEPTON_PVETO_CUTFLOW_ROWS = {
     "electron": [
         ("electron_pveto_diag_event_singleele_trigger", r"event passes SingleElectron triggers"),
@@ -918,6 +986,76 @@ def write_lepton_pveto_cutflow_latex(
             out.write(r"\centering" + "\n")
             out.write(r"\caption{Lepton veto tag-and-probe cutflow.}" + "\n")
             out.write(r"\label{tab:lepton_pveto_cutflow}" + "\n")
+
+        out.write(r"\begin{tabular}{lrrr}" + "\n")
+        out.write(r"\hline" + "\n")
+        out.write(
+            r"Cut & Events & $\epsilon_{\mathrm{prev}}$ & "
+            r"$\epsilon_{\mathrm{total}}$ \\" + "\n"
+        )
+        out.write(r"\hline" + "\n")
+
+        first = None
+        previous = None
+        for label, value in rows:
+            if first is None:
+                first = value
+            eff_prev = value / previous if previous else 1.0
+            eff_total = value / first if first else 0.0
+            out.write(
+                f"{label} & {format_count(value)} & "
+                f"{eff_prev:.4f} & {eff_total:.4f} \\\\\n"
+            )
+            previous = value
+
+        out.write(r"\hline" + "\n")
+        out.write(r"\end{tabular}" + "\n")
+        if include_table_env:
+            out.write(r"\end{table}" + "\n")
+
+
+def write_fake_track_z_control_cutflow_latex(
+    cutflow: dict[str, Any],
+    path: Path,
+    *,
+    control: str,
+    dataset: str | None = None,
+    sample: str | None = None,
+    variation: str = "nominal",
+    include_table_env: bool = False,
+) -> None:
+    """Write a Tables-32/33-style fake-track Z-control cutflow.
+
+    ``control`` should be ``"zmumu"`` or ``"zee"``.  The input coffea output
+    must have been produced with the Z-control diagnostics enabled in
+    ``CATEGORY_MODE=fake_tracks``.
+    """
+
+    if control not in FAKE_TRACK_Z_CONTROL_CUTFLOW_ROWS:
+        raise ValueError(f"unknown fake-track Z control cutflow: {control!r}")
+
+    rows = [
+        (
+            label,
+            _category_count(
+                cutflow,
+                category,
+                dataset=dataset,
+                sample=sample,
+                variation=variation,
+            ),
+        )
+        for category, label in FAKE_TRACK_Z_CONTROL_CUTFLOW_ROWS[control]
+    ]
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}[htbp]" + "\n")
+            out.write(r"\centering" + "\n")
+            caption_control = r"$Z\to\mu\mu$" if control == "zmumu" else r"$Z\to ee$"
+            out.write(rf"\caption{{Fake-track {caption_control} control cutflow.}}" + "\n")
+            out.write(rf"\label{{tab:fake_track_{control}_cutflow}}" + "\n")
 
         out.write(r"\begin{tabular}{lrrr}" + "\n")
         out.write(r"\hline" + "\n")
