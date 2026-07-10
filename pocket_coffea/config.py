@@ -169,8 +169,17 @@ enable_search_diagnostics = os.environ.get(
     "DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", ""
 ).lower() in ("1", "true", "yes", "on")
 category_mode = os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
+fake_track_control_mode = os.environ.get("DISAPPTRKS_FAKE_TRACK_CONTROL", "basic").lower()
+if fake_track_control_mode in ("jetmet", "basic_selection"):
+    fake_track_control_mode = "basic"
+if fake_track_control_mode not in ("basic", "zmumu", "zee"):
+    raise ValueError(
+        "Unknown DISAPPTRKS_FAKE_TRACK_CONTROL="
+        f"{fake_track_control_mode!r}. Expected one of basic, zmumu, zee."
+    )
 parameters["disapptrks"] = {
     "category_mode": category_mode,
+    "fake_track_control": fake_track_control_mode,
     "full_workflow": os.environ.get("DISAPPTRKS_FULL_WORKFLOW", "").lower()
     in ("1", "true", "yes", "on"),
     "full_variables": os.environ.get("DISAPPTRKS_FULL_VARIABLES", "").lower()
@@ -199,9 +208,9 @@ def _skim_cuts_for_mode(mode, sample):
 skim_cuts = _skim_cuts_for_mode(category_mode, dataset_sample)
 if os.environ.get("DISAPPTRKS_DISABLE_HLT_SKIM", "").lower() in ("1", "true", "yes", "on"):
     skim_cuts = []
-enable_generic_diagnostics = enable_search_diagnostics and category_mode in (
-    "fake_tracks",
-    "all",
+enable_generic_diagnostics = enable_search_diagnostics and (
+    category_mode == "all"
+    or (category_mode == "fake_tracks" and fake_track_control_mode == "basic")
 )
 if enable_generic_diagnostics:
     diagnostic_fields = (
@@ -220,7 +229,11 @@ fake_track_diagnostic_categories = (
         f"fake_track_diag_{name}": [cut]
         for name, cut in fake_track_diagnostic_cuts.items()
     }
-    if enable_search_diagnostics and category_mode == "fake_tracks"
+    if (
+        enable_search_diagnostics
+        and category_mode == "fake_tracks"
+        and fake_track_control_mode == "basic"
+    )
     else {}
 )
 fake_z_control_diagnostic_categories = {
@@ -283,6 +296,23 @@ def _categories_with_exact_or_prefix(categories, exact=(), prefixes=()):
     }
 
 
+fake_track_basic_categories = _categories_with_exact_or_prefix(
+    fake_track_categories,
+    exact=("fake_basic3hits_d0_signal", "fake_basic3hits_d0_sideband"),
+    prefixes=("fake_control_",),
+)
+fake_track_zmumu_categories = _categories_with_exact_or_prefix(
+    fake_track_categories,
+    exact=("fake_zmumu_control",),
+    prefixes=("fake_zmumu_sideband_",),
+)
+fake_track_zee_categories = _categories_with_exact_or_prefix(
+    fake_track_categories,
+    exact=("fake_zee_control",),
+    prefixes=("fake_zee_sideband_",),
+)
+
+
 if category_mode == "muon_pveto":
     selected_categories = {
         **common_categories,
@@ -309,34 +339,36 @@ elif category_mode == "tau_ele_pveto":
         **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_ele_"),
     }
 elif category_mode == "fake_tracks":
-    selected_categories = {
-        **common_categories,
-        **fake_track_categories,
-        **fake_z_control_diagnostic_categories,
-    }
+    if fake_track_control_mode == "zmumu":
+        selected_categories = {
+            "inclusive": common_categories["inclusive"],
+            **fake_track_zmumu_categories,
+            **_categories_with_prefix(fake_z_control_diagnostic_categories, "fake_zmumu_"),
+        }
+    elif fake_track_control_mode == "zee":
+        selected_categories = {
+            "inclusive": common_categories["inclusive"],
+            **fake_track_zee_categories,
+            **_categories_with_prefix(fake_z_control_diagnostic_categories, "fake_zee_"),
+        }
+    else:
+        selected_categories = {
+            **common_categories,
+            **fake_track_basic_categories,
+        }
 elif category_mode == "muon_backgrounds":
     selected_categories = {
         **common_categories,
         **muon_pveto_categories,
         **muon_pveto_layer_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_mu_"),
-        **_categories_with_exact_or_prefix(
-            fake_track_categories,
-            exact=("fake_zmumu_control",),
-            prefixes=("fake_zmumu_sideband_",),
-        ),
-        **_categories_with_prefix(fake_z_control_diagnostic_categories, "fake_zmumu_"),
+        **fake_track_zmumu_categories,
     }
 elif category_mode == "egamma_backgrounds":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "electron_", "tau_ele_"),
-        **_categories_with_exact_or_prefix(
-            fake_track_categories,
-            exact=("fake_zee_control",),
-            prefixes=("fake_zee_sideband_",),
-        ),
-        **_categories_with_prefix(fake_z_control_diagnostic_categories, "fake_zee_"),
+        **fake_track_zee_categories,
     }
 elif category_mode == "all":
     selected_categories = {
@@ -413,12 +445,17 @@ def _variables_for_mode(mode, variables):
     if _env_flag("DISAPPTRKS_DISABLE_MINIMAL_VARIABLES"):
         return variables
 
+    fake_track_prefixes = {
+        "basic": (),
+        "zmumu": ("fakeZMuMuFitTrack_",),
+        "zee": ("fakeZeeFitTrack_",),
+    }[fake_track_control_mode]
     prefixes_by_mode = {
         "muon_pveto": ("nMuon",),
         "electron_pveto": ("nElectron",),
         "tau_mu_pveto": ("nTauMu",),
         "tau_ele_pveto": ("nTauEle",),
-        "fake_tracks": ("fakeZMuMuFitTrack_", "fakeZeeFitTrack_"),
+        "fake_tracks": fake_track_prefixes,
         "muon_backgrounds": ("nMuon", "nTauMu", "fakeZMuMuFitTrack_"),
         "egamma_backgrounds": ("nElectron", "nTauEle", "fakeZeeFitTrack_"),
     }

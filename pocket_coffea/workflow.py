@@ -609,6 +609,19 @@ class DisappTrksProcessor(BaseProcessorABC):
             "on",
         )
 
+    def _fake_track_controls(self):
+        try:
+            mode = str(self.params.disapptrks.fake_track_control).lower()
+        except Exception:
+            mode = os.environ.get("DISAPPTRKS_FAKE_TRACK_CONTROL", "basic").lower()
+        if mode in ("jetmet", "basic_selection"):
+            mode = "basic"
+        return {
+            "basic": ("basic",),
+            "zmumu": ("zmumu",),
+            "zee": ("zee",),
+        }.get(mode, ("basic",))
+
     def _store_lepton_pveto_pairs(
         self,
         *,
@@ -1442,7 +1455,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             self._count_lepton_pair_fields("TauEle")
             self._store_tau_pveto_diagnostics("tau_ele_pveto")
         elif mode == "fake_tracks":
-            self._count_fake_track_fields()
+            self._count_fake_track_fields(controls=self._fake_track_controls())
         elif mode == "muon_backgrounds":
             self._count_muon_pveto_fields()
             self._store_muon_pveto_diagnostics()
@@ -1465,8 +1478,9 @@ class DisappTrksProcessor(BaseProcessorABC):
             self._count_fake_track_fields(controls=("zee",))
 
         if self._search_diagnostics_enabled():
-            self._store_search_diagnostics()
-            if mode == "fake_tracks":
+            if mode != "fake_tracks" or self._fake_track_controls() == ("basic",):
+                self._store_search_diagnostics()
+            if mode == "fake_tracks" and self._fake_track_controls() == ("basic",):
                 self._store_fake_track_diagnostics()
 
     def count_objects(self, variation):
