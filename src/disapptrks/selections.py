@@ -1036,14 +1036,20 @@ def search_event_cutflow_masks(
     mask = mask & (analysis_event.leadingJet_pt > jet_pt_min)
     masks["event_leadingJet110"] = mask
 
-    mask = mask & (analysis_event.leadingJetMETNoMuDeltaPhi >= jet_met_dphi_min)
-    masks["event_jetMetDphi0p5"] = mask
+    mask = mask & (abs(analysis_event.leadingJet_eta) < 2.4)
+    masks["event_leadingJetEta2p4"] = mask
+
+    mask = mask & analysis_event.leadingJet_tightLepVeto
+    masks["event_leadingJetTightLepVeto"] = mask
 
     mask = mask & (
         (analysis_event.dijetMaxDeltaPhi < 0.0)
         | (analysis_event.dijetMaxDeltaPhi < dijet_dphi_max)
     )
     masks["event_dijetDphi2p5"] = mask
+
+    mask = mask & (analysis_event.leadingJetMETNoMuDeltaPhi >= jet_met_dphi_min)
+    masks["event_jetMetDphi0p5"] = mask
 
     return masks
 
@@ -1061,6 +1067,8 @@ def add_event_derived_fields(events):
     order = ak.argsort(jets.pt, ascending=False)
     jets = jets[order]
     leading_pt = ak.fill_none(ak.firsts(jets.pt), -1.0)
+    leading_eta = ak.fill_none(ak.firsts(jets.eta), 999.0)
+    leading_tight_lep_veto = leading_pt > 0.0
     leading_phi = ak.fill_none(ak.firsts(jets.phi), 0.0)
 
     first, second = ak.unzip(ak.combinations(jets.phi, 2, axis=1))
@@ -1072,6 +1080,8 @@ def add_event_derived_fields(events):
             "METNoMu_pt": events.MetNoMu.pt,
             "METNoMu_phi": events.MetNoMu.phi,
             "leadingJet_pt": leading_pt,
+            "leadingJet_eta": leading_eta,
+            "leadingJet_tightLepVeto": leading_tight_lep_veto,
             "leadingJet_phi": leading_phi,
             "dijetMaxDeltaPhi": dijet_max,
             "leadingJetMETNoMuDeltaPhi": abs(

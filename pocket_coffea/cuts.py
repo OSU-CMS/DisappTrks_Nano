@@ -16,8 +16,10 @@ from pocket_coffea.lib.cut_functions import apply_golden_json, get_JetVetoMap_Ma
 EVENT_DIAGNOSTIC_FIELDS = [
     "event_metNoMu120",
     "event_leadingJet110",
-    "event_jetMetDphi0p5",
+    "event_leadingJetEta2p4",
+    "event_leadingJetTightLepVeto",
     "event_dijetDphi2p5",
+    "event_jetMetDphi0p5",
 ]
 
 TRACK_DIAGNOSTIC_FIELDS = [
@@ -561,8 +563,10 @@ def _search_kinematics(events, params, **kwargs):
     return (
         (event.METNoMu_pt >= params["met_min"])
         & (event.leadingJet_pt > params["jet_pt_min"])
-        & (event.leadingJetMETNoMuDeltaPhi >= params["jet_met_dphi_min"])
+        & (abs(event.leadingJet_eta) < params["jet_eta_max"])
+        & event.leadingJet_tightLepVeto
         & ((event.dijetMaxDeltaPhi < 0.0) | (event.dijetMaxDeltaPhi < params["dijet_dphi_max"]))
+        & (event.leadingJetMETNoMuDeltaPhi >= params["jet_met_dphi_min"])
     )
 
 
@@ -905,6 +909,7 @@ search_kinematics = Cut(
     params={
         "met_min": 120.0,
         "jet_pt_min": 110.0,
+        "jet_eta_max": 2.4,
         "jet_met_dphi_min": 0.5,
         "dijet_dphi_max": 2.5,
     },

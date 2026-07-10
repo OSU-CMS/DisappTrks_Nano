@@ -121,14 +121,16 @@ FAKE_TRACK_BASIC_CUTFLOW_ROWS = [
     ("presel", r"event passes golden JSON, MET filters, and jet veto map"),
     ("inclusive", r"inclusive analysis category after preselections"),
     ("diag_event_metNoMu120", r"$p_T^{\mathrm{miss,no}\,\mu}>120~\mathrm{GeV}$"),
-    ("diag_event_leadingJet110", r"leading jet $p_T>110~\mathrm{GeV}$"),
-    (
-        "diag_event_jetMetDphi0p5",
-        r"$\Delta\phi(\mathrm{leading~jet},\vec{p}_T^{\mathrm{miss,no}\,\mu})>0.5$",
-    ),
+    ("diag_event_leadingJet110", r"$\geq 1$ jets with $p_T>110~\mathrm{GeV}$"),
+    ("diag_event_leadingJetEta2p4", r"$\geq 1$ jets with $|\eta|<2.4$"),
+    ("diag_event_leadingJetTightLepVeto", r"$\geq 1$ jets passing tight-lepton-veto jet ID"),
     (
         "diag_event_dijetDphi2p5",
         r"maximum dijet $\Delta\phi<2.5$",
+    ),
+    (
+        "diag_event_jetMetDphi0p5",
+        r"$\Delta\phi(\mathrm{leading~jet},\vec{p}_T^{\mathrm{miss,no}\,\mu})>0.5$",
     ),
 ]
 
