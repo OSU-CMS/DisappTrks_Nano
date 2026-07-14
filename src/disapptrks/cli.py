@@ -28,7 +28,11 @@ from .fake_tracks import (
     write_fake_track_z_control_latex,
     write_fake_track_latex,
 )
-from .fiducial import make_fiducial_map_from_outputs, write_fiducial_map_payload
+from .fiducial import (
+    make_fiducial_map_from_outputs,
+    plot_fiducial_map_payload,
+    write_fiducial_map_payload,
+)
 from .lepton_backgrounds import (
     estimate_lepton_background,
     write_lepton_background_json,
@@ -904,6 +908,23 @@ def _make_fiducial_map_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _plot_fiducial_map_command(args: argparse.Namespace) -> int:
+    written = plot_fiducial_map_payload(
+        args.npz,
+        output_prefix=args.output_prefix,
+        flavor=args.flavor,
+        json_path=args.json,
+        run_period=args.run_period,
+        lumi_text=args.lumi_text,
+        cms_label=args.cms_label,
+        formats=args.formats,
+        draw_hot_spots=not args.no_hot_spots,
+    )
+    for path in written:
+        print(f"Wrote {path}")
+    return 0
+
+
 def _merge_pveto_tables_command(args: argparse.Namespace) -> int:
     write_merged_pveto_latex(
         args.tables,
@@ -1329,6 +1350,62 @@ def main():
         help="Only write the JSON hot-spot summary.",
     )
     fiducial_map.set_defaults(func=_make_fiducial_map_command)
+
+    fiducial_plot = subparsers.add_parser(
+        "plot-fiducial-map",
+        help="Draw AN-style fiducial-map plots from a .npz payload.",
+    )
+    fiducial_plot.add_argument(
+        "npz",
+        type=Path,
+        help="NPZ payload written by make-fiducial-map.",
+    )
+    fiducial_plot.add_argument(
+        "--json",
+        type=Path,
+        help="JSON summary from make-fiducial-map; used for hot-spot circles.",
+    )
+    fiducial_plot.add_argument(
+        "--flavor",
+        choices=("electron", "muon"),
+        required=True,
+        help="Sets the AN-style z-axis ranges for inefficiency/significance.",
+    )
+    fiducial_plot.add_argument(
+        "--run-period",
+        help="Run-period label added to plot titles.",
+    )
+    fiducial_plot.add_argument(
+        "--lumi-text",
+        help=r"Top-right luminosity label, e.g. '27.0 fb$^{-1}$ (13.6 TeV)'.",
+    )
+    fiducial_plot.add_argument(
+        "--cms-label",
+        default="CMS Preliminary",
+        help="Top-left CMS label.",
+    )
+    fiducial_plot.add_argument(
+        "--formats",
+        nargs="+",
+        default=["pdf", "png"],
+        help="Output formats to write.",
+    )
+    fiducial_plot.add_argument(
+        "--output-prefix",
+        type=Path,
+        required=True,
+        help=(
+            "Output prefix. Files are written as "
+            "<prefix>_beforeVeto.<fmt>, <prefix>_afterVeto.<fmt>, "
+            "<prefix>_efficiency.<fmt>, and <prefix>_efficiencyInSigma.<fmt>."
+        ),
+    )
+    fiducial_plot.add_argument(
+        "--no-hot-spots",
+        action="store_true",
+        help="Do not draw hot-spot circles on the inefficiency/significance plots.",
+    )
+    fiducial_plot.set_defaults(func=_plot_fiducial_map_command)
 
     merge_pveto_tables = subparsers.add_parser(
         "merge-pveto-tables",

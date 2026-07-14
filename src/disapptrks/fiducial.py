@@ -270,3 +270,138 @@ def write_fiducial_map_payload(
             significance=summary.significance,
         )
     return output_json
+
+
+def _load_hot_spots(json_path: Path | None) -> tuple[HotSpot, ...]:
+    if json_path is None:
+        return ()
+    payload = json.loads(json_path.read_text())
+    return tuple(
+        HotSpot(
+            eta=float(hot_spot["eta"]),
+            phi=float(hot_spot["phi"]),
+            radius=float(hot_spot.get("radius", 0.06)),
+            sigma=float(hot_spot["sigma"]),
+        )
+        for hot_spot in payload.get("hot_spots", [])
+    )
+
+
+def _z_range(flavor: str, quantity: str) -> tuple[float, float] | None:
+    if quantity == "inefficiency":
+        return (0.0, 0.5) if flavor == "electron" else (0.0, 0.05)
+    if quantity == "significance_positive":
+        return (0.0, 12.0) if flavor == "electron" else (0.0, 23.0)
+    return None
+
+
+def plot_fiducial_map_payload(
+    npz_path: Path,
+    *,
+    output_prefix: Path,
+    flavor: str,
+    json_path: Path | None = None,
+    run_period: str | None = None,
+    lumi_text: str | None = None,
+    cms_label: str = "CMS Preliminary",
+    formats: Sequence[str] = ("pdf", "png"),
+    draw_hot_spots: bool = True,
+) -> list[Path]:
+    try:
+        import matplotlib.pyplot as plt
+        from matplotlib.patches import Circle
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("matplotlib is required to draw fiducial-map plots") from exc
+
+    arrays = np.load(npz_path)
+    eta_edges = arrays["eta_edges"]
+    phi_edges = arrays["phi_edges"]
+    hot_spots = _load_hot_spots(json_path) if draw_hot_spots else ()
+    flavor_label = {"electron": "Electron", "muon": "Muon"}.get(flavor, flavor)
+    period_suffix = "" if run_period is None else f" {run_period}"
+    top_right = lumi_text or ""
+
+    plots = (
+        ("before", "beforeVeto", f"{flavor_label} fiducial map before veto{period_suffix}", "Events"),
+        ("after", "afterVeto", f"{flavor_label} fiducial map after veto{period_suffix}", "Events"),
+        (
+            "inefficiency",
+            "efficiency",
+            f"{flavor_label} fiducial inefficiency{period_suffix}",
+            "After / before",
+        ),
+        (
+            "significance",
+            "efficiencyInSigma",
+            f"{flavor_label} fiducial inefficiency significance{period_suffix}",
+            "Significance",
+        ),
+    )
+
+    written = []
+    output_prefix.parent.mkdir(parents=True, exist_ok=True)
+    for key, legacy_name, title, colorbar_label in plots:
+        values = np.asarray(arrays[key], dtype=float)
+        if key == "significance":
+            values = np.maximum(values, 0.0)
+            zrange = _z_range(flavor, "significance_positive")
+        else:
+            zrange = _z_range(flavor, key)
+
+        fig, ax = plt.subplots(figsize=(8, 8))
+        mesh_kwargs = {"shading": "auto", "cmap": "viridis"}
+        if zrange is not None:
+            mesh_kwargs.update({"vmin": zrange[0], "vmax": zrange[1]})
+        mesh = ax.pcolormesh(eta_edges, phi_edges, values.T, **mesh_kwargs)
+        cbar = fig.colorbar(mesh, ax=ax, pad=0.015)
+        cbar.set_label(colorbar_label, fontsize=13)
+        cbar.ax.tick_params(labelsize=11)
+
+        if key in ("inefficiency", "significance") and draw_hot_spots:
+            for hot_spot in hot_spots:
+                ax.add_patch(
+                    Circle(
+                        (hot_spot.eta, hot_spot.phi),
+                        0.06,
+                        fill=False,
+                        linewidth=1.4,
+                        edgecolor="#74c476",
+                    )
+                )
+
+        ax.text(
+            0.02,
+            1.015,
+            cms_label,
+            transform=ax.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=15,
+            fontweight="bold",
+        )
+        if top_right:
+            ax.text(
+                0.98,
+                1.015,
+                top_right,
+                transform=ax.transAxes,
+                ha="right",
+                va="bottom",
+                fontsize=13,
+            )
+        ax.set_title(title, fontsize=14, pad=14)
+        ax.set_xlabel(r"track $\eta$", fontsize=14)
+        ax.set_ylabel(r"track $\phi$", fontsize=14)
+        ax.set_xlim(float(eta_edges[0]), float(eta_edges[-1]))
+        ax.set_ylim(float(phi_edges[0]), float(phi_edges[-1]))
+        ax.tick_params(labelsize=12)
+        fig.tight_layout()
+
+        for fmt in formats:
+            suffix = fmt if fmt.startswith(".") else f".{fmt}"
+            out_path = output_prefix.parent / f"{output_prefix.name}_{legacy_name}{suffix}"
+            fig.savefig(out_path, dpi=200)
+            written.append(out_path)
+        plt.close(fig)
+
+    return written
