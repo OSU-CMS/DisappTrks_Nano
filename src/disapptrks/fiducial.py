@@ -295,6 +295,18 @@ def _z_range(flavor: str, quantity: str) -> tuple[float, float] | None:
     return None
 
 
+def _root_palette_56_colormap(plt):
+    """Return a Matplotlib approximation of ROOT palette 56.
+
+    The legacy fiducial-map code calls ``gStyle.SetPalette(56)``, ROOT's
+    inverted dark-body radiator palette.  Matplotlib's reversed hot map follows
+    the same white/yellow/red/black progression closely enough for AN-style
+    comparison plots.
+    """
+
+    return plt.get_cmap("hot_r")
+
+
 def plot_fiducial_map_payload(
     npz_path: Path,
     *,
@@ -306,6 +318,7 @@ def plot_fiducial_map_payload(
     cms_label: str = "CMS Preliminary",
     formats: Sequence[str] = ("pdf", "png"),
     draw_hot_spots: bool = True,
+    colormap: str = "root56",
 ) -> list[Path]:
     try:
         import matplotlib.pyplot as plt
@@ -320,6 +333,7 @@ def plot_fiducial_map_payload(
     flavor_label = {"electron": "Electron", "muon": "Muon"}.get(flavor, flavor)
     period_suffix = "" if run_period is None else f" {run_period}"
     top_right = lumi_text or ""
+    cmap = _root_palette_56_colormap(plt) if colormap == "root56" else plt.get_cmap(colormap)
 
     plots = (
         ("before", "beforeVeto", f"{flavor_label} fiducial map before veto{period_suffix}", "Events"),
@@ -349,7 +363,7 @@ def plot_fiducial_map_payload(
             zrange = _z_range(flavor, key)
 
         fig, ax = plt.subplots(figsize=(8, 8))
-        mesh_kwargs = {"shading": "auto", "cmap": "viridis"}
+        mesh_kwargs = {"shading": "auto", "cmap": cmap}
         if zrange is not None:
             mesh_kwargs.update({"vmin": zrange[0], "vmax": zrange[1]})
         mesh = ax.pcolormesh(eta_edges, phi_edges, values.T, **mesh_kwargs)

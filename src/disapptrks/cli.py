@@ -919,6 +919,7 @@ def _plot_fiducial_map_command(args: argparse.Namespace) -> int:
         cms_label=args.cms_label,
         formats=args.formats,
         draw_hot_spots=not args.no_hot_spots,
+        colormap=args.colormap,
     )
     for path in written:
         print(f"Wrote {path}")
@@ -1389,6 +1390,14 @@ def main():
         nargs="+",
         default=["pdf", "png"],
         help="Output formats to write.",
+    )
+    fiducial_plot.add_argument(
+        "--colormap",
+        default="root56",
+        help=(
+            "Matplotlib colormap name, or root56 for the AN/ROOT palette-56 "
+            "style. Default: root56."
+        ),
     )
     fiducial_plot.add_argument(
         "--output-prefix",

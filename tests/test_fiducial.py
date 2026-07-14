@@ -1,7 +1,9 @@
 import numpy as np
+import pytest
 
 from disapptrks.fiducial import (
     make_fiducial_map_from_outputs,
+    plot_fiducial_map_payload,
     summarize_fiducial_map,
     write_fiducial_map_payload,
 )
@@ -97,3 +99,35 @@ def test_write_fiducial_map_payload_writes_json_and_npz(tmp_path):
     assert '"flavor": "electron"' in output_json.read_text()
     payload = np.load(output_npz)
     assert np.allclose(payload["inefficiency"], summary.inefficiency)
+
+
+def test_plot_fiducial_map_payload_accepts_root56_colormap(tmp_path):
+    pytest.importorskip("matplotlib")
+
+    before = np.full((2, 2), 100.0)
+    after = np.array([[1.0, 1.0], [1.0, 50.0]])
+    edges = np.array([-1.0, 0.0, 1.0])
+    summary = summarize_fiducial_map(before, after, edges, edges, threshold=1.0)
+    output_json = tmp_path / "map.json"
+    output_npz = tmp_path / "map.npz"
+    write_fiducial_map_payload(
+        summary,
+        before=before,
+        after=after,
+        eta_edges=edges,
+        phi_edges=edges,
+        output_json=output_json,
+        output_npz=output_npz,
+    )
+
+    written = plot_fiducial_map_payload(
+        output_npz,
+        output_prefix=tmp_path / "map",
+        flavor="electron",
+        json_path=output_json,
+        formats=["png"],
+        colormap="root56",
+    )
+
+    assert len(written) == 4
+    assert all(path.exists() for path in written)
