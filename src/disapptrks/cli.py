@@ -28,6 +28,7 @@ from .fake_tracks import (
     write_fake_track_z_control_latex,
     write_fake_track_latex,
 )
+from .fiducial import make_fiducial_map_from_outputs, write_fiducial_map_payload
 from .lepton_backgrounds import (
     estimate_lepton_background,
     write_lepton_background_json,
@@ -848,6 +849,61 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _make_fiducial_map_command(args: argparse.Namespace) -> int:
+    outputs = _load_outputs(args.files)
+    prefix = {"electron": "electron", "muon": "muon"}[args.flavor]
+    before_variable = args.before_variable or f"{prefix}FiducialBefore_eta_phi"
+    after_variable = args.after_variable or f"{prefix}FiducialAfter_eta_phi"
+    output_npz = args.output_npz
+    if output_npz is None and not args.no_npz:
+        output_npz = args.output_json.with_suffix(".npz")
+
+    summary, before, after, eta_edges, phi_edges = make_fiducial_map_from_outputs(
+        outputs,
+        before_variable=before_variable,
+        after_variable=after_variable,
+        dataset=args.dataset,
+        sample=args.sample,
+        category=args.category,
+        threshold=args.threshold,
+    )
+    write_fiducial_map_payload(
+        summary,
+        before=before,
+        after=after,
+        eta_edges=eta_edges,
+        phi_edges=phi_edges,
+        output_json=args.output_json,
+        output_npz=output_npz,
+        metadata={
+            "flavor": args.flavor,
+            "run_period": args.run_period,
+            "before_variable": before_variable,
+            "after_variable": after_variable,
+            "dataset": args.dataset,
+            "sample": args.sample,
+            "category": args.category,
+            "threshold": args.threshold,
+            "input_files": [str(path) for path in args.files],
+        },
+    )
+
+    print(f"Wrote {args.output_json}")
+    if output_npz is not None:
+        print(f"Wrote {output_npz}")
+    print(
+        f"{args.flavor}: mean inefficiency={summary.mean_inefficiency:.6g}, "
+        f"stddev={summary.stddev_inefficiency:.6g}, "
+        f"hot spots={len(summary.hot_spots)}"
+    )
+    for hot_spot in summary.hot_spots:
+        print(
+            f"  eta={hot_spot.eta:.3f}, phi={hot_spot.phi:.3f}, "
+            f"radius={hot_spot.radius:.4f}, sigma={hot_spot.sigma:.3f}"
+        )
+    return 0
+
+
 def _merge_pveto_tables_command(args: argparse.Namespace) -> int:
     write_merged_pveto_latex(
         args.tables,
@@ -1209,6 +1265,70 @@ def main():
         help="Wrap the LaTeX tabular in a table environment.",
     )
     lepton_background.set_defaults(func=_estimate_lepton_background_command)
+
+    fiducial_map = subparsers.add_parser(
+        "make-fiducial-map",
+        help=(
+            "Build an electron or muon fiducial map from the before/after "
+            "eta-phi histograms in fiducial_maps PocketCoffea outputs."
+        ),
+    )
+    fiducial_map.add_argument(
+        "files",
+        nargs="+",
+        type=Path,
+        help="PocketCoffea .coffea output files from DISAPPTRKS_CATEGORY_MODE=fiducial_maps.",
+    )
+    fiducial_map.add_argument(
+        "--flavor",
+        choices=("electron", "muon"),
+        required=True,
+        help="Which fiducial-map histogram pair to summarize.",
+    )
+    fiducial_map.add_argument(
+        "--run-period",
+        required=True,
+        help="Run-period label written into the JSON metadata.",
+    )
+    fiducial_map.add_argument("--dataset", help="Restrict to one dataset key.")
+    fiducial_map.add_argument("--sample", help="Restrict to one sample key.")
+    fiducial_map.add_argument(
+        "--category",
+        default="inclusive",
+        help="PocketCoffea category axis value to read.",
+    )
+    fiducial_map.add_argument(
+        "--threshold",
+        type=float,
+        default=2.0,
+        help="Hot-spot threshold in standard deviations above the mean inefficiency.",
+    )
+    fiducial_map.add_argument(
+        "--before-variable",
+        help="Override the before-veto histogram variable name.",
+    )
+    fiducial_map.add_argument(
+        "--after-variable",
+        help="Override the after-veto histogram variable name.",
+    )
+    fiducial_map.add_argument(
+        "-o",
+        "--output-json",
+        type=Path,
+        required=True,
+        help="Output JSON summary path.",
+    )
+    fiducial_map.add_argument(
+        "--output-npz",
+        type=Path,
+        help="Output NumPy payload path. Defaults to --output-json with .npz suffix.",
+    )
+    fiducial_map.add_argument(
+        "--no-npz",
+        action="store_true",
+        help="Only write the JSON hot-spot summary.",
+    )
+    fiducial_map.set_defaults(func=_make_fiducial_map_command)
 
     merge_pveto_tables = subparsers.add_parser(
         "merge-pveto-tables",
