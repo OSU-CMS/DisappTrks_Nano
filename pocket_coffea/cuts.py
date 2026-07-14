@@ -936,6 +936,33 @@ for layer in PVETO_LAYERS:
             )
         )
 
+lepton_background_cuts = {}
+for layer in (*PVETO_LAYERS, "combinedBins"):
+    for category_prefix, field_prefix in (
+        ("muon", "Muon"),
+        ("electron", "Electron"),
+        ("tau_mu", "TauMu"),
+        ("tau_ele", "TauEle"),
+    ):
+        lepton_background_cuts[f"{category_prefix}_background_control_{layer}"] = (
+            _make_count_cut(
+                f"{category_prefix}_background_control_{layer}",
+                f"n{field_prefix}BackgroundControl_{layer}",
+            )
+        )
+        lepton_background_cuts[f"{category_prefix}_background_offline_{layer}"] = (
+            _make_count_cut(
+                f"{category_prefix}_background_offline_{layer}",
+                f"n{field_prefix}BackgroundOffline_{layer}",
+            )
+        )
+        lepton_background_cuts[f"{category_prefix}_background_trigger_{layer}"] = (
+            _make_count_cut(
+                f"{category_prefix}_background_trigger_{layer}",
+                f"n{field_prefix}BackgroundTrigger_{layer}",
+            )
+        )
+
 search_kinematics = Cut(
     name="search_kinematics",
     params={

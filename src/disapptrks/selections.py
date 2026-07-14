@@ -667,6 +667,9 @@ def build_lepton_veto_tag_probe_pairs(
             "probe_dRMinMuon": probe.dRMinMuon,
             "probe_dRMinTauHad": probe.dRMinTauHad,
             "probe_dRMinJet": probe.dRMinJet,
+            "probe_pt": probe.pt,
+            "probe_eta": probe.eta,
+            "probe_phi": probe.phi,
             "probe_caloEnergy": probe.caloEnergy,
             "probe_missingOuterHits": probe.missingOuterHits,
             "probe_nLayers": (

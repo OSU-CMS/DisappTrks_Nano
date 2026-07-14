@@ -28,6 +28,11 @@ from .fake_tracks import (
     write_fake_track_z_control_latex,
     write_fake_track_latex,
 )
+from .lepton_backgrounds import (
+    estimate_lepton_background,
+    write_lepton_background_json,
+    write_lepton_background_latex,
+)
 from .schema import audit_root_file
 from .summaries import (
     summarize_ss_subtracted_veto_probability,
@@ -757,6 +762,92 @@ def _make_tau_pveto_table_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
+    outputs = _load_outputs(args.files)
+    cutflow = {}
+    for output in outputs:
+        cutflow = _sum_nested_numeric(cutflow, output["cutflow"])
+
+    if args.mode == "muon":
+        pair_counts = _muon_pair_counts_from_outputs(
+            outputs,
+            layers=args.layers,
+            dataset=args.dataset,
+            sample=args.sample,
+        )
+        flavor = args.flavor or r"$\mu$"
+    else:
+        pair_counts = _pair_counts_from_outputs(
+            outputs,
+            layers=args.layers,
+            variable_templates=LEPTON_PVETO_PAIR_VARIABLES[args.mode],
+            dataset=args.dataset,
+            sample=args.sample,
+        )
+        flavor = args.flavor or {
+            "electron": r"$e$",
+            "tau_mu": r"$\tau_{\mu}$",
+            "tau_ele": r"$\tau_{e}$",
+        }[args.mode]
+
+    control_category = args.control_category or f"{args.mode}_background_control_{{layer}}"
+    poffline_numerator_category = (
+        args.poffline_numerator_category
+        or f"{args.mode}_background_offline_{{layer}}"
+    )
+    poffline_denominator_category = (
+        args.poffline_denominator_category
+        or control_category
+    )
+    ptrigger_numerator_category = (
+        args.ptrigger_numerator_category
+        or args.pmiss_numerator_category
+        or f"{args.mode}_background_trigger_{{layer}}"
+    )
+    ptrigger_denominator_category = (
+        args.ptrigger_denominator_category
+        or args.pmiss_denominator_category
+        or poffline_numerator_category
+    )
+
+    estimates = estimate_lepton_background(
+        flavor=flavor,
+        layers=args.layers,
+        pair_counts=pair_counts,
+        cutflow=cutflow,
+        control_category=control_category,
+        poffline_numerator_category=poffline_numerator_category,
+        poffline_denominator_category=poffline_denominator_category,
+        ptrigger_numerator_category=ptrigger_numerator_category,
+        ptrigger_denominator_category=ptrigger_denominator_category,
+        dataset=args.dataset,
+        sample=args.sample,
+        variation=args.variation,
+    )
+
+    if args.output_json is not None:
+        write_lepton_background_json(estimates, args.output_json)
+        print(f"Wrote {args.output_json}")
+    if args.output_tex is not None:
+        write_lepton_background_latex(
+            estimates,
+            args.output_tex,
+            run_period=args.run_period,
+            include_table_env=args.table_env,
+        )
+        print(f"Wrote {args.output_tex}")
+
+    for estimate in estimates:
+        print(
+            f"{estimate.layer}: N_lepton = "
+            f"{estimate.estimate.value:.6g} ± {estimate.estimate.error:.6g} "
+            f"(P_veto={estimate.p_veto.value:.6g}, "
+            f"P_offline={estimate.p_offline.value:.6g}, "
+            f"P_trigger={estimate.p_trigger.value:.6g})"
+        )
+    return 0
+
+
 def _merge_pveto_tables_command(args: argparse.Namespace) -> int:
     write_merged_pveto_latex(
         args.tables,
@@ -1026,6 +1117,98 @@ def main():
         help="Wrap the tabular in a LaTeX table environment.",
     )
     tau_pveto_table.set_defaults(func=_make_tau_pveto_table_command)
+
+    lepton_background = subparsers.add_parser(
+        "estimate-lepton-background",
+        help=(
+            "Compute lepton-background estimates from Pveto pair counts plus "
+            "Poffline/Ptrigger control-category ratios."
+        ),
+    )
+    lepton_background.add_argument("files", nargs="+", type=Path)
+    lepton_background.add_argument(
+        "--mode",
+        choices=("muon", "electron", "tau_mu", "tau_ele"),
+        required=True,
+        help="Lepton flavor/control mode to estimate.",
+    )
+    lepton_background.add_argument("--dataset", help="Restrict to one dataset key.")
+    lepton_background.add_argument("--sample", help="Restrict to one sample key.")
+    lepton_background.add_argument("--variation", default="nominal")
+    lepton_background.add_argument(
+        "--run-period",
+        required=True,
+        help="Run-period label used in the LaTeX table.",
+    )
+    lepton_background.add_argument(
+        "--flavor",
+        help="Override the flavor label used in the output table.",
+    )
+    lepton_background.add_argument(
+        "--layers",
+        nargs="+",
+        default=["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"],
+        help="Layer-bin rows to estimate. Category patterns may use {layer}.",
+    )
+    lepton_background.add_argument(
+        "--control-category",
+        help=(
+            "Control-yield category pattern for N_ctrl. May use {layer}. "
+            "Defaults to <mode>_background_control_{layer}."
+        ),
+    )
+    lepton_background.add_argument(
+        "--poffline-numerator-category",
+        help=(
+            "Category pattern for the Poffline numerator. May use {layer}. "
+            "Defaults to <mode>_background_offline_{layer}."
+        ),
+    )
+    lepton_background.add_argument(
+        "--poffline-denominator-category",
+        help=(
+            "Category pattern for the Poffline denominator. May use {layer}. "
+            "Defaults to the N_ctrl category."
+        ),
+    )
+    lepton_background.add_argument(
+        "--ptrigger-numerator-category",
+        help=(
+            "Category pattern for the Ptrigger numerator. May use {layer}. "
+            "Defaults to <mode>_background_trigger_{layer}."
+        ),
+    )
+    lepton_background.add_argument(
+        "--ptrigger-denominator-category",
+        help=(
+            "Category pattern for the Ptrigger denominator. May use {layer}. "
+            "Defaults to the Poffline numerator."
+        ),
+    )
+    lepton_background.add_argument(
+        "--pmiss-numerator-category",
+        help="Alias for --ptrigger-numerator-category.",
+    )
+    lepton_background.add_argument(
+        "--pmiss-denominator-category",
+        help="Alias for --ptrigger-denominator-category.",
+    )
+    lepton_background.add_argument(
+        "--output-json",
+        type=Path,
+        help="Write detailed estimate components to JSON.",
+    )
+    lepton_background.add_argument(
+        "--output-tex",
+        type=Path,
+        help="Write a LaTeX summary table.",
+    )
+    lepton_background.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap the LaTeX tabular in a table environment.",
+    )
+    lepton_background.set_defaults(func=_estimate_lepton_background_command)
 
     merge_pveto_tables = subparsers.add_parser(
         "merge-pveto-tables",

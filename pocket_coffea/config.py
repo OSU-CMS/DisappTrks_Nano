@@ -30,6 +30,7 @@ from cuts import (
     golden_json_lumi,
     has_disappearing_track,
     jet_veto_map,
+    lepton_background_cuts,
     lepton_pveto_cuts,
     met_hlt,
     muon_table16_cuts,
@@ -195,6 +196,11 @@ def _skim_cuts_for_mode(mode, sample):
         return [single_muon_hlt]
     if mode in ("electron_pveto", "tau_ele_pveto", "egamma_backgrounds"):
         return [single_electron_hlt]
+    if mode == "fiducial_maps":
+        if sample == "DATA_Muon":
+            return [single_muon_hlt]
+        if sample == "DATA_EGamma":
+            return [single_electron_hlt]
     if mode == "fake_tracks":
         if sample == "DATA_Muon":
             return [single_muon_hlt]
@@ -243,6 +249,9 @@ muon_pveto_layer_categories = {
     name: [cut] for name, cut in muon_pveto_layer_cuts.items()
 }
 lepton_pveto_categories = {name: [cut] for name, cut in lepton_pveto_cuts.items()}
+lepton_background_categories = {
+    name: [cut] for name, cut in lepton_background_cuts.items()
+}
 fake_track_categories = {name: [cut] for name, cut in fake_track_cuts.items()}
 muon_table16_categories = {
     f"muon_table16_{name}": [cut] for name, cut in muon_table16_cuts.items()
@@ -319,23 +328,27 @@ if category_mode == "muon_pveto":
         **muon_pveto_categories,
         **muon_table16_categories,
         **muon_pveto_layer_categories,
+        **_categories_with_prefix(lepton_background_categories, "muon_"),
     }
 elif category_mode == "electron_pveto":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "electron_"),
+        **_categories_with_prefix(lepton_background_categories, "electron_"),
         **electron_pveto_diagnostic_categories,
     }
 elif category_mode == "tau_mu_pveto":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_mu_"),
+        **_categories_with_prefix(lepton_background_categories, "tau_mu_"),
         **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_mu_"),
     }
 elif category_mode == "tau_ele_pveto":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_ele_"),
+        **_categories_with_prefix(lepton_background_categories, "tau_ele_"),
         **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_ele_"),
     }
 elif category_mode == "fake_tracks":
@@ -362,19 +375,26 @@ elif category_mode == "muon_backgrounds":
         **muon_pveto_categories,
         **muon_pveto_layer_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_mu_"),
+        **_categories_with_prefix(lepton_background_categories, "muon_", "tau_mu_"),
         **fake_track_zmumu_categories,
     }
 elif category_mode == "egamma_backgrounds":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "electron_", "tau_ele_"),
+        **_categories_with_prefix(lepton_background_categories, "electron_", "tau_ele_"),
         **fake_track_zee_categories,
+    }
+elif category_mode == "fiducial_maps":
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
     }
 elif category_mode == "all":
     selected_categories = {
         **common_categories,
         **muon_pveto_categories,
         **lepton_pveto_categories,
+        **lepton_background_categories,
         **fake_track_categories,
         **muon_table16_categories,
         **electron_pveto_diagnostic_categories,
@@ -387,7 +407,7 @@ else:
         "Unknown DISAPPTRKS_CATEGORY_MODE="
         f"{category_mode!r}. Expected one of muon_pveto, electron_pveto, "
         "tau_mu_pveto, tau_ele_pveto, fake_tracks, muon_backgrounds, "
-        "egamma_backgrounds, all."
+        "egamma_backgrounds, fiducial_maps, all."
     )
 
 selected_categories = {
@@ -458,6 +478,7 @@ def _variables_for_mode(mode, variables):
         "fake_tracks": fake_track_prefixes,
         "muon_backgrounds": ("nMuon", "nTauMu", "fakeZMuMuFitTrack_"),
         "egamma_backgrounds": ("nElectron", "nTauEle", "fakeZeeFitTrack_"),
+        "fiducial_maps": ("electronFiducial", "muonFiducial"),
     }
     prefixes = prefixes_by_mode.get(mode)
     if prefixes is None:
@@ -523,6 +544,62 @@ for prefix, label in (
                     f"N(SS {label} mass-window pairs passing Pveto numerator, {layer})",
                 ),
             }
+        )
+
+lepton_background_count_variables = {}
+for prefix, label in (
+    ("Muon", "muon"),
+    ("Electron", "electron"),
+    ("TauMu", r"tau-muon"),
+    ("TauEle", r"tau-electron"),
+):
+    for layer in (*pveto_layers, "combinedBins"):
+        lepton_background_count_variables.update(
+            {
+                f"n{prefix}BackgroundControl_{layer}": _event_count_hist(
+                    f"n{prefix}BackgroundControl_{layer}",
+                    f"N({label} lepton-background control events, {layer})",
+                    bins=2,
+                ),
+                f"n{prefix}BackgroundOffline_{layer}": _event_count_hist(
+                    f"n{prefix}BackgroundOffline_{layer}",
+                    f"N({label} control events passing offline MET, {layer})",
+                    bins=2,
+                ),
+                f"n{prefix}BackgroundTrigger_{layer}": _event_count_hist(
+                    f"n{prefix}BackgroundTrigger_{layer}",
+                    f"N({label} control events passing offline MET and MET trigger, {layer})",
+                    bins=2,
+                ),
+            }
+        )
+
+fiducial_map_variables = {}
+for prefix, label in (
+    ("Electron", "electron"),
+    ("Muon", "muon"),
+):
+    for stage, stage_label in (("Before", "before veto"), ("After", "after veto")):
+        fiducial_map_variables[f"{label}Fiducial{stage}_eta_phi"] = HistConf(
+            [
+                Axis(
+                    coll=f"{prefix}Fiducial{stage}",
+                    field="probe_eta",
+                    bins=50,
+                    start=-2.5,
+                    stop=2.5,
+                    label=f"{label} fiducial-map probe eta ({stage_label})",
+                ),
+                Axis(
+                    coll=f"{prefix}Fiducial{stage}",
+                    field="probe_phi",
+                    bins=64,
+                    start=-3.2,
+                    stop=3.2,
+                    label=f"{label} fiducial-map probe phi ({stage_label})",
+                ),
+            ],
+            only_categories=["inclusive"],
         )
 
 cfg = Configurator(
@@ -805,6 +882,8 @@ cfg = Configurator(
             for layer in pveto_layers
         },
         **lepton_pair_count_variables,
+        **lepton_background_count_variables,
+        **fiducial_map_variables,
         "nIsoTrackSearch": HistConf(
             [
                 Axis(

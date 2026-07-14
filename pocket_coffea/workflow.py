@@ -200,6 +200,77 @@ def _single_muon_trigger_mask(events):
     return _all_true_like(events) & False
 
 
+def _met_trigger_mask(events):
+    names = (
+        "MET105_IsoTrk50",
+        "MET120_IsoTrk50",
+        "PFMET105_IsoTrk50",
+        "PFMET120_PFMHT120_IDTight",
+        "PFMET130_PFMHT130_IDTight",
+        "PFMET140_PFMHT140_IDTight",
+        "PFMET120_PFMHT120_IDTight_PFHT60",
+        "PFMETNoMu110_PFMHTNoMu110_IDTight_FilterHF",
+        "PFMETNoMu120_PFMHTNoMu120_IDTight_FilterHF",
+        "PFMETNoMu130_PFMHTNoMu130_IDTight_FilterHF",
+        "PFMETNoMu140_PFMHTNoMu140_IDTight_FilterHF",
+        "PFMETNoMu120_PFMHTNoMu120_IDTight_PFHT60",
+        "PFMETNoMu120_PFMHTNoMu120_IDTight",
+        "PFMETNoMu130_PFMHTNoMu130_IDTight",
+        "PFMETNoMu140_PFMHTNoMu140_IDTight",
+        "PFMET250_HBHECleaned",
+        "PFMET300_HBHECleaned",
+    )
+    mask = None
+    for name in names:
+        if "HLT" in events.fields and name in events.HLT.fields:
+            mask = events.HLT[name] if mask is None else (mask | events.HLT[name])
+    return mask if mask is not None else _all_true_like(events) & False
+
+
+def _met_no_mu_minus_lepton(events, leptons):
+    """Legacy MET-minus-one proxy: remove the selected lepton from MET-no-mu."""
+    import awkward as ak
+
+    tag = ak.firsts(leptons)
+    tag_pt = ak.fill_none(tag.pt, 0.0)
+    tag_phi = ak.fill_none(tag.phi, 0.0)
+    met_x = events.MetNoMu.pt * np.cos(events.MetNoMu.phi) + tag_pt * np.cos(tag_phi)
+    met_y = events.MetNoMu.pt * np.sin(events.MetNoMu.phi) + tag_pt * np.sin(tag_phi)
+    return np.sqrt(met_x * met_x + met_y * met_y), np.arctan2(met_y, met_x)
+
+
+def _leading_jet_delta_phi(events, phi):
+    import awkward as ak
+
+    good_jets = events.Jet[
+        (events.Jet.pt > 30.0)
+        & (abs(events.Jet.eta) < 4.5)
+        & run3_tight_lepton_veto_jet_mask(events.Jet)
+    ]
+    leading_phi = ak.fill_none(ak.firsts(good_jets.phi), 0.0)
+    return abs(delta_phi(leading_phi, phi))
+
+
+def _lepton_background_track_mask(tracks, *, flavor: str, layer: str):
+    mask = base_probe_track_mask(
+        tracks,
+        pt_min=55.0,
+        layer=layer,
+        apply_jet_cut=False,
+        apply_calo_cut=(flavor == "muon"),
+        apply_outer_hits_cut=False,
+    )
+    if flavor == "electron":
+        mask = mask & ((tracks.dRMinElectron >= 0.0) & (tracks.dRMinElectron < 0.1))
+    elif flavor == "muon":
+        mask = mask & ((tracks.dRMinMuon >= 0.0) & (tracks.dRMinMuon < 0.1))
+    elif flavor == "tau":
+        mask = mask & ((tracks.dRMinTauHad >= 0.0) & (tracks.dRMinTauHad < 0.1))
+    else:
+        raise ValueError(f"unknown lepton background flavor: {flavor}")
+    return mask
+
+
 def _z_to_mumu_control_mask(events, muons):
     selected = muons[muon_tag_mask(muons)]
     first, second = ak.unzip(ak.combinations(selected, 2, axis=1))
@@ -677,9 +748,99 @@ class DisappTrksProcessor(BaseProcessorABC):
                 & pass_mask_function(pairs)
             ]
 
+    def _store_lepton_background_controls(
+        self,
+        *,
+        prefix,
+        flavor,
+        tags,
+        event_quality,
+        met_cut=120.0,
+        phi_cut=0.5,
+    ):
+        met_pt, met_phi = _met_no_mu_minus_lepton(self.events, tags)
+        offline_event = (
+            event_quality
+            & (ak.num(tags) >= 1)
+            & (met_pt >= met_cut)
+            & (_leading_jet_delta_phi(self.events, met_phi) >= phi_cut)
+        )
+        trigger_event = offline_event & _met_trigger_mask(self.events)
+        for layer in (*PVETO_LAYERS, "combinedBins"):
+            track_mask = _lepton_background_track_mask(
+                self.events.IsoTrack,
+                flavor=flavor,
+                layer=layer,
+            )
+            has_track = ak.num(self.events.IsoTrack[track_mask]) >= 1
+            self.events[f"n{prefix}BackgroundControl_{layer}"] = ak.values_astype(
+                event_quality & (ak.num(tags) >= 1) & has_track,
+                np.int64,
+            )
+            self.events[f"n{prefix}BackgroundOffline_{layer}"] = ak.values_astype(
+                offline_event & has_track,
+                np.int64,
+            )
+            self.events[f"n{prefix}BackgroundTrigger_{layer}"] = ak.values_astype(
+                trigger_event & has_track,
+                np.int64,
+            )
+
+    def _store_fiducial_map_pairs(self):
+        """Store before/after probe pairs for electron and muon fiducial maps.
+
+        Legacy fiducial maps used Z tag-and-probe selections with the
+        electron/muon fiducial-map vetoes removed.  The "after" channels then
+        added the measured loose lepton veto.  In Nano we keep the same
+        before/after pair topology and histogram the probe eta-phi coordinates.
+        """
+
+        if "Muon" in self.events.fields:
+            self.events["MuonFiducialTag"] = self.events.Muon[
+                muon_tag_mask(self.events.Muon)
+            ]
+            muon_probes = self.events.IsoTrack[
+                muon_veto_probe_track_mask(self.events.IsoTrack)
+            ]
+            muon_pairs = build_muon_veto_tag_probe_pairs(
+                self.events.MuonFiducialTag,
+                muon_probes,
+            )
+            muon_z = os_z_window_muon_probe_pair_mask(muon_pairs)
+            self.events["MuonFiducialBefore"] = muon_pairs[muon_z]
+            self.events["MuonFiducialAfter"] = muon_pairs[
+                muon_z & muon_veto_pair_pass_mask(muon_pairs)
+            ]
+
+        if "Electron" in self.events.fields:
+            self.events["ElectronFiducialTag"] = self.events.Electron[
+                electron_tag_mask(self.events.Electron, self.events)
+            ]
+            electron_probes = self.events.IsoTrack[
+                lepton_veto_probe_track_mask(
+                    self.events.IsoTrack,
+                    measured_veto="electron",
+                )
+            ]
+            electron_pairs = build_lepton_veto_tag_probe_pairs(
+                self.events.ElectronFiducialTag,
+                electron_probes,
+                tag_mass=ELECTRON_MASS,
+                probe_mass=ELECTRON_MASS,
+            )
+            electron_z = os_mass_window_pair_mask(
+                electron_pairs,
+                91.1876 - 10.0,
+                91.1876 + 10.0,
+            )
+            self.events["ElectronFiducialBefore"] = electron_pairs[electron_z]
+            self.events["ElectronFiducialAfter"] = electron_pairs[
+                electron_z & electron_pairs.probe_passElectronVeto
+            ]
+
     def apply_object_preselection(self, variation):
         if (
-            self._mode_enabled("muon_pveto", "tau_mu_pveto", "fake_zmumu")
+            self._mode_enabled("muon_pveto", "tau_mu_pveto", "fake_zmumu", "fiducial_maps")
             or self._category_mode() == "fake_tracks"
         ):
             self.events["Muon"] = add_muon_derived_fields(self.events)
@@ -823,6 +984,60 @@ class DisappTrksProcessor(BaseProcessorABC):
                 window_high=91.1876 - 15.0,
                 pass_mask_function=tau_pveto_pair_pass_mask,
             )
+
+        if self._mode_enabled("muon_pveto", "electron_pveto", "tau_mu_pveto", "tau_ele_pveto"):
+            event_quality = (
+                _golden_json_mask(
+                    self.events,
+                    processor_params=self.params,
+                    year=self._year,
+                    era=self._era,
+                    sample=self._sample,
+                    is_mc=self._isMC,
+                )
+                & _met_filters_mask(self.events)
+                & _jet_veto_map_mask(
+                    self.events,
+                    processor_params=self.params,
+                    year=self._year,
+                    era=self._era,
+                    sample=self._sample,
+                    is_mc=self._isMC,
+                )
+            )
+            if self._mode_enabled("muon_pveto") and "MuonTag" in self.events.fields:
+                self._store_lepton_background_controls(
+                    prefix="Muon",
+                    flavor="muon",
+                    tags=self.events.MuonTag,
+                    event_quality=event_quality,
+                )
+            if self._mode_enabled("electron_pveto") and "ElectronTag" in self.events.fields:
+                self._store_lepton_background_controls(
+                    prefix="Electron",
+                    flavor="electron",
+                    tags=self.events.ElectronTag,
+                    event_quality=event_quality,
+                )
+            # The Run-3 tau estimate is measured with muon/electron tau-control
+            # legs in this Nano workflow, matching the existing tau Pveto split.
+            if self._mode_enabled("tau_mu_pveto") and "MuonLowMTTag" in self.events.fields:
+                self._store_lepton_background_controls(
+                    prefix="TauMu",
+                    flavor="muon",
+                    tags=self.events.MuonLowMTTag,
+                    event_quality=event_quality,
+                )
+            if self._mode_enabled("tau_ele_pveto") and "ElectronLowMTTag" in self.events.fields:
+                self._store_lepton_background_controls(
+                    prefix="TauEle",
+                    flavor="electron",
+                    tags=self.events.ElectronLowMTTag,
+                    event_quality=event_quality,
+                )
+
+        if self._mode_enabled("fiducial_maps"):
+            self._store_fiducial_map_pairs()
 
         search_diagnostic_masks = search_track_cutflow_masks(self.events.IsoTrack)
         self.events["IsoTrackSearchPreMissingOuter"] = self.events.IsoTrack[
