@@ -809,7 +809,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             muon_z = os_z_window_muon_probe_pair_mask(muon_pairs)
             self.events["MuonFiducialBefore"] = muon_pairs[muon_z]
             self.events["MuonFiducialAfter"] = muon_pairs[
-                muon_z & muon_veto_pair_pass_mask(muon_pairs)
+                muon_z & muon_pairs.probe_passLooseMuonVeto
             ]
 
         if "Electron" in self.events.fields:
@@ -835,7 +835,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             )
             self.events["ElectronFiducialBefore"] = electron_pairs[electron_z]
             self.events["ElectronFiducialAfter"] = electron_pairs[
-                electron_z & electron_pairs.probe_passElectronVeto
+                electron_z & electron_pairs.probe_passVetoElectronVeto
             ]
 
     def apply_object_preselection(self, variation):

@@ -349,8 +349,20 @@ def add_isotrack_derived_fields(events):
     tracks = ak.with_field(
         tracks, minimum_delta_r(tracks, events.Electron), "dRMinElectron"
     )
+    veto_electrons = events.Electron.cutBased >= 1
+    tracks = ak.with_field(
+        tracks,
+        minimum_delta_r(tracks, events.Electron, veto_electrons),
+        "dRMinVetoElectron",
+    )
     tracks = ak.with_field(
         tracks, minimum_delta_r(tracks, events.Muon), "dRMinMuon"
+    )
+    loose_muons = events.Muon.looseId
+    tracks = ak.with_field(
+        tracks,
+        minimum_delta_r(tracks, events.Muon, loose_muons),
+        "dRMinLooseMuon",
     )
     good_taus = hadronic_tau_veto_object_mask(events.Tau)
     tracks = ak.with_field(
@@ -621,6 +633,9 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
 
     tag, probe = ak.unzip(ak.cartesian([tags, probes], axis=1))
     mass = invariant_mass(tag, probe)
+    d_r_min_loose_muon = (
+        probe.dRMinLooseMuon if "dRMinLooseMuon" in probe.fields else probe.dRMinMuon
+    )
     return ak.zip(
         {
             "mass": mass,
@@ -630,6 +645,7 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
             "probe_eta": probe.eta,
             "probe_phi": probe.phi,
             "probe_dRMinMuon": probe.dRMinMuon,
+            "probe_dRMinLooseMuon": d_r_min_loose_muon,
             "probe_missingOuterHits": probe.missingOuterHits,
             "probe_caloEnergy": probe.caloEnergy,
             "probe_nLayers": (
@@ -638,6 +654,8 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
                 else probe.hp_nValidTrackerHits
             ),
             "probe_passMuonVeto": (probe.dRMinMuon < 0.0) | (probe.dRMinMuon > 0.15),
+            "probe_passLooseMuonVeto": (d_r_min_loose_muon < 0.0)
+            | (d_r_min_loose_muon > 0.15),
             "probe_passMuonPVetoNoFiducial": (
                 ((probe.dRMinMuon < 0.0) | (probe.dRMinMuon > 0.15))
                 & (probe.missingOuterHits >= 3)
@@ -658,12 +676,18 @@ def build_lepton_veto_tag_probe_pairs(
 
     tag, probe = ak.unzip(ak.cartesian([tags, probes], axis=1))
     mass = invariant_mass(tag, probe, first_mass=tag_mass, second_mass=probe_mass)
+    d_r_min_veto_electron = (
+        probe.dRMinVetoElectron
+        if "dRMinVetoElectron" in probe.fields
+        else probe.dRMinElectron
+    )
     return ak.zip(
         {
             "mass": mass,
             "os": tag.charge * probe.charge < 0,
             "ss": tag.charge * probe.charge > 0,
             "probe_dRMinElectron": probe.dRMinElectron,
+            "probe_dRMinVetoElectron": d_r_min_veto_electron,
             "probe_dRMinMuon": probe.dRMinMuon,
             "probe_dRMinTauHad": probe.dRMinTauHad,
             "probe_dRMinJet": probe.dRMinJet,
@@ -680,6 +704,8 @@ def build_lepton_veto_tag_probe_pairs(
             "probe_passElectronVeto": (
                 (probe.dRMinElectron < 0.0) | (probe.dRMinElectron > 0.15)
             ),
+            "probe_passVetoElectronVeto": (d_r_min_veto_electron < 0.0)
+            | (d_r_min_veto_electron > 0.15),
             "probe_passTauVeto": (
                 (probe.dRMinTauHad < 0.0) | (probe.dRMinTauHad > 0.15)
             ),
