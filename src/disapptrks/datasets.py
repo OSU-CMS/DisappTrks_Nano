@@ -77,6 +77,13 @@ ERA_GROUPS = (
         "all",
         15,
     ),
+    EraGroup(
+        "2026",
+        tuple(("2026", era) for era in ("ABCD")),
+        "2026",
+        "all",
+        15,
+    )
 )
 
 ERA_GROUP_BY_LABEL = {group.label: group for group in ERA_GROUPS}
@@ -90,6 +97,8 @@ ALLOWED_DEV_DIRS = (
     "EGamma2",
     "EGamma22",
     "EGamma3",
+    "EGamma4",
+    "EGamma5",
     "JetMET",
     "JetMET0",
     "JetMET1",
@@ -98,6 +107,7 @@ ALLOWED_DEV_DIRS = (
     "Muon",
     "Muon0",
     "Muon1",
+    "Muon3",
 )
 ALLOWED_PROD_DIRS = (
     "JetMET_Run2022C",
