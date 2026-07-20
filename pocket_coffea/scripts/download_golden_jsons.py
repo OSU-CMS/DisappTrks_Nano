@@ -25,6 +25,10 @@ GOLDEN_JSON_URLS = {
         "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions25/"
         "Cert_Collisions2025_391658_398903_Golden.json"
     ),
+    "Collisions26_MLEnhancedGolden_Latest.json": (
+        "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions26/"
+        "Collisions26_MLEnhancedGolden_Latest.json"
+    ),
 }
 
 

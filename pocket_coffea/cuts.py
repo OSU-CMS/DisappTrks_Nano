@@ -118,7 +118,7 @@ GOLDEN_JSON_FILES = {
     "2023_postBPix": "Cert_Collisions2023_366442_370790_Golden.json",
     "2024": "Cert_Collisions2024_378981_386951_Golden.json",
     "2025": "Cert_Collisions2025_391658_398903_Golden.json",
-    "2026": "Cert_Collisions2026_Golden.json",
+    "2026": "Collisions26_MLEnhancedGolden_Latest.json",
 }
 
 JET_VETO_MAP_FILES = {
