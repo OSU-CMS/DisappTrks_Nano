@@ -55,8 +55,8 @@ MUON_CUTFLOW_ROWS = [
         r"$\geq 1$ tracks $|\eta| < 1.55$ OR $|\eta| > 1.85$",
     ),
     (
-        "muon_table16_track_fiducialECAL",
-        r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,noisy/dead~ECAL~ch.}}>0.05$",
+        "muon_table16_track_fiducialSelections",
+        r"$\geq 1$ tracks passing fiducial selections",
     ),
     (
         "muon_table16_track_dzOrLambda",
@@ -265,8 +265,8 @@ LEPTON_PVETO_CUTFLOW_ROWS = {
             r"$\geq 1$ tracks $|\eta| < 1.55$ OR $|\eta| > 1.85$",
         ),
         (
-            "electron_pveto_diag_track_fiducialECAL",
-            r"$\geq 1$ tracks min $\Delta R_{\mathrm{track,noisy/dead~ECAL~ch.}}>0.05$",
+            "electron_pveto_diag_track_fiducialSelections",
+            r"$\geq 1$ tracks passing fiducial selections",
         ),
         (
             "electron_pveto_diag_track_dzOrLambda",

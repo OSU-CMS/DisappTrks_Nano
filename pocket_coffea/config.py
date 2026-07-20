@@ -18,6 +18,7 @@ import disapptrks.selections as disapptrks_selections
 
 from pocket_coffea.parameters import defaults
 from pocket_coffea.parameters.cuts import passthrough
+from pocket_coffea.lib.categorization import StandardSelection
 from pocket_coffea.lib.hist_manager import Axis, HistConf
 from pocket_coffea.utils.configurator import Configurator
 
@@ -585,9 +586,9 @@ for prefix, label in (
                 Axis(
                     coll=f"{prefix}Fiducial{stage}",
                     field="probe_eta",
-                    bins=50,
-                    start=-2.5,
-                    stop=2.5,
+                    bins=60,
+                    start=-3.0,
+                    stop=3.0,
                     label=f"{label} fiducial-map probe eta ({stage_label})",
                 ),
                 Axis(
@@ -612,7 +613,7 @@ cfg = Configurator(
     calibrators=[],
     skim=skim_cuts,
     preselections=data_quality_cuts,
-    categories=selected_categories,
+    categories=StandardSelection(selected_categories),
     weights={"common": {"inclusive": []}, "bysample": {}},
     weights_classes=[],
     variations={"weights": {"common": {"inclusive": []}}},

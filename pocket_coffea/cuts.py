@@ -118,6 +118,7 @@ GOLDEN_JSON_FILES = {
     "2023_postBPix": "Cert_Collisions2023_366442_370790_Golden.json",
     "2024": "Cert_Collisions2024_378981_386951_Golden.json",
     "2025": "Cert_Collisions2025_391658_398903_Golden.json",
+    "2026": "Cert_Collisions2026_Golden.json",
 }
 
 JET_VETO_MAP_FILES = {
@@ -127,6 +128,10 @@ JET_VETO_MAP_FILES = {
     "2023_postBPix": "Run3-23DSep23-Summer23BPix-NanoAODv12_jetvetomaps.json.gz",
     "2024": "Run3-24CDEReprocessingFGHIPrompt-Summer24-NanoAODv15_jetvetomaps.json.gz",
     "2025": "Run3-25Prompt-Winter25-NanoAODv15_jetvetomaps.json.gz",
+}
+
+JET_VETO_MAP_FALLBACK_YEARS = {
+    "2026": ("2025",),
 }
 
 MUON_TABLE16_FIELDS = [
@@ -142,7 +147,7 @@ MUON_TABLE16_FIELDS = [
     "track_noDTWheelGap",
     "track_noECALCrack",
     "track_noCSCTransition",
-    "track_fiducialECAL",
+    "track_fiducialSelections",
     "track_dzOrLambda",
     "track_pixelHits4",
     "track_noMissingInner",
@@ -176,7 +181,7 @@ ELECTRON_PVETO_DIAGNOSTIC_FIELDS = [
     "track_noDTWheelGap",
     "track_noECALCrack",
     "track_noCSCTransition",
-    "track_fiducialECAL",
+    "track_fiducialSelections",
     "track_dzOrLambda",
     "track_pixelHits4",
     "track_noMissingInner",
@@ -300,9 +305,12 @@ def _event_flags_year_key(year, events, processor_params):
     if _container_has_key(processor_params.event_flags, mapped_year):
         return mapped_year
 
-    # PocketCoffea may not yet define explicit 2025 event-flag lists.  Use the
-    # Run-3 2024 list as the closest available NanoAODv15/data-era fallback.
-    if str(year) == "2025" and _container_has_key(processor_params.event_flags, "2024"):
+    # PocketCoffea may not yet define explicit event-flag lists for newly added
+    # Run-3/Run-3-extension data-taking years.  Use the 2024 NanoAODv15/data-era
+    # list as the closest available fallback.
+    if str(year) in ("2025", "2026") and _container_has_key(
+        processor_params.event_flags, "2024"
+    ):
         return "2024"
 
     return mapped_year
@@ -310,8 +318,6 @@ def _event_flags_year_key(year, events, processor_params):
 
 def _local_golden_json_path(mapped_year):
     filename = GOLDEN_JSON_FILES.get(str(mapped_year))
-    if filename is None:
-        return None
 
     search_dirs = []
     env_dir = os.environ.get("DISAPPTRKS_GOLDEN_JSON_DIR")
@@ -322,16 +328,18 @@ def _local_golden_json_path(mapped_year):
     search_dirs.append(Path.cwd() / "golden_jsons")
 
     for directory in search_dirs:
-        candidate = directory / filename
-        if candidate.exists():
-            return candidate
+        candidates = []
+        if filename is not None:
+            candidates.append(directory / filename)
+        candidates.extend(sorted(directory.glob(f"Cert_Collisions{mapped_year}*_Golden.json")))
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
     return None
 
 
 def _local_jet_veto_map_path(mapped_year):
-    filename = JET_VETO_MAP_FILES.get(str(mapped_year))
-    if filename is None:
-        return None
+    search_years = (str(mapped_year), *JET_VETO_MAP_FALLBACK_YEARS.get(str(mapped_year), ()))
 
     search_dirs = []
     env_dir = os.environ.get("DISAPPTRKS_JET_VETO_MAP_DIR")
@@ -342,39 +350,59 @@ def _local_jet_veto_map_path(mapped_year):
     search_dirs.append(Path.cwd() / "jet_veto_maps")
 
     for directory in search_dirs:
-        candidates = [
-            directory / filename,
-            directory / str(mapped_year) / "jetvetomaps.json.gz",
-            directory / filename.removesuffix("_jetvetomaps.json.gz") / "jetvetomaps.json.gz",
-        ]
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
+        for search_year in search_years:
+            filename = JET_VETO_MAP_FILES.get(search_year)
+            candidates = [directory / search_year / "jetvetomaps.json.gz"]
+            if filename is not None:
+                candidates.extend(
+                    [
+                        directory / filename,
+                        directory
+                        / filename.removesuffix("_jetvetomaps.json.gz")
+                        / "jetvetomaps.json.gz",
+                    ]
+                )
+            candidates.extend(sorted(directory.glob(f"*{search_year}*jetvetomaps*.json.gz")))
+            candidates.extend(sorted(directory.glob(f"*{search_year[-2:]}*jetvetomaps*.json.gz")))
+            for candidate in candidates:
+                if candidate.exists():
+                    return candidate
     return None
 
 
 def _configured_jet_veto_map_path(processor_params, mapped_year):
-    try:
-        payload = processor_params.jet_scale_factors.vetomaps[str(mapped_year)]["file"]
-    except Exception:
-        return None
+    for search_year in (
+        str(mapped_year),
+        *JET_VETO_MAP_FALLBACK_YEARS.get(str(mapped_year), ()),
+    ):
+        try:
+            payload = processor_params.jet_scale_factors.vetomaps[search_year]["file"]
+        except Exception:
+            continue
+        return Path(str(payload))
 
-    return Path(str(payload))
+    return None
 
 
 def _cvmfs_jet_veto_map_path(mapped_year):
-    filename = JET_VETO_MAP_FILES.get(str(mapped_year))
-    if filename is None:
-        return None
+    for search_year in (
+        str(mapped_year),
+        *JET_VETO_MAP_FALLBACK_YEARS.get(str(mapped_year), ()),
+    ):
+        filename = JET_VETO_MAP_FILES.get(search_year)
+        if filename is None:
+            continue
 
-    period = filename.removesuffix("_jetvetomaps.json.gz")
-    return (
-        Path("/cvmfs/cms-griddata.cern.ch/cat/metadata")
-        / "JME"
-        / period
-        / "latest"
-        / "jetvetomaps.json.gz"
-    )
+        period = filename.removesuffix("_jetvetomaps.json.gz")
+        return (
+            Path("/cvmfs/cms-griddata.cern.ch/cat/metadata")
+            / "JME"
+            / period
+            / "latest"
+            / "jetvetomaps.json.gz"
+        )
+
+    return None
 
 
 def _jet_id_compute_year(processor_params, mapped_year):
@@ -385,11 +413,11 @@ def _jet_id_compute_year(processor_params, mapped_year):
     except Exception:
         pass
 
-    # PocketCoffea may not yet carry an explicit 2025 jet-ID correction key,
-    # while Run-3 2025 custom NanoAOD is still NanoAODv15.  Use the 2024 v15
-    # jet-ID correction as a compatibility fallback for the jet-ID recompute
-    # only; the jet-veto-map payload itself is still selected with mapped_year.
-    if year == "2025":
+    # PocketCoffea may not yet carry explicit jet-ID correction keys for newly
+    # added NanoAODv15 data-taking years.  Use the 2024 v15 jet-ID correction as
+    # a compatibility fallback for the jet-ID recompute only; the jet-veto-map
+    # payload itself is still selected with mapped_year.
+    if year in ("2025", "2026"):
         try:
             if "2024" in processor_params.jet_scale_factors.jet_id:
                 return "2024"

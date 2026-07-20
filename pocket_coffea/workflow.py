@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
 import awkward as ak
 import numpy as np
+from coffea.lumi_tools import LumiMask
 
 from pocket_coffea.workflows.base import BaseProcessorABC
 
@@ -131,6 +133,42 @@ except ImportError:
 PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
 ELECTRON_MASS = 0.000511
 MUON_MASS = 0.105658
+
+
+def _fiducial_map_path(flavor: str) -> Path | None:
+    env_name = f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON"
+    env_path = os.environ.get(env_name)
+    if env_path:
+        return Path(env_path)
+
+    env_dir = os.environ.get("DISAPPTRKS_FIDUCIAL_MAP_DIR")
+    if env_dir:
+        return Path(env_dir) / f"{flavor}_fiducial_map.json"
+    return None
+
+
+def _load_fiducial_hot_spots(flavor: str) -> tuple[dict[str, float], ...]:
+    path = _fiducial_map_path(flavor)
+    if path is None:
+        return ()
+    with path.open() as handle:
+        payload = json.load(handle)
+    return tuple(payload.get("hot_spots", ()))
+
+
+def _outside_fiducial_hot_spots(pairs, hot_spots):
+    eta = pairs.probe_eta if "probe_eta" in pairs.fields else pairs.eta
+    phi = pairs.probe_phi if "probe_phi" in pairs.fields else pairs.phi
+    mask = ak.ones_like(eta, dtype=bool)
+    for hot_spot in hot_spots:
+        deta = eta - float(hot_spot["eta"])
+        dphi = np.arctan2(
+            np.sin(phi - float(hot_spot["phi"])),
+            np.cos(phi - float(hot_spot["phi"])),
+        )
+        radius = float(hot_spot["radius"])
+        mask = mask & (np.sqrt(deta * deta + dphi * dphi) > radius)
+    return mask
 Z_MASS = 91.1876
 
 JET_VETO_MAP_FILES = {
@@ -140,6 +178,20 @@ JET_VETO_MAP_FILES = {
     "2023_postBPix": "Run3-23DSep23-Summer23BPix-NanoAODv12_jetvetomaps.json.gz",
     "2024": "Run3-24CDEReprocessingFGHIPrompt-Summer24-NanoAODv15_jetvetomaps.json.gz",
     "2025": "Run3-25Prompt-Winter25-NanoAODv15_jetvetomaps.json.gz",
+}
+
+JET_VETO_MAP_FALLBACK_YEARS = {
+    "2026": ("2025",),
+}
+
+GOLDEN_JSON_FILES = {
+    "2022_preEE": "Cert_Collisions2022_355100_362760_Golden.json",
+    "2022_postEE": "Cert_Collisions2022_355100_362760_Golden.json",
+    "2023_preBPix": "Cert_Collisions2023_366442_370790_Golden.json",
+    "2023_postBPix": "Cert_Collisions2023_366442_370790_Golden.json",
+    "2024": "Cert_Collisions2024_378981_386951_Golden.json",
+    "2025": "Cert_Collisions2025_391658_398903_Golden.json",
+    "2026": "Cert_Collisions2026_Golden.json",
 }
 
 
@@ -442,9 +494,7 @@ def _jet_veto_map_parameter_year(year, era, processor_params):
 
 
 def _local_jet_veto_map_path(mapped_year):
-    filename = JET_VETO_MAP_FILES.get(str(mapped_year))
-    if filename is None:
-        return None
+    search_years = (str(mapped_year), *JET_VETO_MAP_FALLBACK_YEARS.get(str(mapped_year), ()))
 
     search_dirs = []
     env_dir = os.environ.get("DISAPPTRKS_JET_VETO_MAP_DIR")
@@ -455,39 +505,81 @@ def _local_jet_veto_map_path(mapped_year):
     search_dirs.append(Path.cwd() / "jet_veto_maps")
 
     for directory in search_dirs:
-        candidates = [
-            directory / filename,
-            directory / str(mapped_year) / "jetvetomaps.json.gz",
-            directory / filename.removesuffix("_jetvetomaps.json.gz") / "jetvetomaps.json.gz",
-        ]
-        for candidate in candidates:
-            if candidate.exists():
-                return candidate
+        for search_year in search_years:
+            filename = JET_VETO_MAP_FILES.get(search_year)
+            candidates = [directory / search_year / "jetvetomaps.json.gz"]
+            if filename is not None:
+                candidates.extend(
+                    [
+                        directory / filename,
+                        directory
+                        / filename.removesuffix("_jetvetomaps.json.gz")
+                        / "jetvetomaps.json.gz",
+                    ]
+                )
+            candidates.extend(sorted(directory.glob(f"*{search_year}*jetvetomaps*.json.gz")))
+            candidates.extend(sorted(directory.glob(f"*{search_year[-2:]}*jetvetomaps*.json.gz")))
+            for candidate in candidates:
+                if candidate.exists():
+                    return candidate
     return None
 
 
 def _configured_jet_veto_map_path(processor_params, mapped_year):
-    try:
-        payload = processor_params.jet_scale_factors.vetomaps[str(mapped_year)]["file"]
-    except Exception:
-        return None
+    for search_year in (
+        str(mapped_year),
+        *JET_VETO_MAP_FALLBACK_YEARS.get(str(mapped_year), ()),
+    ):
+        try:
+            payload = processor_params.jet_scale_factors.vetomaps[search_year]["file"]
+        except Exception:
+            continue
+        return Path(str(payload))
 
-    return Path(str(payload))
+    return None
 
 
 def _cvmfs_jet_veto_map_path(mapped_year):
-    filename = JET_VETO_MAP_FILES.get(str(mapped_year))
-    if filename is None:
-        return None
+    for search_year in (
+        str(mapped_year),
+        *JET_VETO_MAP_FALLBACK_YEARS.get(str(mapped_year), ()),
+    ):
+        filename = JET_VETO_MAP_FILES.get(search_year)
+        if filename is None:
+            continue
 
-    period = filename.removesuffix("_jetvetomaps.json.gz")
-    return (
-        Path("/cvmfs/cms-griddata.cern.ch/cat/metadata")
-        / "JME"
-        / period
-        / "latest"
-        / "jetvetomaps.json.gz"
-    )
+        period = filename.removesuffix("_jetvetomaps.json.gz")
+        return (
+            Path("/cvmfs/cms-griddata.cern.ch/cat/metadata")
+            / "JME"
+            / period
+            / "latest"
+            / "jetvetomaps.json.gz"
+        )
+
+    return None
+
+
+def _local_golden_json_path(mapped_year):
+    filename = GOLDEN_JSON_FILES.get(str(mapped_year))
+
+    search_dirs = []
+    env_dir = os.environ.get("DISAPPTRKS_GOLDEN_JSON_DIR")
+    if env_dir:
+        search_dirs.append(Path(env_dir))
+    search_dirs.append(Path(__file__).resolve().parent / "data" / "golden_jsons")
+    search_dirs.append(Path.cwd() / "data" / "golden_jsons")
+    search_dirs.append(Path.cwd() / "golden_jsons")
+
+    for directory in search_dirs:
+        candidates = []
+        if filename is not None:
+            candidates.append(directory / filename)
+        candidates.extend(sorted(directory.glob(f"Cert_Collisions{mapped_year}*_Golden.json")))
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+    return None
 
 
 def _jet_veto_map_correction_name(cset, processor_params, mapped_year):
@@ -560,6 +652,10 @@ def _golden_json_mask(
     from pocket_coffea.lib.cut_functions import apply_golden_json
 
     golden_json_year = _jet_veto_map_parameter_year(year, era, processor_params)
+    local_json = _local_golden_json_path(golden_json_year)
+    if local_json is not None:
+        return LumiMask(str(local_json))(events.run, events.luminosityBlock)
+
     return apply_golden_json(
         events,
         params={},
@@ -668,6 +764,43 @@ class DisappTrksProcessor(BaseProcessorABC):
             or any(requested in expanded_modes for requested in modes)
         )
 
+    def _fiducial_hot_spots(self, flavor):
+        if not hasattr(self, "_disapptrks_fiducial_hot_spots"):
+            self._disapptrks_fiducial_hot_spots = {}
+        if flavor not in self._disapptrks_fiducial_hot_spots:
+            self._disapptrks_fiducial_hot_spots[flavor] = _load_fiducial_hot_spots(
+                flavor
+            )
+        return self._disapptrks_fiducial_hot_spots[flavor]
+
+    def _lepton_fiducial_hot_spots(self):
+        return self._fiducial_hot_spots("electron") + self._fiducial_hot_spots("muon")
+
+    def _apply_lepton_fiducial_maps_to_track_cutflow(self, masks):
+        fiducial_hot_spots = self._lepton_fiducial_hot_spots()
+        fiducial_map_mask = None
+        if fiducial_hot_spots:
+            fiducial_map_mask = _outside_fiducial_hot_spots(
+                self.events.IsoTrack,
+                fiducial_hot_spots,
+            )
+        updated = {}
+        after_fiducial_row = False
+        for name, mask in masks.items():
+            if name == "track_fiducialECAL":
+                after_fiducial_row = True
+            output_name = (
+                "track_fiducialSelections"
+                if name == "track_fiducialECAL"
+                else name
+            )
+            updated[output_name] = (
+                mask & fiducial_map_mask
+                if after_fiducial_row and fiducial_map_mask is not None
+                else mask
+            )
+        return updated
+
     def _search_diagnostics_enabled(self):
         try:
             return bool(self.params.disapptrks.search_diagnostics)
@@ -704,12 +837,16 @@ class DisappTrksProcessor(BaseProcessorABC):
         window_low,
         window_high,
         pass_mask_function,
+        fiducial_hot_spots=(),
     ):
         pairs = build_lepton_veto_tag_probe_pairs(
             tags,
             probes,
             tag_mass=tag_mass,
             probe_mass=probe_mass,
+        )
+        pveto_pass_mask = pass_mask_function(pairs) & _outside_fiducial_hot_spots(
+            pairs, fiducial_hot_spots
         )
         self.events[f"{prefix}TagProbePair"] = pairs
         self.events[f"{prefix}TagProbePairMassWindow"] = pairs[
@@ -723,11 +860,11 @@ class DisappTrksProcessor(BaseProcessorABC):
         ]
         self.events[f"{prefix}PVetoTagProbePairMassWindowPass"] = pairs[
             os_mass_window_pair_mask(pairs, window_low, window_high)
-            & pass_mask_function(pairs)
+            & pveto_pass_mask
         ]
         self.events[f"{prefix}PVetoTagProbePairSSMassWindowPass"] = pairs[
             ss_mass_window_pair_mask(pairs, window_low, window_high)
-            & pass_mask_function(pairs)
+            & pveto_pass_mask
         ]
         for layer in PVETO_LAYERS:
             layer_mask = generic_probe_pair_layer_mask(pairs, layer)
@@ -737,7 +874,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events[f"{prefix}PVetoTagProbePairMassWindowPass_{layer}"] = pairs[
                 os_mass_window_pair_mask(pairs, window_low, window_high)
                 & layer_mask
-                & pass_mask_function(pairs)
+                & pveto_pass_mask
             ]
             self.events[f"{prefix}TagProbePairSSMassWindow_{layer}"] = pairs[
                 ss_mass_window_pair_mask(pairs, window_low, window_high) & layer_mask
@@ -745,7 +882,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events[f"{prefix}PVetoTagProbePairSSMassWindowPass_{layer}"] = pairs[
                 ss_mass_window_pair_mask(pairs, window_low, window_high)
                 & layer_mask
-                & pass_mask_function(pairs)
+                & pveto_pass_mask
             ]
 
     def _store_lepton_background_controls(
@@ -859,6 +996,12 @@ class DisappTrksProcessor(BaseProcessorABC):
             muon_veto_pairs = build_muon_veto_tag_probe_pairs(
                 self.events.MuonTag, self.events.MuonVetoProbeTrack
             )
+            muon_pveto_pass_mask = muon_pveto_pair_pass_mask(
+                muon_veto_pairs
+            ) & _outside_fiducial_hot_spots(
+                muon_veto_pairs,
+                self._lepton_fiducial_hot_spots(),
+            )
             self.events["MuonVetoTagProbePair"] = muon_veto_pairs
             self.events["MuonVetoTagProbePairOS"] = muon_veto_pairs[
                 os_muon_probe_pair_mask(muon_veto_pairs)
@@ -891,7 +1034,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             ]
             self.events["MuonPVetoTagProbePairZWindowPass"] = muon_veto_pairs[
                 os_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                & muon_pveto_pair_pass_mask(muon_veto_pairs)
+                & muon_pveto_pass_mask
             ]
             self.events["MuonVetoTagProbePairSSZWindow"] = muon_veto_pairs[
                 ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
@@ -906,7 +1049,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             ]
             self.events["MuonPVetoTagProbePairSSZWindowPass"] = muon_veto_pairs[
                 ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                & muon_pveto_pair_pass_mask(muon_veto_pairs)
+                & muon_pveto_pass_mask
             ]
             for layer in PVETO_LAYERS:
                 layer_mask = muon_probe_pair_layer_mask(muon_veto_pairs, layer)
@@ -916,7 +1059,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 self.events[f"MuonPVetoTagProbePairZWindowPass_{layer}"] = muon_veto_pairs[
                     os_z_window_muon_probe_pair_mask(muon_veto_pairs)
                     & layer_mask
-                    & muon_pveto_pair_pass_mask(muon_veto_pairs)
+                    & muon_pveto_pass_mask
                 ]
                 self.events[f"MuonVetoTagProbePairSSZWindow_{layer}"] = muon_veto_pairs[
                     ss_z_window_muon_probe_pair_mask(muon_veto_pairs) & layer_mask
@@ -924,7 +1067,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 self.events[f"MuonPVetoTagProbePairSSZWindowPass_{layer}"] = muon_veto_pairs[
                     ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
                     & layer_mask
-                    & muon_pveto_pair_pass_mask(muon_veto_pairs)
+                    & muon_pveto_pass_mask
                 ]
 
         if self._mode_enabled("electron_pveto"):
@@ -943,6 +1086,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 window_low=91.1876 - 10.0,
                 window_high=91.1876 + 10.0,
                 pass_mask_function=electron_pveto_pair_pass_mask,
+                fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
             )
 
         if self._mode_enabled("tau_mu_pveto", "tau_ele_pveto"):
@@ -1265,14 +1409,16 @@ class DisappTrksProcessor(BaseProcessorABC):
             )
 
         has_selected_muon_tag = muon_table16_diagnostics["muon_selected_tag"]
-        table16_track_masks = muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+        table16_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
+            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+        )
         pre_pair_track_fields = {
             "track_pt30",
             "track_eta2p1",
             "track_noDTWheelGap",
             "track_noECALCrack",
             "track_noCSCTransition",
-            "track_fiducialECAL",
+            "track_fiducialSelections",
             "track_dzOrLambda",
             "track_pixelHits4",
             "track_noMissingInner",
@@ -1388,8 +1534,8 @@ class DisappTrksProcessor(BaseProcessorABC):
         has_selected_electron_tag = electron_pveto_diagnostics[
             "electron_selected_tag"
         ]
-        electron_track_masks = muon_veto_probe_track_cutflow_masks(
-            self.events.IsoTrack
+        electron_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
+            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
         )
         for name in (
             "track_pt30",
@@ -1397,7 +1543,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             "track_noDTWheelGap",
             "track_noECALCrack",
             "track_noCSCTransition",
-            "track_fiducialECAL",
+            "track_fiducialSelections",
             "track_dzOrLambda",
             "track_pixelHits4",
             "track_noMissingInner",
@@ -1903,14 +2049,16 @@ class DisappTrksProcessor(BaseProcessorABC):
             )
 
         has_selected_muon_tag = muon_table16_diagnostics["muon_selected_tag"]
-        table16_track_masks = muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+        table16_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
+            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+        )
         pre_pair_track_fields = {
             "track_pt30",
             "track_eta2p1",
             "track_noDTWheelGap",
             "track_noECALCrack",
             "track_noCSCTransition",
-            "track_fiducialECAL",
+            "track_fiducialSelections",
             "track_dzOrLambda",
             "track_pixelHits4",
             "track_noMissingInner",
@@ -2033,8 +2181,8 @@ class DisappTrksProcessor(BaseProcessorABC):
         has_selected_electron_tag = electron_pveto_diagnostics[
             "electron_selected_tag"
         ]
-        electron_track_masks = muon_veto_probe_track_cutflow_masks(
-            self.events.IsoTrack
+        electron_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
+            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
         )
         for name in (
             "track_pt30",
@@ -2042,7 +2190,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             "track_noDTWheelGap",
             "track_noECALCrack",
             "track_noCSCTransition",
-            "track_fiducialECAL",
+            "track_fiducialSelections",
             "track_dzOrLambda",
             "track_pixelHits4",
             "track_noMissingInner",
