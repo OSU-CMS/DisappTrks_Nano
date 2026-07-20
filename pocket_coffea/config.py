@@ -75,6 +75,56 @@ cloudpickle.register_pickle_by_value(disapptrks_selections)
 localdir = os.path.dirname(os.path.abspath(__file__))
 
 
+def _local_golden_json_path_for_config(year: str) -> Path | None:
+    filenames = [
+        f"Cert_Collisions{year}_Golden.json",
+    ]
+    if year == "2026":
+        filenames.extend(
+            [
+                "Collisions26_MLEnhancedGolden_Latest.json",
+                "Cert_Collisions2026_Golden.json",
+            ]
+        )
+
+    search_dirs = []
+    env_dir = os.environ.get("DISAPPTRKS_GOLDEN_JSON_DIR")
+    if env_dir:
+        search_dirs.append(Path(env_dir))
+    search_dirs.append(Path(localdir) / "data" / "golden_jsons")
+    search_dirs.append(Path.cwd() / "data" / "golden_jsons")
+    search_dirs.append(Path.cwd() / "golden_jsons")
+
+    for directory in search_dirs:
+        candidates = [directory / filename for filename in filenames]
+        if year == "2026":
+            candidates.extend(sorted(directory.glob("Collisions26*Golden*.json")))
+        candidates.extend(sorted(directory.glob(f"Cert_Collisions{year}*_Golden.json")))
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate.resolve()
+    return None
+
+
+def _install_embedded_golden_json(year: str, params) -> None:
+    path = _local_golden_json_path_for_config(year)
+    if path is None:
+        return
+
+    with path.open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+
+    cuts.GOLDEN_JSON_PAYLOADS[year] = payload
+    workflow.GOLDEN_JSON_PAYLOADS[year] = payload
+    try:
+        params.lumi.goldenJSON[year] = str(path)
+    except Exception:
+        try:
+            params["lumi"]["goldenJSON"][year] = str(path)
+        except Exception:
+            pass
+
+
 def _install_cvmfs_resolver_fallback():
     """Let PocketCoffea load defaults on workers without cms-griddata CVMFS.
 
@@ -127,6 +177,9 @@ def _install_cvmfs_resolver_fallback():
 
 _install_cvmfs_resolver_fallback()
 parameters = defaults.get_default_parameters()
+_install_embedded_golden_json("2026", parameters)
+cloudpickle.register_pickle_by_value(cuts)
+cloudpickle.register_pickle_by_value(workflow)
 dataset_json = os.environ.get(
     "DISAPPTRKS_DATASET_JSON",
     f"{localdir}/datasets/local_2024F_muon.json",

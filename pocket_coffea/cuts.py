@@ -121,6 +121,8 @@ GOLDEN_JSON_FILES = {
     "2026": "Collisions26_MLEnhancedGolden_Latest.json",
 }
 
+GOLDEN_JSON_PAYLOADS = {}
+
 JET_VETO_MAP_FILES = {
     "2022_preEE": "Run3-22CDSep23-Summer22-NanoAODv12_jetvetomaps.json.gz",
     "2022_postEE": "Run3-22EFGSep23-Summer22EE-NanoAODv12_jetvetomaps.json.gz",
@@ -341,6 +343,26 @@ def _local_golden_json_path(mapped_year):
     return None
 
 
+def _payload_golden_json_mask(events, mapped_year):
+    payload = GOLDEN_JSON_PAYLOADS.get(str(mapped_year))
+    if payload is None:
+        return None
+
+    runs = ak.to_numpy(events.run)
+    lumis = ak.to_numpy(events.luminosityBlock)
+    mask = np.zeros(len(runs), dtype=bool)
+    for run, ranges in payload.items():
+        run_mask = runs == int(run)
+        if not np.any(run_mask):
+            continue
+        run_lumis = lumis[run_mask]
+        run_pass = np.zeros(len(run_lumis), dtype=bool)
+        for first_lumi, last_lumi in ranges:
+            run_pass |= (run_lumis >= int(first_lumi)) & (run_lumis <= int(last_lumi))
+        mask[run_mask] = run_pass
+    return ak.Array(mask)
+
+
 def _local_jet_veto_map_path(mapped_year):
     search_years = (str(mapped_year), *JET_VETO_MAP_FALLBACK_YEARS.get(str(mapped_year), ()))
 
@@ -496,6 +518,9 @@ def _golden_json_lumi(events, params, year, processor_params, sample, isMC, **kw
     local_json = _local_golden_json_path(mapped_year)
     if local_json is not None:
         return LumiMask(str(local_json))(events.run, events.luminosityBlock)
+    payload_mask = _payload_golden_json_mask(events, mapped_year)
+    if payload_mask is not None:
+        return payload_mask
 
     try:
         return apply_golden_json(

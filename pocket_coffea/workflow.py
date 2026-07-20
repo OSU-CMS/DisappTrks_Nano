@@ -192,8 +192,10 @@ GOLDEN_JSON_FILES = {
     "2023_postBPix": "Cert_Collisions2023_366442_370790_Golden.json",
     "2024": "Cert_Collisions2024_378981_386951_Golden.json",
     "2025": "Cert_Collisions2025_391658_398903_Golden.json",
-    "2026": "Cert_Collisions2026_Golden.json",
+    "2026": "Collisions26_MLEnhancedGolden_Latest.json",
 }
+
+GOLDEN_JSON_PAYLOADS = {}
 
 
 def _all_true_like(events):
@@ -586,6 +588,26 @@ def _local_golden_json_path(mapped_year):
     return None
 
 
+def _payload_golden_json_mask(events, mapped_year):
+    payload = GOLDEN_JSON_PAYLOADS.get(str(mapped_year))
+    if payload is None:
+        return None
+
+    runs = ak.to_numpy(events.run)
+    lumis = ak.to_numpy(events.luminosityBlock)
+    mask = np.zeros(len(runs), dtype=bool)
+    for run, ranges in payload.items():
+        run_mask = runs == int(run)
+        if not np.any(run_mask):
+            continue
+        run_lumis = lumis[run_mask]
+        run_pass = np.zeros(len(run_lumis), dtype=bool)
+        for first_lumi, last_lumi in ranges:
+            run_pass |= (run_lumis >= int(first_lumi)) & (run_lumis <= int(last_lumi))
+        mask[run_mask] = run_pass
+    return ak.Array(mask)
+
+
 def _jet_veto_map_correction_name(cset, processor_params, mapped_year):
     try:
         return processor_params.jet_scale_factors.vetomaps[str(mapped_year)]["name"]
@@ -659,6 +681,9 @@ def _golden_json_mask(
     local_json = _local_golden_json_path(golden_json_year)
     if local_json is not None:
         return LumiMask(str(local_json))(events.run, events.luminosityBlock)
+    payload_mask = _payload_golden_json_mask(events, golden_json_year)
+    if payload_mask is not None:
+        return payload_mask
 
     return apply_golden_json(
         events,
