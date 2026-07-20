@@ -331,6 +331,9 @@ def _local_golden_json_path(mapped_year):
         candidates = []
         if filename is not None:
             candidates.append(directory / filename)
+        if str(mapped_year) == "2026":
+            candidates.append(directory / "Collisions26_MLEnhancedGolden_Latest.json")
+            candidates.extend(sorted(directory.glob("Collisions26*Golden*.json")))
         candidates.extend(sorted(directory.glob(f"Cert_Collisions{mapped_year}*_Golden.json")))
         for candidate in candidates:
             if candidate.exists():
