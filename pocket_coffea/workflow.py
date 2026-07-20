@@ -1783,6 +1783,10 @@ class DisappTrksProcessor(BaseProcessorABC):
             tau_ele_tag_masks["tag_tight_id"] = (
                 tau_ele_tag_masks["tag_eta2p1"] & (self.events.Electron.cutBased >= 4)
             )
+            tau_ele_tag_masks["tag_selected"] = _z_electron_tag_mask(
+                self.events.Electron,
+                pt_min=32.0,
+            )
             store(
                 collection="TauElePVetoDiag",
                 tag_source=self.events.Electron,
@@ -2431,6 +2435,10 @@ class DisappTrksProcessor(BaseProcessorABC):
         )
         tau_ele_tag_masks["tag_tight_id"] = (
             tau_ele_tag_masks["tag_eta2p1"] & (self.events.Electron.cutBased >= 4)
+        )
+        tau_ele_tag_masks["tag_selected"] = _z_electron_tag_mask(
+            self.events.Electron,
+            pt_min=32.0,
         )
         _store_tau_pveto_diagnostics(
             collection="TauElePVetoDiag",
