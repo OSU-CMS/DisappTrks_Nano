@@ -31,6 +31,10 @@ GOLDEN_JSON_URLS = {
     ),
 }
 
+ALIASES = {
+    "Cert_Collisions2026_Golden.json": "Collisions26_MLEnhancedGolden_Latest.json",
+}
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Download CMS golden JSON files.")
@@ -56,6 +60,23 @@ def main() -> int:
             continue
         print(f"download {url} -> {output}")
         urllib.request.urlretrieve(url, output)
+    for alias, target in ALIASES.items():
+        alias_path = args.output_dir / alias
+        target_path = args.output_dir / target
+        if not target_path.exists():
+            print(f"skip alias {alias_path}: missing target {target_path}")
+            continue
+        if alias_path.exists() or alias_path.is_symlink():
+            if not args.overwrite:
+                print(f"skip existing alias {alias_path}")
+                continue
+            alias_path.unlink()
+        try:
+            alias_path.symlink_to(target_path.name)
+            print(f"alias {alias_path} -> {target_path.name}")
+        except OSError:
+            alias_path.write_bytes(target_path.read_bytes())
+            print(f"copy alias {target_path} -> {alias_path}")
     return 0
 
 
