@@ -170,6 +170,9 @@ if dataset_year:
 enable_search_diagnostics = os.environ.get(
     "DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS", ""
 ).lower() in ("1", "true", "yes", "on")
+enable_lepton_background_categories = os.environ.get(
+    "DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES", ""
+).lower() in ("1", "true", "yes", "on")
 category_mode = os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
 fake_track_control_mode = os.environ.get("DISAPPTRKS_FAKE_TRACK_CONTROL", "basic").lower()
 if fake_track_control_mode in ("jetmet", "basic_selection"):
@@ -321,6 +324,9 @@ fake_track_zee_categories = _categories_with_exact_or_prefix(
     exact=("fake_zee_control",),
     prefixes=("fake_zee_sideband_",),
 )
+pveto_lepton_background_categories = (
+    lepton_background_categories if enable_lepton_background_categories else {}
+)
 
 
 if category_mode == "muon_pveto":
@@ -329,27 +335,27 @@ if category_mode == "muon_pveto":
         **muon_pveto_categories,
         **muon_table16_categories,
         **muon_pveto_layer_categories,
-        **_categories_with_prefix(lepton_background_categories, "muon_"),
+        **_categories_with_prefix(pveto_lepton_background_categories, "muon_"),
     }
 elif category_mode == "electron_pveto":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "electron_"),
-        **_categories_with_prefix(lepton_background_categories, "electron_"),
+        **_categories_with_prefix(pveto_lepton_background_categories, "electron_"),
         **electron_pveto_diagnostic_categories,
     }
 elif category_mode == "tau_mu_pveto":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_mu_"),
-        **_categories_with_prefix(lepton_background_categories, "tau_mu_"),
+        **_categories_with_prefix(pveto_lepton_background_categories, "tau_mu_"),
         **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_mu_"),
     }
 elif category_mode == "tau_ele_pveto":
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_ele_"),
-        **_categories_with_prefix(lepton_background_categories, "tau_ele_"),
+        **_categories_with_prefix(pveto_lepton_background_categories, "tau_ele_"),
         **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_ele_"),
     }
 elif category_mode == "fake_tracks":
