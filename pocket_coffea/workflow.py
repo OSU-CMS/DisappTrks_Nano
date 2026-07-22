@@ -24,6 +24,7 @@ from disapptrks.selections import (
     electron_tag_mask,
     delta_phi,
     fake_track_no_d0_mask,
+    fiducial_map_probe_track_mask,
     generic_probe_pair_layer_mask,
     invariant_mass,
     lepton_veto_probe_track_mask,
@@ -966,7 +967,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 muon_tag_mask(self.events.Muon)
             ]
             muon_probes = self.events.IsoTrack[
-                muon_veto_probe_track_mask(self.events.IsoTrack)
+                fiducial_map_probe_track_mask(self.events.IsoTrack, flavor="muon")
             ]
             muon_pairs = build_muon_veto_tag_probe_pairs(
                 self.events.MuonFiducialTag,
@@ -983,10 +984,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 electron_tag_mask(self.events.Electron, self.events)
             ]
             electron_probes = self.events.IsoTrack[
-                lepton_veto_probe_track_mask(
-                    self.events.IsoTrack,
-                    measured_veto="electron",
-                )
+                fiducial_map_probe_track_mask(self.events.IsoTrack, flavor="electron")
             ]
             electron_pairs = build_lepton_veto_tag_probe_pairs(
                 self.events.ElectronFiducialTag,

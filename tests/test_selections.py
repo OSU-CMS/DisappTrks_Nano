@@ -5,6 +5,8 @@ ak = pytest.importorskip("awkward")
 from disapptrks.selections import (
     build_lepton_veto_tag_probe_pairs,
     build_muon_veto_tag_probe_pairs,
+    fiducial_map_probe_track_mask,
+    muon_veto_probe_track_mask,
 )
 
 
@@ -91,3 +93,40 @@ def test_muon_pairs_keep_loose_muon_veto_separate_from_generic_veto():
 
     assert ak.to_list(pairs.probe_passMuonVeto) == [[False]]
     assert ak.to_list(pairs.probe_passLooseMuonVeto) == [[True]]
+
+
+def test_fiducial_map_probe_uses_legacy_old_hit_cuts():
+    tracks = ak.Array(
+        [
+            [
+                {
+                    "pt": 45.0,
+                    "eta": 0.6,
+                    "phi": 1.0,
+                    "inECALCrack": False,
+                    "inDTWheelGap": False,
+                    "inCSCTransition": False,
+                    "inTOBCrack": False,
+                    "isFiducialECALTrack": True,
+                    "hp_nValidPixelHits": 3,
+                    "hp_nValidHits": 7,
+                    "missingInnerHits": 0,
+                    "missingMiddleHits": 0,
+                    "pfRelIso03_chg": 0.01,
+                    "dxy": 0.01,
+                    "dz": 0.1,
+                    "hp_trackerLayersWithMeasurement": 4,
+                    "dRMinJet": 0.6,
+                    "dRMinElectron": 0.2,
+                    "dRMinMuon": 0.2,
+                    "dRMinTauHad": 0.2,
+                    "caloEnergy": 5.0,
+                }
+            ]
+        ]
+    )
+
+    assert ak.to_list(fiducial_map_probe_track_mask(tracks, flavor="muon")) == [
+        [True]
+    ]
+    assert ak.to_list(muon_veto_probe_track_mask(tracks)) == [[False]]

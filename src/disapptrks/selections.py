@@ -406,6 +406,75 @@ def base_probe_track_mask(
     return mask
 
 
+def fiducial_map_probe_track_mask(
+    tracks,
+    *,
+    flavor: str,
+    layer: str = "combinedBins",
+):
+    """Legacy ``*FiducialCalc*OldCuts`` probe-track mask.
+
+    The Run-3 DisappTrks fiducial maps are built from the
+    ``ElectronFiducialCalcBeforeOldCuts/AfterOldCuts`` and
+    ``MuonFiducialCalcBeforeOldCuts/AfterOldCuts`` channels.  These are based
+    on the Z tag-and-probe selections with the electron/muon fiducial-map vetoes
+    removed, but with the "old" hit requirements restored:
+
+    * number of valid pixel hits >= 3
+    * number of valid hits >= 7
+
+    The measured lepton veto is intentionally left open here; the corresponding
+    ``After`` collection is formed by applying the loose/veto lepton veto on top
+    of the Z-window pairs.
+    """
+
+    if flavor not in ("electron", "muon"):
+        raise ValueError(f"unknown fiducial-map flavor: {flavor}")
+
+    mask = (
+        (tracks.pt > 30.0)
+        & (abs(tracks.eta) < 2.1)
+        & ~tracks.inECALCrack
+        & ~tracks.inDTWheelGap
+        & ~tracks.inCSCTransition
+        & ~tracks.inTOBCrack
+        # The legacy fiducial-map channels remove only the electron/muon
+        # fiducial-map cuts.  The ECAL fiducial cut remains in ``isoTrkCuts``.
+        & tracks.isFiducialECALTrack
+        & (tracks.hp_nValidPixelHits >= 3)
+        & (tracks.hp_nValidHits >= 7)
+        & (tracks.missingInnerHits == 0)
+        & (tracks.missingMiddleHits == 0)
+        & (tracks.pfRelIso03_chg < 0.05)
+        & (abs(tracks.dxy) < 0.02)
+        & (abs(tracks.dz) < 0.5)
+        & layer_mask(tracks, layer)
+        & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
+    )
+
+    if flavor == "muon":
+        # ``ZtoMuProbeTrkWithZCuts`` includes the electron veto, tau-had veto,
+        # and E_calo requirement.  The measured loose-muon veto is applied only
+        # when forming ``MuonFiducialAfter``.
+        mask = (
+            mask
+            & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+            & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+            & (tracks.caloEnergy < 10.0)
+        )
+    else:
+        # ``ZtoEleProbeTrkWithZCuts`` includes the muon veto and tau-had veto,
+        # but not the E_calo requirement.  The measured veto-electron veto is
+        # applied only when forming ``ElectronFiducialAfter``.
+        mask = (
+            mask
+            & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
+            & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+        )
+
+    return mask
+
+
 def muon_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     """Cumulative probe-track masks in the AN Table 16 order.
 
