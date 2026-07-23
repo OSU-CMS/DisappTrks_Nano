@@ -41,6 +41,35 @@ def test_fiducial_hot_spot_is_identified():
     assert summary.hot_spots[0].phi == 0.5
 
 
+def test_fiducial_stddev_can_exclude_extreme_outlier():
+    before = np.full((10, 10), 100.0)
+    after = np.ones((10, 10))
+    after[0, 1] = 20.0
+    after[9, 9] = 500.0
+    edges = np.arange(11.0)
+
+    legacy = summarize_fiducial_map(before, after, edges, edges, threshold=2.0)
+    robust = summarize_fiducial_map(
+        before,
+        after,
+        edges,
+        edges,
+        threshold=2.0,
+        stddev_exclude_top=1,
+    )
+
+    legacy_spots = {(hot_spot.eta, hot_spot.phi) for hot_spot in legacy.hot_spots}
+    robust_spots = {(hot_spot.eta, hot_spot.phi) for hot_spot in robust.hot_spots}
+
+    assert (0.5, 1.5) not in legacy_spots
+    assert (0.5, 1.5) in robust_spots
+    assert (9.5, 9.5) in robust_spots
+    assert len(robust.stddev_excluded_bins) == 1
+    assert robust.stddev_excluded_bins[0].eta == 9.5
+    assert robust.stddev_excluded_bins[0].phi == 9.5
+    assert robust.stddev_inefficiency < legacy.stddev_inefficiency
+
+
 def test_make_fiducial_map_from_outputs_sums_2d_histograms():
     eta_edges = np.array([-1.0, 0.0, 1.0])
     phi_edges = np.array([-2.0, 0.0, 2.0])

@@ -870,6 +870,7 @@ def _make_fiducial_map_command(args: argparse.Namespace) -> int:
         sample=args.sample,
         category=args.category,
         threshold=args.threshold,
+        stddev_exclude_top=args.stddev_exclude_top,
     )
     write_fiducial_map_payload(
         summary,
@@ -888,6 +889,7 @@ def _make_fiducial_map_command(args: argparse.Namespace) -> int:
             "sample": args.sample,
             "category": args.category,
             "threshold": args.threshold,
+            "stddev_exclude_top": args.stddev_exclude_top,
             "input_files": [str(path) for path in args.files],
         },
     )
@@ -900,6 +902,16 @@ def _make_fiducial_map_command(args: argparse.Namespace) -> int:
         f"stddev={summary.stddev_inefficiency:.6g}, "
         f"hot spots={len(summary.hot_spots)}"
     )
+    if summary.stddev_excluded_bins:
+        print(
+            "Excluded from stddev calculation: "
+            f"{len(summary.stddev_excluded_bins)} bin(s)"
+        )
+        for excluded_bin in summary.stddev_excluded_bins:
+            print(
+                f"  eta={excluded_bin.eta:.3f}, phi={excluded_bin.phi:.3f}, "
+                f"inefficiency={excluded_bin.inefficiency:.6g}"
+            )
     for hot_spot in summary.hot_spots:
         print(
             f"  eta={hot_spot.eta:.3f}, phi={hot_spot.phi:.3f}, "
@@ -1328,6 +1340,15 @@ def main():
         type=float,
         default=2.0,
         help="Hot-spot threshold in standard deviations above the mean inefficiency.",
+    )
+    fiducial_map.add_argument(
+        "--stddev-exclude-top",
+        type=int,
+        default=0,
+        help=(
+            "Exclude the N highest-inefficiency occupied eta-phi bins from the "
+            "stddev calculation only. Default 0 preserves legacy behavior."
+        ),
     )
     fiducial_map.add_argument(
         "--before-variable",

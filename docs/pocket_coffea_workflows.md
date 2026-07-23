@@ -111,6 +111,25 @@ muon_fiducial_map.json
 
 Both maps are used for lepton fiducial selections in muon Pveto.
 
+When building the JSON maps with `disapptrks make-fiducial-map`, hot spots are
+identified with a sigma threshold. The legacy/default behavior uses:
+
+```bash
+--threshold 2.0
+```
+
+For eras with a pathological eta-phi bin that inflates the standard deviation,
+the map builder can exclude the highest-inefficiency occupied bins from the
+stddev calculation only:
+
+```bash
+--stddev-exclude-top 1
+```
+
+The excluded bin is still tested and reported as a hot spot; it just does not
+set the width used to identify the other bins. The JSON records the excluded
+bins under `stddev_excluded_bins`.
+
 ### Event And Object Setup
 
 During `apply_object_preselection`, the workflow:
