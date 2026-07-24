@@ -16,6 +16,7 @@ from .datasets import (
     write_grouped_filelists,
 )
 from .fake_tracks import (
+    Count,
     estimate_fake_track_background,
     estimate_fake_track_background_an,
     fit_dxy_transfer_factor,
@@ -35,11 +36,13 @@ from .fiducial import (
 )
 from .lepton_backgrounds import (
     estimate_lepton_background,
+    legacy_met_probabilities_from_outputs,
     write_lepton_background_json,
     write_lepton_background_latex,
 )
 from .schema import audit_root_file
 from .summaries import (
+    cutflow_count,
     summarize_ss_subtracted_veto_probability,
     summarize_veto_probability,
 )
@@ -814,6 +817,34 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         or args.ptrigger_denominator_category
         or poffline_numerator_category
     )
+    prefix = {
+        "muon": "Muon",
+        "electron": "Electron",
+        "tau_mu": "TauMu",
+        "tau_ele": "TauEle",
+    }[args.mode]
+    control_counts = {
+        layer: Count(
+            cutflow_count(
+                cutflow,
+                control_category.format(layer=layer),
+                dataset=args.dataset,
+                sample=args.sample,
+                variation=args.variation,
+            )
+        )
+        for layer in args.layers
+    }
+    met_probabilities = legacy_met_probabilities_from_outputs(
+        outputs,
+        prefix=prefix,
+        layers=args.layers,
+        control_counts=control_counts,
+        dataset=args.dataset,
+        sample=args.sample,
+        met_cut=args.met_cut,
+        phi_cut=args.phi_cut,
+    )
 
     estimates = estimate_lepton_background(
         flavor=flavor,
@@ -825,6 +856,12 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         poffline_denominator_category=poffline_denominator_category,
         pmiss_numerator_category=pmiss_numerator_category,
         pmiss_denominator_category=pmiss_denominator_category,
+        control_prescale=args.control_prescale,
+        trigger_efficiency=Count(
+            args.trigger_efficiency,
+            args.trigger_efficiency_error * args.trigger_efficiency_error,
+        ),
+        met_probabilities=met_probabilities,
         dataset=args.dataset,
         sample=args.sample,
         variation=args.variation,
@@ -843,12 +880,19 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         print(f"Wrote {args.output_tex}")
 
     for estimate in estimates:
+        met_method = (
+            "hist-integrated"
+            if estimate.layer in met_probabilities
+            else "cutflow-ratio"
+        )
         print(
             f"{estimate.layer}: N_lepton = "
             f"{estimate.estimate.value:.6g} ± {estimate.estimate.error:.6g} "
             f"(P_veto={estimate.p_veto.value:.6g}, "
             f"P_offline={estimate.p_offline.value:.6g}, "
-            f"P_miss={estimate.p_miss.value:.6g})"
+            f"P_miss={estimate.p_miss.value:.6g}, "
+            f"trigger_efficiency={estimate.trigger_efficiency.value:.6g}, "
+            f"met_method={met_method})"
         )
     return 0
 
@@ -1286,6 +1330,42 @@ def main():
             "Category pattern for the Pmiss denominator. May use {layer}. "
             "Defaults to the Poffline numerator."
         ),
+    )
+    lepton_background.add_argument(
+        "--control-prescale",
+        type=float,
+        default=1.0,
+        help=(
+            "Scale factor applied to N_ctrl before computing N_lepton. "
+            "Use this for the legacy MET/EGamma luminosity or prescale correction."
+        ),
+    )
+    lepton_background.add_argument(
+        "--trigger-efficiency",
+        type=float,
+        default=1.0,
+        help=(
+            "Lepton trigger efficiency epsilon_trig^ell. N_lepton is divided by "
+            "this value. Defaults to 1.0 for backward-compatible output."
+        ),
+    )
+    lepton_background.add_argument(
+        "--trigger-efficiency-error",
+        type=float,
+        default=0.0,
+        help="Absolute uncertainty on --trigger-efficiency.",
+    )
+    lepton_background.add_argument(
+        "--met-cut",
+        type=float,
+        default=120.0,
+        help="Offline lepton-removed MET threshold used for Poffline/Pmiss integration.",
+    )
+    lepton_background.add_argument(
+        "--phi-cut",
+        type=float,
+        default=0.5,
+        help="Delta-phi threshold used for Poffline/Pmiss integration.",
     )
     lepton_background.add_argument(
         "--output-json",

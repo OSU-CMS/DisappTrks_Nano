@@ -965,6 +965,9 @@ class DisappTrksProcessor(BaseProcessorABC):
             & (_leading_jet_delta_phi(self.events, met_phi) >= phi_cut)
         )
         trigger_event = offline_event & _met_trigger_mask(self.events)
+        tag_event = event_quality & (ak.num(tags) >= 1)
+        met_trigger_event = tag_event & _met_trigger_mask(self.events)
+        dphi = _leading_jet_delta_phi(self.events, met_phi)
         for layer in (*PVETO_LAYERS, "combinedBins"):
             track_mask = _lepton_background_track_mask(
                 self.events.IsoTrack,
@@ -972,8 +975,9 @@ class DisappTrksProcessor(BaseProcessorABC):
                 layer=layer,
             )
             has_track = ak.num(self.events.IsoTrack[track_mask]) >= 1
+            control_event = tag_event & has_track
             self.events[f"n{prefix}BackgroundControl_{layer}"] = ak.values_astype(
-                event_quality & (ak.num(tags) >= 1) & has_track,
+                control_event,
                 np.int64,
             )
             self.events[f"n{prefix}BackgroundOffline_{layer}"] = ak.values_astype(
@@ -983,6 +987,23 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events[f"n{prefix}BackgroundTrigger_{layer}"] = ak.values_astype(
                 trigger_event & has_track,
                 np.int64,
+            )
+            self.events[f"n{prefix}BackgroundMetMinusOnePt_{layer}"] = ak.where(
+                control_event,
+                met_pt,
+                -1.0,
+            )
+            self.events[f"n{prefix}BackgroundMetMinusOnePtTrig_{layer}"] = ak.where(
+                met_trigger_event & has_track,
+                met_pt,
+                -1.0,
+            )
+            self.events[
+                f"n{prefix}BackgroundDeltaPhiMetJetLeadingVsMetMinusOnePt_{layer}"
+            ] = ak.where(
+                control_event,
+                dphi,
+                -1.0,
             )
 
     def _store_fiducial_map_pairs(self):

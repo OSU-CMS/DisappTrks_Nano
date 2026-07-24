@@ -3,6 +3,8 @@
 This note is the maintainer map for the Run-3 PocketCoffea migration.  It is
 meant for collaborators who need to understand what a mode does, where the cuts
 live, and how to add or change selections without chasing the whole repository.
+For a compact context packet to hand to another Codex session, see
+`docs/codex_handoff_background_estimates.md`.
 
 ## Code Map
 
@@ -271,6 +273,7 @@ These feed the postprocessing estimate:
 - `Poffline = N(muon_background_offline) / N(muon_background_control)`
 - `Pmiss = N(muon_background_trigger) / N(muon_background_offline)`
 - `Pveto` comes from the muon Pveto tag-probe pair categories
+- `N_lepton = N_ctrl * Pveto * Poffline * Pmiss / epsilon_trig^lepton`
 
 You can still add these categories to a full Pveto job with
 `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier and can
@@ -278,12 +281,39 @@ run into the Coffea `PackedSelection` slot limit when combined with diagnostic
 categories. Keep `DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS=0` for production unless
 you are explicitly debugging a cutflow.
 
+The `estimate-lepton-background` command defaults to
+`--trigger-efficiency 1.0` and `--control-prescale 1.0`. To reproduce the
+legacy/AN normalization, pass the lepton trigger efficiency from the matching
+legacy output or tag-probe trigger-efficiency calculation. For 2022 electron
+jobs the legacy script uses `useFilesForTriggerEfficiency()` unless the flat
+trigger-efficiency option is enabled; the flat electron fallback in the legacy
+code is `0.840 +/- 0.005`.
+
+New `*_pmiss_poffline` outputs also contain the histograms needed to duplicate
+the legacy integration:
+
+- lepton-removed MET after the tag/control-track selection
+- lepton-removed MET after the MET trigger
+- `deltaPhi(leading jet, lepton-removed MET)` versus lepton-removed MET
+
+The `estimate-lepton-background` command uses these histograms automatically
+when they are present. It builds the MET-trigger turn-on, weights the
+lepton-removed MET distribution, and integrates the region passing
+`--met-cut` and `--phi-cut`, matching the legacy `printPpassMetTriggers()`
+approach. If the histograms are absent, it falls back to the older cutflow
+ratios above and prints `met_method=cutflow-ratio`.
+
+After this change, rerun the `*_pmiss_poffline` jobs before comparing to the
+AN. Existing Pveto outputs can still be reused.
+
 Postprocess with:
 
 ```bash
 disapptrks estimate-lepton-background \
   --mode muon \
   --run-period 2022CD \
+  --trigger-efficiency <epsilon> \
+  --trigger-efficiency-error <epsilon_error> \
   --output-json tables/muon_background_2022CD.json \
   --output-tex tables/muon_background_2022CD.tex \
   analysis_output/2022CD_muon_pveto/output_*.coffea \

@@ -1,0 +1,215 @@
+# Codex Memory: DisappTrks Nano Background Estimates
+
+Use this as project memory for a fresh Codex session helping with the
+DisappTrks Nano/PocketCoffea background-estimate migration.
+
+## Working Context
+
+- Parent workspace: `DisappTrks/`
+- Legacy analysis repo: `DisappTrks/`
+- Nano migration repo: `DisappTrks_Nano/`
+- Primary task: develop and debug the Run-3 PocketCoffea implementation of
+  lepton background estimates: `Pveto`, `Poffline`, `Pmiss`, fiducial maps,
+  and related cutflows.
+- The physics reference is the AN plus the legacy DisappTrks code, especially:
+  - `DisappTrks/BackgroundEstimation/python/`
+  - `DisappTrks/BackgroundEstimation/test/bkgdEstimate_2022.py`
+  - `DisappTrks/StandardAnalysis/python/EventSelections.py`
+  - `DisappTrks/StandardAnalysis/python/Cuts.py`
+
+## Current Code Organization
+
+- `DisappTrks_Nano/src/disapptrks/selections.py`
+  contains reusable physics selections and pair builders.
+- `DisappTrks_Nano/pocket_coffea/workflow.py`
+  constructs derived collections, tag-probe pairs, and event-level counts.
+- `DisappTrks_Nano/pocket_coffea/cuts.py`
+  defines PocketCoffea `Cut` wrappers.
+- `DisappTrks_Nano/pocket_coffea/config.py`
+  routes category modes and histogram variables.
+- `DisappTrks_Nano/src/disapptrks/lepton_backgrounds.py`
+  computes final `N_lepton = N_ctrl * Pveto * Poffline * Pmiss /
+  epsilon_trig^lepton`, with optional `N_ctrl` prescale.
+- `DisappTrks_Nano/src/disapptrks/cli.py`
+  exposes commands for fiducial maps, Pveto tables, and estimates.
+- `DisappTrks_Nano/docs/pocket_coffea_workflows.md`
+  is the main collaborator-facing workflow guide.
+- `DisappTrks_Nano/docs/codex_handoff_background_estimates.md`
+  is the main context packet for another Codex session.
+
+## Implemented Modes
+
+Production-oriented modes:
+
+- `fiducial_maps`
+- `muon_pveto`
+- `electron_pveto`
+- `tau_mu_pveto`
+- `tau_ele_pveto`
+- `muon_pmiss_poffline`
+- `electron_pmiss_poffline`
+- `tau_mu_pmiss_poffline`
+- `tau_ele_pmiss_poffline`
+- `fake_tracks`
+
+Heavy/diagnostic modes:
+
+- `muon_backgrounds`
+- `egamma_backgrounds`
+- `all`
+
+Avoid the heavy modes for production unless debugging. They can exhaust Coffea
+`PackedSelection` slots.
+
+## Important Recent Decisions
+
+### Pmiss/Poffline Split
+
+`Poffline` and `Pmiss` were split into dedicated control-only modes:
+
+- `muon_pmiss_poffline`
+- `electron_pmiss_poffline`
+- `tau_mu_pmiss_poffline`
+- `tau_ele_pmiss_poffline`
+
+These avoid overloading PocketCoffea by not building full Pveto pair category
+sets.
+
+### Fiducial Map Loading
+
+Pveto jobs can load fiducial maps using:
+
+```bash
+DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON=/path/to/electron_fiducial_map.json
+DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON=/path/to/muon_fiducial_map.json
+```
+
+or:
+
+```bash
+DISAPPTRKS_FIDUCIAL_MAP_DIR=/path/to/fiducial_maps
+```
+
+The directory form expects:
+
+```text
+electron_fiducial_map.json
+muon_fiducial_map.json
+```
+
+Production validation should use:
+
+```bash
+DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS=1
+```
+
+### Fiducial Map Hot Spots
+
+Default hot-spot threshold:
+
+```bash
+--threshold 2.0
+```
+
+Optional robust stddev:
+
+```bash
+--stddev-exclude-top 1
+```
+
+This excludes the highest-inefficiency occupied bin only from the stddev
+calculation. The bin is still tested and can still be reported as a hot spot.
+
+### Electron/Muon Pveto Formula
+
+For electron and muon lepton backgrounds, the legacy estimator uses:
+
+```text
+Pveto = N_pass / (2*N_total - N_pass)
+```
+
+after same-sign subtraction. Tau uses:
+
+```text
+Pveto = N_pass / N_total
+```
+
+Reference:
+
+```text
+DisappTrks/BackgroundEstimation/python/bkgdEstimate.py
+LeptonBkgdEstimate.printPpassVetoTagProbe()
+```
+
+Nano implements this in:
+
+```text
+DisappTrks_Nano/src/disapptrks/lepton_backgrounds.py
+```
+
+### Poffline/Pmiss Track Selection
+
+The near-lepton control-track mask lives in:
+
+```text
+DisappTrks_Nano/pocket_coffea/workflow.py::_lepton_background_track_mask
+```
+
+It currently requires:
+
+- track `pt > 55 GeV`
+- requested layer bin
+- standard isolated-track quality
+- `dR(track, jet) > 0.5`
+- no missing-outer-hit requirement
+- muon control: `caloEnergy < 10 GeV`
+- electron control: no calorimeter-energy cut
+- electron match: `0 <= dRMinElectron < 0.1`
+- muon match: `0 <= dRMinMuon < 0.1`
+- tau match: `0 <= dRMinTauHad < 0.1`
+
+The `dR(track, jet) > 0.5` requirement was added to match the legacy
+`ElectronTagPt55`/`MuonTagPt55` channels, which include `isoTrkCuts`.
+
+## Known Issues And Gotchas
+
+- `PackedSelection` slot exhaustion means too many categories are enabled.
+  Use focused modes and disable diagnostics.
+- Missing histogram-key errors mean `config.py` selected a variable that
+  `workflow.py` did not create in that mode.
+- Electron 2022CD values previously disagreed with AN Table 28. Fixes made:
+  - electron/muon `Pveto` formula changed to legacy two-lepton denominator;
+  - Poffline/Pmiss control-track mask now includes `dR(track, jet) > 0.5`.
+- After changing the Poffline/Pmiss track mask, rerun the
+  `*_pmiss_poffline` jobs. The `Pveto` formula change only requires rerunning
+  postprocessing.
+- After adding the legacy-style MET integration histograms, rerun the
+  `*_pmiss_poffline` jobs again. The postprocessor prints
+  `met_method=hist-integrated` when it found and used the new histograms.
+- Legacy 2022 electron estimates use a `MET lumi / EGamma lumi` prescale
+  factor. Nano postprocessing exposes this as `--control-prescale`; the default
+  is `1.0`.
+- Legacy estimates divide by a lepton trigger efficiency. Nano postprocessing
+  exposes this as `--trigger-efficiency` and `--trigger-efficiency-error`; the
+  default is `1.0`.
+- Legacy `Pmiss` can use trigger-efficiency files via
+  `useFilesForTriggerEfficiency()`, rather than a simple event-level MET HLT
+  bit. Nano now duplicates this with histogram integration when the new
+  Pmiss/Poffline histograms are available.
+
+## Useful Validation Commands
+
+```bash
+python -m py_compile DisappTrks_Nano/pocket_coffea/config.py DisappTrks_Nano/pocket_coffea/workflow.py
+python -m py_compile DisappTrks_Nano/src/disapptrks/lepton_backgrounds.py
+python -m pytest DisappTrks_Nano/tests/test_lepton_backgrounds.py
+git -C DisappTrks_Nano diff --check
+```
+
+Always check the worktree before editing:
+
+```bash
+git -C DisappTrks_Nano status --short
+```
+
+There may be unrelated dirty files. Do not revert unrelated local changes.

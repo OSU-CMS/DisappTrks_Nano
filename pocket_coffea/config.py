@@ -705,6 +705,56 @@ for prefix, label in (
                     f"N({label} control events passing offline MET and MET trigger, {layer})",
                     bins=2,
                 ),
+                f"n{prefix}BackgroundMetMinusOnePt_{layer}": HistConf(
+                    [
+                        Axis(
+                            coll="events",
+                            field=f"n{prefix}BackgroundMetMinusOnePt_{layer}",
+                            bins=100,
+                            start=0,
+                            stop=1000,
+                            label=f"{label} lepton-removed MET ({layer}) [GeV]",
+                        )
+                    ]
+                ),
+                f"n{prefix}BackgroundMetMinusOnePtTrig_{layer}": HistConf(
+                    [
+                        Axis(
+                            coll="events",
+                            field=f"n{prefix}BackgroundMetMinusOnePtTrig_{layer}",
+                            bins=100,
+                            start=0,
+                            stop=1000,
+                            label=(
+                                f"{label} lepton-removed MET with MET trigger "
+                                f"({layer}) [GeV]"
+                            ),
+                        )
+                    ]
+                ),
+                f"n{prefix}BackgroundDeltaPhiMetJetLeadingVsMetMinusOnePt_{layer}": HistConf(
+                    [
+                        Axis(
+                            coll="events",
+                            field=f"n{prefix}BackgroundMetMinusOnePt_{layer}",
+                            bins=100,
+                            start=0,
+                            stop=1000,
+                            label=f"{label} lepton-removed MET ({layer}) [GeV]",
+                        ),
+                        Axis(
+                            coll="events",
+                            field=f"n{prefix}BackgroundDeltaPhiMetJetLeadingVsMetMinusOnePt_{layer}",
+                            bins=32,
+                            start=0,
+                            stop=3.2,
+                            label=(
+                                f"{label} delta phi(leading jet, lepton-removed MET) "
+                                f"({layer})"
+                            ),
+                        ),
+                    ]
+                ),
             }
         )
 
