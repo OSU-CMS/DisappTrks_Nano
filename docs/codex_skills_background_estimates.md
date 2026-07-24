@@ -132,8 +132,6 @@ The normal final step is:
 disapptrks estimate-lepton-background \
   --mode electron \
   --run-period 2022CD \
-  --trigger-efficiency <epsilon> \
-  --trigger-efficiency-error <epsilon_error> \
   --output-json tables/electron_background_2022CD.json \
   --output-tex tables/electron_background_2022CD.tex \
   pocket_coffea/analysis_output/2022CD_electron_pveto/output_*.coffea \
@@ -141,12 +139,15 @@ disapptrks estimate-lepton-background \
 ```
 
 Use `--mode muon`, `--mode tau_mu`, or `--mode tau_ele` for the other channels.
+Only pass `--trigger-efficiency` and `--trigger-efficiency-error` for an
+explicit manual-override comparison.
 
 Remember:
 
 - `Pveto` comes from tag-probe pair counts.
-- `Poffline` comes from background offline/control category counts.
-- `Pmiss` comes from background trigger/offline category counts.
+- `Poffline` and `Pmiss` normally come from the legacy-style MET histograms in
+  the `*_pmiss_poffline` output. The scalar background
+  offline/control/trigger counts are a fallback and diagnostic cross-check.
 - New `*_pmiss_poffline` outputs include MET-shape histograms. The extractor
   uses them automatically for the legacy-style trigger-turn-on integration and
   prints `met_method=hist-integrated`.
@@ -162,6 +163,15 @@ Remember:
   job with current code.
 - Use `--control-prescale` for the legacy MET/lepton-dataset luminosity or
   prescale factor when it is not unity.
+
+Expected nominal diagnostics:
+
+```text
+trigger_efficiency_method=tag-probe
+met_method=hist-integrated
+```
+
+If those are not printed, debug the inputs before tuning physics cuts.
 
 ## Minimum Validation Before Handing Back
 

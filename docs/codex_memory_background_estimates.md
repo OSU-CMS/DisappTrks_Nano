@@ -37,6 +37,20 @@ DisappTrks Nano/PocketCoffea background-estimate migration.
 - `DisappTrks_Nano/docs/codex_handoff_background_estimates.md`
   is the main context packet for another Codex session.
 
+## Current Status
+
+The current working baseline has:
+
+- fiducial-map production and loading for electron and muon veto hot spots;
+- dedicated `*_pveto` jobs for `Pveto` and lepton-trigger-efficiency counters;
+- dedicated `*_pmiss_poffline` jobs for legacy-style `Poffline`/`Pmiss`
+  histograms;
+- postprocessing that combines the two outputs and calculates
+  `epsilon_trig^lepton` automatically.
+
+Joyce reports that the latest 2022CD electron `Poffline`/`Pmiss` values look
+much closer to the AN after the current fixes. Continue from this baseline.
+
 ## Implemented Modes
 
 Production-oriented modes:
@@ -202,6 +216,13 @@ The `dR(track, jet) > 0.5` requirement was added to match the legacy
   `useFilesForTriggerEfficiency()`, rather than a simple event-level MET HLT
   bit. Nano now duplicates this with histogram integration when the new
   Pmiss/Poffline histograms are available.
+- For AN comparisons, the expected postprocessing diagnostics are
+  `trigger_efficiency_method=tag-probe` and `met_method=hist-integrated`.
+  `default` epsilon or `cutflow-ratio` MET means the input files are stale or
+  incomplete for the nominal estimate.
+- Do not pass `--trigger-efficiency` for normal production. That option is a
+  manual override. Omitting it lets the extractor use the counters from the
+  `*_pveto` output.
 
 ## Useful Validation Commands
 

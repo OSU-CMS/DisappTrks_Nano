@@ -11,6 +11,31 @@ Companion files:
 - `docs/codex_skills_background_estimates.md`: operating guidance for a Codex
   session working on this code.
 
+## Current Handoff Status
+
+The Nano lepton-background path now implements the pieces needed for the
+AN-style estimate:
+
+- fiducial-map production and loading for electron and muon veto hot spots
+- focused `*_pveto` modes for `Pveto` and lepton-trigger-efficiency counters
+- focused `*_pmiss_poffline` modes for `Poffline`/`Pmiss` control histograms
+- postprocessing that uses the legacy-style histogram integrations when those
+  histograms are available
+
+Joyce's latest 2022CD electron `Poffline`/`Pmiss` check looked much closer to
+the AN after the most recent fixes. The next developer should treat the current
+implementation as the working baseline and continue validating against the AN
+tables and the legacy code.
+
+For a complete result, postprocess both the Pveto output and the
+Pmiss/Poffline output together. Do not pass `--trigger-efficiency` unless doing
+an explicit manual-override comparison. The expected successful diagnostics are:
+
+```text
+trigger_efficiency_method=tag-probe
+met_method=hist-integrated
+```
+
 ## Repository Context
 
 There are two related codebases under the same parent directory:
@@ -296,8 +321,9 @@ where `<Prefix>` is `Muon`, `Electron`, `TauMu`, or `TauEle`.
 The postprocessor uses these histograms automatically when present. It builds a
 MET-trigger turn-on from ordinary no-muon MET, weights the 2D lepton-removed MET
 versus delta-phi histogram, and integrates the region above `--met-cut` and
-`--phi-cut`. If the histograms are missing, it falls back to the older scalar
-cutflow ratios and prints `met_method=cutflow-ratio`.
+`--phi-cut`. This is the nominal path for AN comparisons. If the histograms are
+missing, it falls back to the older scalar cutflow ratios and prints
+`met_method=cutflow-ratio`.
 
 After changing this code, rerun the relevant `*_pmiss_poffline` jobs. Existing
 Pveto outputs can be reused.
@@ -317,6 +343,22 @@ n<Prefix>TriggerEffSSProbesFiringTrigger
 using `(passes_OS - passes_SS) / (total_OS - total_SS)`. If the postprocessor
 prints `trigger_efficiency_method=default`, rerun the relevant Pveto job with
 current code.
+
+Quick output sanity check:
+
+```bash
+python - <<'PY'
+from coffea.util import load
+out = load("pocket_coffea/analysis_output/2022CD_electron_pveto/output_all.coffea")
+for key in sorted(str(k) for k in out.get("variables", {}).keys()):
+    if "TriggerEff" in key:
+        print(key)
+out = load("pocket_coffea/analysis_output/2022CD_electron_pmiss_poffline/output_all.coffea")
+for key in sorted(str(k) for k in out.get("variables", {}).keys()):
+    if "BackgroundMet" in key or "BackgroundDeltaPhi" in key:
+        print(key)
+PY
+```
 
 ## Typical Commands
 
@@ -441,20 +483,25 @@ git -C DisappTrks_Nano diff --check
 
 for quick validation.
 
-## Current Open Validation Items
+## Current Validation Items
 
-The Nano implementation now has the basic plumbing for fiducial maps, `Pveto`,
-`Poffline`, and `Pmiss`, but the following should still be validated against
-the AN and/or legacy outputs:
+The Nano implementation now has the full plumbing for fiducial maps, `Pveto`,
+`Poffline`, `Pmiss`, and lepton-trigger efficiency. The remaining work is
+validation and polishing rather than inventing missing infrastructure:
 
-- Electron 2022CD Table-28 closure after rerunning
-  `electron_pmiss_poffline`.
-- Whether the Nano `Pmiss` direct trigger-bit ratio needs to be replaced by the
-  legacy trigger-efficiency-file method.
-- Whether the legacy `MET lumi / lepton lumi` prescale factor should be applied
-  explicitly in Nano postprocessing.
-- The exact Run-3 electron veto object used for fiducial maps:
-  Nano currently uses `Electron.cutBased >= 1` for veto electrons.
-- The exact Run-3 tau object working point in Nano:
+- Compare all layer bins and combined bins to the AN tables after rerunning
+  both the relevant `*_pveto` and `*_pmiss_poffline` jobs with current code.
+- Confirm whether a non-unity legacy `MET lumi / lepton lumi` prescale should
+  be passed with `--control-prescale` for each run period and channel.
+- Keep checking that postprocessing reports `trigger_efficiency_method=tag-probe`
+  and `met_method=hist-integrated`; otherwise the inputs were produced with
+  older code or the wrong mode.
+- If a remaining discrepancy appears, compare the exact legacy channel in
+  `DisappTrks/BackgroundEstimation/python/*TagProbeSelections.py` and
+  `DisappTrks/BackgroundEstimation/python/bkgdEstimate.py` before changing
+  Nano logic.
+- The exact Run-3 electron veto object used for fiducial maps should remain
+  under review: Nano currently uses `Electron.cutBased >= 1` for veto electrons.
+- The exact Run-3 tau object working point should remain under review:
   `hadronic_tau_veto_object_mask` uses DeepTau 2018v2p5 raw thresholds and
   `idDecayModeNewDMs`.

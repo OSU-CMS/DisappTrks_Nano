@@ -270,10 +270,12 @@ and `tau_ele_pmiss_poffline`.
 
 These feed the postprocessing estimate:
 
-- `Poffline = N(muon_background_offline) / N(muon_background_control)`
-- `Pmiss = N(muon_background_trigger) / N(muon_background_offline)`
-- `Pveto` comes from the muon Pveto tag-probe pair categories
-- `N_lepton = N_ctrl * Pveto * Poffline * Pmiss / epsilon_trig^lepton`
+- `Pveto` comes from the matching lepton Pveto tag-probe pair categories.
+- `Poffline` and `Pmiss` normally come from the legacy-style MET histogram
+  integration stored by the `*_pmiss_poffline` output.
+- The scalar categories `background_control`, `background_offline`, and
+  `background_trigger` remain available as fallback/debugging counts.
+- `N_lepton = N_ctrl * Pveto * Poffline * Pmiss / epsilon_trig^lepton`.
 
 You can still add these categories to a full Pveto job with
 `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier and can
@@ -308,14 +310,25 @@ the legacy integration:
 - `deltaPhi(leading jet, lepton-removed MET)` versus lepton-removed MET
 
 The `estimate-lepton-background` command uses these histograms automatically
-when they are present. It builds the MET-trigger turn-on, weights the
-lepton-removed MET distribution, and integrates the region passing
-`--met-cut` and `--phi-cut`, matching the legacy `printPpassMetTriggers()`
-approach. If the histograms are absent, it falls back to the older cutflow
-ratios above and prints `met_method=cutflow-ratio`.
+when they are present. It builds the MET-trigger turn-on from ordinary no-muon
+MET, weights the lepton-removed MET versus delta-phi distribution, and
+integrates the region passing `--met-cut` and `--phi-cut`, matching the legacy
+`printPpassMetTriggers()` approach. If the histograms are absent, it falls back
+to the older scalar cutflow ratios and prints `met_method=cutflow-ratio`.
 
 After this change, rerun the `*_pmiss_poffline` jobs before comparing to the
 AN. Existing Pveto outputs can still be reused.
+
+For nominal AN comparisons, the postprocessor should print:
+
+```text
+trigger_efficiency_method=tag-probe
+met_method=hist-integrated
+```
+
+If it prints `trigger_efficiency_method=default`, rerun the relevant `*_pveto`
+job with current code. If it prints `met_method=cutflow-ratio`, rerun the
+relevant `*_pmiss_poffline` job with current code.
 
 Postprocess with:
 
