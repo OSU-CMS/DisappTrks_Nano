@@ -65,6 +65,10 @@ Supported modes are:
 | `electron_pveto` | `DATA_EGamma` | Electron tag-probe pairs and electron `Pveto` categories/diagnostics. |
 | `tau_mu_pveto` | `DATA_Muon` | Tau-veto measurement with muon tags and low-`MT` tags. |
 | `tau_ele_pveto` | `DATA_EGamma` | Tau-veto measurement with electron tags and low-`MT` tags. |
+| `muon_pmiss_poffline` | `DATA_Muon` | Muon `Poffline` and `Pmiss` control categories only. No Pveto pair categories. |
+| `electron_pmiss_poffline` | `DATA_EGamma` | Electron `Poffline` and `Pmiss` control categories only. No Pveto pair categories. |
+| `tau_mu_pmiss_poffline` | `DATA_Muon` | Tau estimate `Poffline` and `Pmiss` control categories with muon low-`MT` tags only. |
+| `tau_ele_pmiss_poffline` | `DATA_EGamma` | Tau estimate `Poffline` and `Pmiss` control categories with electron low-`MT` tags only. |
 | `fiducial_maps` | `DATA_Muon` or `DATA_EGamma` | Before/after eta-phi histograms used to make electron and muon fiducial-map JSON/NPZ files. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
 | `muon_backgrounds` | `DATA_Muon` | Combined muon plus tau-mu categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
@@ -245,24 +249,34 @@ Table-16 diagnostic categories are prefixed with `muon_table16_`.
 
 ### Poffline And Pmiss Controls
 
-The lepton-background control categories are disabled by default because they
-increase the category load. Enable them with:
+For production, run the lepton-background control categories in their own
+control-only modes. For muons:
 
 ```bash
-DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1
+DISAPPTRKS_CATEGORY_MODE=muon_pmiss_poffline
 ```
 
-For muon mode, this adds per-layer categories:
+This builds the same muon tag collection used by `muon_pveto`, but it only
+selects the per-layer control categories:
 
 - `muon_background_control_{layer}`
 - `muon_background_offline_{layer}`
 - `muon_background_trigger_{layer}`
+
+The analogous modes are `electron_pmiss_poffline`, `tau_mu_pmiss_poffline`,
+and `tau_ele_pmiss_poffline`.
 
 These feed the postprocessing estimate:
 
 - `Poffline = N(muon_background_offline) / N(muon_background_control)`
 - `Pmiss = N(muon_background_trigger) / N(muon_background_offline)`
 - `Pveto` comes from the muon Pveto tag-probe pair categories
+
+You can still add these categories to a full Pveto job with
+`DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier and can
+run into the Coffea `PackedSelection` slot limit when combined with diagnostic
+categories. Keep `DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS=0` for production unless
+you are explicitly debugging a cutflow.
 
 Postprocess with:
 
@@ -272,7 +286,8 @@ disapptrks estimate-lepton-background \
   --run-period 2022CD \
   --output-json tables/muon_background_2022CD.json \
   --output-tex tables/muon_background_2022CD.tex \
-  analysis_output/2022CD_muon_pveto/output_*.coffea
+  analysis_output/2022CD_muon_pveto/output_*.coffea \
+  analysis_output/2022CD_muon_pmiss_poffline/output_*.coffea
 ```
 
 ### Example Dask@LPC Command
@@ -281,13 +296,28 @@ Run from `DisappTrks_Nano/pocket_coffea` inside the LPC `./shell` environment:
 
 ```bash
 DISAPPTRKS_CATEGORY_MODE=muon_pveto \
-DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1 \
 DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS=0 \
 DISAPPTRKS_DATASET_JSON=datasets/eos_2022CD_Muon.json \
 DISAPPTRKS_FIDUCIAL_MAP_DIR=/path/to/fiducial_maps/2022CD \
 python -m pocket_coffea.scripts.runner run \
   --cfg config.py \
   --outputdir analysis_output/2022CD_muon_pveto \
+  --executor dask@lpc \
+  --executor-custom-setup executors_lpc.py \
+  --custom-run-options run_options_lpc_dask.yaml \
+  --scaleout 60 \
+  --queue workday
+```
+
+Run Poffline/Pmiss separately with:
+
+```bash
+DISAPPTRKS_CATEGORY_MODE=muon_pmiss_poffline \
+DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS=0 \
+DISAPPTRKS_DATASET_JSON=datasets/eos_2022CD_Muon.json \
+python -m pocket_coffea.scripts.runner run \
+  --cfg config.py \
+  --outputdir analysis_output/2022CD_muon_pmiss_poffline \
   --executor dask@lpc \
   --executor-custom-setup executors_lpc.py \
   --custom-run-options run_options_lpc_dask.yaml \
@@ -328,7 +358,7 @@ relationship remains obvious.
 | `DISAPPTRKS_DATASET_SAMPLE` | Optional sample override, e.g. `DATA_Muon`. Usually inferred from metadata. |
 | `DISAPPTRKS_DATASET_YEAR` | Optional year override, e.g. `2022_preEE`. Usually inferred from metadata. |
 | `DISAPPTRKS_CATEGORY_MODE` | Workflow/category mode. Default is `muon_pveto`. |
-| `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES` | Adds Poffline/Pmiss control categories. |
+| `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES` | Adds Poffline/Pmiss control categories to a Pveto mode. Prefer the dedicated `*_pmiss_poffline` modes for production. |
 | `DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS` | Adds detailed Pveto cutflow diagnostic categories. Leave off for production Pmiss/Poffline runs unless you need the diagnostic tables. |
 | `DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS` | Adds detailed search/cutflow diagnostic categories. |
 | `DISAPPTRKS_FAKE_TRACK_CONTROL` | Fake-track control choice: `basic`, `zmumu`, or `zee`. |

@@ -257,9 +257,21 @@ data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 
 def _skim_cuts_for_mode(mode, sample):
     sample = sample or ""
-    if mode in ("muon_pveto", "tau_mu_pveto", "muon_backgrounds"):
+    if mode in (
+        "muon_pveto",
+        "tau_mu_pveto",
+        "muon_pmiss_poffline",
+        "tau_mu_pmiss_poffline",
+        "muon_backgrounds",
+    ):
         return [single_muon_hlt]
-    if mode in ("electron_pveto", "tau_ele_pveto", "egamma_backgrounds"):
+    if mode in (
+        "electron_pveto",
+        "tau_ele_pveto",
+        "electron_pmiss_poffline",
+        "tau_ele_pmiss_poffline",
+        "egamma_backgrounds",
+    ):
         return [single_electron_hlt]
     if mode == "fiducial_maps":
         if sample == "DATA_Muon":
@@ -447,6 +459,26 @@ elif category_mode == "tau_ele_pveto":
         **_categories_with_prefix(pveto_lepton_background_categories, "tau_ele_"),
         **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_ele_"),
     }
+elif category_mode == "muon_pmiss_poffline":
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        **_categories_with_prefix(lepton_background_categories, "muon_"),
+    }
+elif category_mode == "electron_pmiss_poffline":
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        **_categories_with_prefix(lepton_background_categories, "electron_"),
+    }
+elif category_mode == "tau_mu_pmiss_poffline":
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        **_categories_with_prefix(lepton_background_categories, "tau_mu_"),
+    }
+elif category_mode == "tau_ele_pmiss_poffline":
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        **_categories_with_prefix(lepton_background_categories, "tau_ele_"),
+    }
 elif category_mode == "fake_tracks":
     if fake_track_control_mode == "zmumu":
         selected_categories = {
@@ -502,7 +534,9 @@ else:
     raise ValueError(
         "Unknown DISAPPTRKS_CATEGORY_MODE="
         f"{category_mode!r}. Expected one of muon_pveto, electron_pveto, "
-        "tau_mu_pveto, tau_ele_pveto, fake_tracks, muon_backgrounds, "
+        "tau_mu_pveto, tau_ele_pveto, muon_pmiss_poffline, "
+        "electron_pmiss_poffline, tau_mu_pmiss_poffline, "
+        "tau_ele_pmiss_poffline, fake_tracks, muon_backgrounds, "
         "egamma_backgrounds, fiducial_maps, all."
     )
 
@@ -571,6 +605,10 @@ def _variables_for_mode(mode, variables):
         "electron_pveto": ("nElectron",),
         "tau_mu_pveto": ("nTauMu",),
         "tau_ele_pveto": ("nTauEle",),
+        "muon_pmiss_poffline": ("nMuonBackground",),
+        "electron_pmiss_poffline": ("nElectronBackground",),
+        "tau_mu_pmiss_poffline": ("nTauMuBackground",),
+        "tau_ele_pmiss_poffline": ("nTauEleBackground",),
         "fake_tracks": fake_track_prefixes,
         "muon_backgrounds": ("nMuon", "nTauMu", "fakeZMuMuFitTrack_"),
         "egamma_backgrounds": ("nElectron", "nTauEle", "fakeZeeFitTrack_"),

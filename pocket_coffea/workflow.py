@@ -830,6 +830,14 @@ class DisappTrksProcessor(BaseProcessorABC):
     def _event_int_like(self, value):
         return ak.ones_like(self.events.event, dtype=np.int64) * int(value)
 
+    def _store_fiducial_hot_spot_counts(self):
+        self.events["nElectronFiducialHotSpotsLoaded"] = self._event_int_like(
+            len(self._fiducial_hot_spots("electron"))
+        )
+        self.events["nMuonFiducialHotSpotsLoaded"] = self._event_int_like(
+            len(self._fiducial_hot_spots("muon"))
+        )
+
     def _apply_lepton_fiducial_maps_to_track_cutflow(self, masks):
         fiducial_hot_spots = self._lepton_fiducial_hot_spots()
         fiducial_map_mask = None
@@ -1028,7 +1036,14 @@ class DisappTrksProcessor(BaseProcessorABC):
 
     def apply_object_preselection(self, variation):
         if (
-            self._mode_enabled("muon_pveto", "tau_mu_pveto", "fake_zmumu", "fiducial_maps")
+            self._mode_enabled(
+                "muon_pveto",
+                "tau_mu_pveto",
+                "muon_pmiss_poffline",
+                "tau_mu_pmiss_poffline",
+                "fake_zmumu",
+                "fiducial_maps",
+            )
             or self._category_mode() == "fake_tracks"
         ):
             self.events["Muon"] = add_muon_derived_fields(self.events)
@@ -1044,9 +1059,14 @@ class DisappTrksProcessor(BaseProcessorABC):
             candidate_track_selection_mask(self.events.IsoTrack)
         ]
 
+        if self._mode_enabled("muon_pveto", "electron_pveto"):
+            self._store_fiducial_hot_spot_counts()
+
         tag_met = None
-        if self._mode_enabled("muon_pveto"):
+        if self._mode_enabled("muon_pveto", "muon_pmiss_poffline"):
             self.events["MuonTag"] = self.events.Muon[muon_tag_mask(self.events.Muon)]
+
+        if self._mode_enabled("muon_pveto"):
             self.events["MuonVetoProbeTrack"] = self.events.IsoTrack[
                 muon_veto_probe_track_mask(self.events.IsoTrack)
             ]
@@ -1063,12 +1083,6 @@ class DisappTrksProcessor(BaseProcessorABC):
             )
             muon_pveto_pass_mask = (
                 muon_pveto_pass_no_fiducial_mask & outside_fiducial_map_mask
-            )
-            self.events["nElectronFiducialHotSpotsLoaded"] = self._event_int_like(
-                len(self._fiducial_hot_spots("electron"))
-            )
-            self.events["nMuonFiducialHotSpotsLoaded"] = self._event_int_like(
-                len(self._fiducial_hot_spots("muon"))
             )
             self.events["MuonVetoTagProbePair"] = muon_veto_pairs
             self.events["MuonVetoTagProbePairOS"] = muon_veto_pairs[
@@ -1164,10 +1178,12 @@ class DisappTrksProcessor(BaseProcessorABC):
                     & muon_pveto_pass_mask
                 ]
 
-        if self._mode_enabled("electron_pveto"):
+        if self._mode_enabled("electron_pveto", "electron_pmiss_poffline"):
             self.events["ElectronTag"] = self.events.Electron[
                 electron_tag_mask(self.events.Electron, self.events)
             ]
+
+        if self._mode_enabled("electron_pveto"):
             self.events["ElectronVetoProbeTrack"] = self.events.IsoTrack[
                 lepton_veto_probe_track_mask(self.events.IsoTrack, measured_veto="electron")
             ]
@@ -1183,19 +1199,28 @@ class DisappTrksProcessor(BaseProcessorABC):
                 fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
             )
 
-        if self._mode_enabled("tau_mu_pveto", "tau_ele_pveto"):
+        if self._mode_enabled(
+            "tau_mu_pveto",
+            "tau_ele_pveto",
+            "tau_mu_pmiss_poffline",
+            "tau_ele_pmiss_poffline",
+        ):
             tag_met = _met_for_transverse_mass(self.events)
+
+        if self._mode_enabled("tau_mu_pveto", "tau_ele_pveto"):
             self.events["TauVetoProbeTrack"] = self.events.IsoTrack[
                 tau_veto_probe_track_mask(self.events.IsoTrack)
             ]
 
-        if self._mode_enabled("tau_mu_pveto"):
+        if self._mode_enabled("tau_mu_pveto", "tau_mu_pmiss_poffline"):
             tau_mu_tag_mask = muon_tag_progression_masks(self.events.Muon)[
                 "muon_selected_tag"
             ]
             self.events["MuonLowMTTag"] = self.events.Muon[tau_mu_tag_mask][
                 low_mt_mask(self.events.Muon[tau_mu_tag_mask], tag_met)
             ]
+
+        if self._mode_enabled("tau_mu_pveto"):
             self._store_lepton_pveto_pairs(
                 prefix="TauMu",
                 tags=self.events.MuonLowMTTag,
@@ -1207,11 +1232,13 @@ class DisappTrksProcessor(BaseProcessorABC):
                 pass_mask_function=tau_pveto_pair_pass_mask,
             )
 
-        if self._mode_enabled("tau_ele_pveto"):
+        if self._mode_enabled("tau_ele_pveto", "tau_ele_pmiss_poffline"):
             tau_ele_tag_mask = _z_electron_tag_mask(self.events.Electron, pt_min=32.0)
             self.events["ElectronLowMTTag"] = self.events.Electron[tau_ele_tag_mask][
                 low_mt_mask(self.events.Electron[tau_ele_tag_mask], tag_met)
             ]
+
+        if self._mode_enabled("tau_ele_pveto"):
             self._store_lepton_pveto_pairs(
                 prefix="TauEle",
                 tags=self.events.ElectronLowMTTag,
@@ -1223,7 +1250,16 @@ class DisappTrksProcessor(BaseProcessorABC):
                 pass_mask_function=tau_pveto_pair_pass_mask,
             )
 
-        if self._mode_enabled("muon_pveto", "electron_pveto", "tau_mu_pveto", "tau_ele_pveto"):
+        if self._mode_enabled(
+            "muon_pveto",
+            "electron_pveto",
+            "tau_mu_pveto",
+            "tau_ele_pveto",
+            "muon_pmiss_poffline",
+            "electron_pmiss_poffline",
+            "tau_mu_pmiss_poffline",
+            "tau_ele_pmiss_poffline",
+        ):
             event_quality = (
                 _golden_json_mask(
                     self.events,
@@ -1243,14 +1279,20 @@ class DisappTrksProcessor(BaseProcessorABC):
                     is_mc=self._isMC,
                 )
             )
-            if self._mode_enabled("muon_pveto") and "MuonTag" in self.events.fields:
+            if (
+                self._mode_enabled("muon_pveto", "muon_pmiss_poffline")
+                and "MuonTag" in self.events.fields
+            ):
                 self._store_lepton_background_controls(
                     prefix="Muon",
                     flavor="muon",
                     tags=self.events.MuonTag,
                     event_quality=event_quality,
                 )
-            if self._mode_enabled("electron_pveto") and "ElectronTag" in self.events.fields:
+            if (
+                self._mode_enabled("electron_pveto", "electron_pmiss_poffline")
+                and "ElectronTag" in self.events.fields
+            ):
                 self._store_lepton_background_controls(
                     prefix="Electron",
                     flavor="electron",
@@ -1259,14 +1301,20 @@ class DisappTrksProcessor(BaseProcessorABC):
                 )
             # The Run-3 tau estimate is measured with muon/electron tau-control
             # legs in this Nano workflow, matching the existing tau Pveto split.
-            if self._mode_enabled("tau_mu_pveto") and "MuonLowMTTag" in self.events.fields:
+            if (
+                self._mode_enabled("tau_mu_pveto", "tau_mu_pmiss_poffline")
+                and "MuonLowMTTag" in self.events.fields
+            ):
                 self._store_lepton_background_controls(
                     prefix="TauMu",
                     flavor="muon",
                     tags=self.events.MuonLowMTTag,
                     event_quality=event_quality,
                 )
-            if self._mode_enabled("tau_ele_pveto") and "ElectronLowMTTag" in self.events.fields:
+            if (
+                self._mode_enabled("tau_ele_pveto", "tau_ele_pmiss_poffline")
+                and "ElectronLowMTTag" in self.events.fields
+            ):
                 self._store_lepton_background_controls(
                     prefix="TauEle",
                     flavor="electron",
@@ -1927,6 +1975,14 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events["nTauVetoProbeTrack"] = ak.num(self.events.TauVetoProbeTrack)
             self._count_lepton_pair_fields("TauEle")
             self._store_tau_pveto_diagnostics("tau_ele_pveto")
+        elif mode == "muon_pmiss_poffline":
+            self.events["nMuonTag"] = ak.num(self.events.MuonTag)
+        elif mode == "electron_pmiss_poffline":
+            self.events["nElectronTag"] = ak.num(self.events.ElectronTag)
+        elif mode == "tau_mu_pmiss_poffline":
+            self.events["nMuonLowMTTag"] = ak.num(self.events.MuonLowMTTag)
+        elif mode == "tau_ele_pmiss_poffline":
+            self.events["nElectronLowMTTag"] = ak.num(self.events.ElectronLowMTTag)
         elif mode == "fake_tracks":
             self._count_fake_track_fields(controls=self._fake_track_controls())
         elif mode == "muon_backgrounds":
