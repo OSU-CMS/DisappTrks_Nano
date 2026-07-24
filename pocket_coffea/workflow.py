@@ -333,7 +333,7 @@ def _lepton_background_track_mask(tracks, *, flavor: str, layer: str):
         tracks,
         pt_min=55.0,
         layer=layer,
-        apply_jet_cut=False,
+        apply_jet_cut=True,
         apply_calo_cut=(flavor == "muon"),
         apply_outer_hits_cut=False,
     )

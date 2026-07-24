@@ -12,6 +12,7 @@ from .fake_tracks import Count
 from .summaries import cutflow_count
 from .tables import (
     CountWithVariance,
+    POISSON_ZERO_UPPER_68,
     format_count,
     format_pm_latex,
     format_value_with_uncertainty,
@@ -120,8 +121,31 @@ def probability_from_counts(numerator: Count, denominator: Count) -> Count:
     return Count(value, variance)
 
 
-def pveto_count_from_pair_counts(pair_counts: Mapping[str, float]) -> Count:
-    """Convert OS/SS Pveto pair counts into a symmetric Count approximation."""
+def pveto_count_from_pair_counts(
+    pair_counts: Mapping[str, float],
+    *,
+    use_two_lepton_denominator: bool = False,
+) -> Count:
+    """Convert OS/SS Pveto pair counts into a symmetric Count approximation.
+
+    The legacy electron/muon background estimate treats the tag-probe event as
+    a two-lepton Z candidate and uses ``N_pass / (2*N_total - N_pass)`` after
+    same-sign subtraction.  Tau estimates use the direct tag-probe ratio.
+    """
+
+    if use_two_lepton_denominator:
+        numerator = pair_counts.get("num_os", 0.0) - pair_counts.get("num_ss", 0.0)
+        denominator = (
+            2.0 * (pair_counts.get("den_os", 0.0) - pair_counts.get("den_ss", 0.0))
+            - numerator
+        )
+        if denominator <= 0.0:
+            return Count(0.0, 0.0)
+        if numerator <= 0.0:
+            return Count(0.0, (POISSON_ZERO_UPPER_68 / denominator) ** 2)
+        value = numerator / denominator
+        variance = value * (1.0 - min(max(value, 0.0), 1.0)) / denominator
+        return Count(value, variance)
 
     summary = pveto_with_asymmetric_uncertainty(
         den_os=CountWithVariance(pair_counts.get("den_os", 0.0), pair_counts.get("den_os", 0.0)),
@@ -209,7 +233,10 @@ def estimate_lepton_background(
                 variation=variation,
             ),
         )
-        p_veto = pveto_count_from_pair_counts(pair_counts.get(layer, {}))
+        p_veto = pveto_count_from_pair_counts(
+            pair_counts.get(layer, {}),
+            use_two_lepton_denominator=flavor in ("electron", "muon", r"$e$", r"$\mu$"),
+        )
         estimates.append(
             LeptonBackgroundEstimate(
                 flavor=flavor,

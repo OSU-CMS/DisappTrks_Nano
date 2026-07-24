@@ -35,11 +35,11 @@ def test_estimate_lepton_background_uses_an_product():
     )
 
     estimate = estimates[0]
-    assert estimate.p_veto.value == 0.1
+    assert estimate.p_veto.value == 4.0 / 76.0
     assert estimate.p_offline.value == 0.25
     assert estimate.p_miss.value == 0.8
     assert estimate.p_trigger.value == 0.8
-    assert estimate.estimate.value == 2.0
+    assert estimate.estimate.value == 100.0 * (4.0 / 76.0) * 0.25 * 0.8
 
 
 def test_write_lepton_background_outputs(tmp_path: Path):
