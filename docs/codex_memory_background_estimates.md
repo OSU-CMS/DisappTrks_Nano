@@ -120,18 +120,21 @@ Optional robust stddev:
 This excludes the highest-inefficiency occupied bin only from the stddev
 calculation. The bin is still tested and can still be reported as a hot spot.
 
-### Electron/Muon Pveto Formula
+### Pveto Formula
 
-For electron and muon lepton backgrounds, the legacy estimator uses:
+The 2022/2023 legacy scripts use the histogram branch in
+`LeptonBkgdEstimate.printPpassVetoTagProbe()` because
+`_useHistogramsForPpassVeto=True` by default. That branch uses:
+
+```text
+Pveto = (N_pass_OS - N_pass_SS) / (N_total_OS - N_total_SS)
+```
+
+The older non-histogram fallback branch uses the electron/muon two-lepton
+denominator:
 
 ```text
 Pveto = N_pass / (2*N_total - N_pass)
-```
-
-after same-sign subtraction. Tau uses:
-
-```text
-Pveto = N_pass / N_total
 ```
 
 Reference:
@@ -141,7 +144,7 @@ DisappTrks/BackgroundEstimation/python/bkgdEstimate.py
 LeptonBkgdEstimate.printPpassVetoTagProbe()
 ```
 
-Nano implements this in:
+Nano implements the histogram-branch formula in:
 
 ```text
 DisappTrks_Nano/src/disapptrks/lepton_backgrounds.py
@@ -178,7 +181,8 @@ The `dR(track, jet) > 0.5` requirement was added to match the legacy
 - Missing histogram-key errors mean `config.py` selected a variable that
   `workflow.py` did not create in that mode.
 - Electron 2022CD values previously disagreed with AN Table 28. Fixes made:
-  - electron/muon `Pveto` formula changed to legacy two-lepton denominator;
+  - electron/muon `Pveto` formula restored to the legacy histogram-branch
+    direct OS-minus-SS ratio;
   - Poffline/Pmiss control-track mask now includes `dR(track, jet) > 0.5`.
 - After changing the Poffline/Pmiss track mask, rerun the
   `*_pmiss_poffline` jobs. The `Pveto` formula change only requires rerunning
@@ -189,9 +193,11 @@ The `dR(track, jet) > 0.5` requirement was added to match the legacy
 - Legacy 2022 electron estimates use a `MET lumi / EGamma lumi` prescale
   factor. Nano postprocessing exposes this as `--control-prescale`; the default
   is `1.0`.
-- Legacy estimates divide by a lepton trigger efficiency. Nano postprocessing
-  exposes this as `--trigger-efficiency` and `--trigger-efficiency-error`; the
-  default is `1.0`.
+- Legacy estimates divide by a lepton trigger efficiency. Nano now calculates
+  this from Pveto output trigger-efficiency counters and prints
+  `trigger_efficiency_method=tag-probe`. If it prints
+  `trigger_efficiency_method=default`, rerun the Pveto job with current code.
+  `--trigger-efficiency` and `--trigger-efficiency-error` are manual overrides.
 - Legacy `Pmiss` can use trigger-efficiency files via
   `useFilesForTriggerEfficiency()`, rather than a simple event-level MET HLT
   bit. Nano now duplicates this with histogram integration when the new

@@ -281,19 +281,30 @@ run into the Coffea `PackedSelection` slot limit when combined with diagnostic
 categories. Keep `DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS=0` for production unless
 you are explicitly debugging a cutflow.
 
-The `estimate-lepton-background` command defaults to
-`--trigger-efficiency 1.0` and `--control-prescale 1.0`. To reproduce the
-legacy/AN normalization, pass the lepton trigger efficiency from the matching
-legacy output or tag-probe trigger-efficiency calculation. For 2022 electron
-jobs the legacy script uses `useFilesForTriggerEfficiency()` unless the flat
-trigger-efficiency option is enabled; the flat electron fallback in the legacy
-code is `0.840 +/- 0.005`.
+New Pveto outputs also contain the four legacy trigger-efficiency counters:
+
+- `n<Prefix>TriggerEffProbesPT55`
+- `n<Prefix>TriggerEffProbesSSPT55`
+- `n<Prefix>TriggerEffProbesFiringTrigger`
+- `n<Prefix>TriggerEffSSProbesFiringTrigger`
+
+The `estimate-lepton-background` command calculates
+`epsilon_trig^lepton = (passes_OS - passes_SS) / (total_OS - total_SS)` from
+these counters automatically and prints `trigger_efficiency_method=tag-probe`.
+Manual `--trigger-efficiency` and `--trigger-efficiency-error` are now
+overrides for comparisons/debugging. Old Pveto outputs without these counters
+fall back to `epsilon_trig^lepton = 1.0` and print
+`trigger_efficiency_method=default`.
+
+After this change, rerun the relevant Pveto job before comparing the final
+estimate to the AN. The `*_pmiss_poffline` jobs also need to be rerun if they
+were produced before the MET-integration histograms were added.
 
 New `*_pmiss_poffline` outputs also contain the histograms needed to duplicate
 the legacy integration:
 
-- lepton-removed MET after the tag/control-track selection
-- lepton-removed MET after the MET trigger
+- ordinary no-muon MET after the tag/control-track selection
+- ordinary no-muon MET after the MET trigger
 - `deltaPhi(leading jet, lepton-removed MET)` versus lepton-removed MET
 
 The `estimate-lepton-background` command uses these histograms automatically
@@ -312,8 +323,6 @@ Postprocess with:
 disapptrks estimate-lepton-background \
   --mode muon \
   --run-period 2022CD \
-  --trigger-efficiency <epsilon> \
-  --trigger-efficiency-error <epsilon_error> \
   --output-json tables/muon_background_2022CD.json \
   --output-tex tables/muon_background_2022CD.tex \
   analysis_output/2022CD_muon_pveto/output_*.coffea \

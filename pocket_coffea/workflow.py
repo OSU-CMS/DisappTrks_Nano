@@ -49,6 +49,7 @@ from disapptrks.selections import (
     search_track_cutflow_masks,
     search_track_mask,
     single_electron_trigger_mask,
+    trigger_matched_track_mask,
     run3_tight_lepton_veto_jet_mask,
     ss_mass10_muon_probe_pair_mask,
     ss_muon_probe_pair_mask,
@@ -346,6 +347,20 @@ def _lepton_background_track_mask(tracks, *, flavor: str, layer: str):
     else:
         raise ValueError(f"unknown lepton background flavor: {flavor}")
     return mask
+
+
+def _lepton_background_tag_pt55_event_mask(analysis_event):
+    """Event-side cuts in the legacy Electron/Muon/TauTagPt55 channels."""
+
+    return (
+        (analysis_event.leadingJet_pt > 110.0)
+        & (abs(analysis_event.leadingJet_eta) < 2.4)
+        & analysis_event.leadingJet_tightLepVeto
+        & (
+            (analysis_event.dijetMaxDeltaPhi < 0.0)
+            | (analysis_event.dijetMaxDeltaPhi < 2.5)
+        )
+    )
 
 
 def _z_to_mumu_control_mask(events, muons):
@@ -830,6 +845,35 @@ class DisappTrksProcessor(BaseProcessorABC):
     def _event_int_like(self, value):
         return ak.ones_like(self.events.event, dtype=np.int64) * int(value)
 
+    def _store_trigger_efficiency_counts(
+        self,
+        *,
+        prefix,
+        pairs,
+        mass_mask_function,
+    ):
+        pair_mask = mass_mask_function(pairs) & (pairs.probe_pt > 55.0)
+        os_pairs = pairs[pair_mask & pairs.os]
+        ss_pairs = pairs[pair_mask & pairs.ss]
+        os_trigger_pairs = pairs[pair_mask & pairs.os & pairs.probe_firesTrigger]
+        ss_trigger_pairs = pairs[pair_mask & pairs.ss & pairs.probe_firesTrigger]
+        self.events[f"n{prefix}TriggerEffProbesPT55"] = ak.values_astype(
+            ak.num(os_pairs),
+            np.int64,
+        )
+        self.events[f"n{prefix}TriggerEffProbesSSPT55"] = ak.values_astype(
+            ak.num(ss_pairs),
+            np.int64,
+        )
+        self.events[f"n{prefix}TriggerEffProbesFiringTrigger"] = ak.values_astype(
+            ak.num(os_trigger_pairs),
+            np.int64,
+        )
+        self.events[f"n{prefix}TriggerEffSSProbesFiringTrigger"] = ak.values_astype(
+            ak.num(ss_trigger_pairs),
+            np.int64,
+        )
+
     def _store_fiducial_hot_spot_counts(self):
         self.events["nElectronFiducialHotSpotsLoaded"] = self._event_int_like(
             len(self._fiducial_hot_spots("electron"))
@@ -892,6 +936,7 @@ class DisappTrksProcessor(BaseProcessorABC):
         self,
         *,
         prefix,
+        flavor,
         tags,
         probes,
         tag_mass,
@@ -901,6 +946,11 @@ class DisappTrksProcessor(BaseProcessorABC):
         pass_mask_function,
         fiducial_hot_spots=(),
     ):
+        probes = ak.with_field(
+            probes,
+            trigger_matched_track_mask(self.events, probes, flavor=flavor),
+            "firesTrigger",
+        )
         pairs = build_lepton_veto_tag_probe_pairs(
             tags,
             probes,
@@ -920,6 +970,15 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events[f"{prefix}TagProbePairSSMassWindow"] = pairs[
             ss_mass_window_pair_mask(pairs, window_low, window_high)
         ]
+        self._store_trigger_efficiency_counts(
+            prefix=prefix,
+            pairs=pairs,
+            mass_mask_function=lambda pair: mass_window_pair_mask(
+                pair,
+                window_low,
+                window_high,
+            ),
+        )
         self.events[f"{prefix}PVetoTagProbePairMassWindowPass"] = pairs[
             os_mass_window_pair_mask(pairs, window_low, window_high)
             & pveto_pass_mask
@@ -958,14 +1017,17 @@ class DisappTrksProcessor(BaseProcessorABC):
         phi_cut=0.5,
     ):
         met_pt, met_phi = _met_no_mu_minus_lepton(self.events, tags)
-        offline_event = (
+        tag_event = (
             event_quality
             & (ak.num(tags) >= 1)
+            & _lepton_background_tag_pt55_event_mask(self.events.AnalysisEvent)
+        )
+        offline_event = (
+            tag_event
             & (met_pt >= met_cut)
             & (_leading_jet_delta_phi(self.events, met_phi) >= phi_cut)
         )
         trigger_event = offline_event & _met_trigger_mask(self.events)
-        tag_event = event_quality & (ak.num(tags) >= 1)
         met_trigger_event = tag_event & _met_trigger_mask(self.events)
         dphi = _leading_jet_delta_phi(self.events, met_phi)
         for layer in (*PVETO_LAYERS, "combinedBins"):
@@ -996,6 +1058,16 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events[f"n{prefix}BackgroundMetMinusOnePtTrig_{layer}"] = ak.where(
                 met_trigger_event & has_track,
                 met_pt,
+                -1.0,
+            )
+            self.events[f"n{prefix}BackgroundMetNoMuPt_{layer}"] = ak.where(
+                control_event,
+                self.events.MetNoMu.pt,
+                -1.0,
+            )
+            self.events[f"n{prefix}BackgroundMetNoMuPtTrig_{layer}"] = ak.where(
+                met_trigger_event & has_track,
+                self.events.MetNoMu.pt,
                 -1.0,
             )
             self.events[
@@ -1091,6 +1163,15 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events["MuonVetoProbeTrack"] = self.events.IsoTrack[
                 muon_veto_probe_track_mask(self.events.IsoTrack)
             ]
+            self.events["MuonVetoProbeTrack"] = ak.with_field(
+                self.events.MuonVetoProbeTrack,
+                trigger_matched_track_mask(
+                    self.events,
+                    self.events.MuonVetoProbeTrack,
+                    flavor="muon",
+                ),
+                "firesTrigger",
+            )
             muon_veto_pairs = build_muon_veto_tag_probe_pairs(
                 self.events.MuonTag, self.events.MuonVetoProbeTrack
             )
@@ -1127,6 +1208,11 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events["MuonVetoTagProbePairOSZWindow"] = muon_veto_pairs[
                 os_z_window_muon_probe_pair_mask(muon_veto_pairs)
             ]
+            self._store_trigger_efficiency_counts(
+                prefix="Muon",
+                pairs=muon_veto_pairs,
+                mass_mask_function=z_window_muon_probe_pair_mask,
+            )
             self.events["MuonVetoTagProbePairZWindowPass"] = muon_veto_pairs[
                 os_z_window_muon_probe_pair_mask(muon_veto_pairs)
                 & muon_veto_pair_pass_mask(muon_veto_pairs)
@@ -1210,6 +1296,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             ]
             self._store_lepton_pveto_pairs(
                 prefix="Electron",
+                flavor="electron",
                 tags=self.events.ElectronTag,
                 probes=self.events.ElectronVetoProbeTrack,
                 tag_mass=ELECTRON_MASS,
@@ -1244,6 +1331,7 @@ class DisappTrksProcessor(BaseProcessorABC):
         if self._mode_enabled("tau_mu_pveto"):
             self._store_lepton_pveto_pairs(
                 prefix="TauMu",
+                flavor="tau_mu",
                 tags=self.events.MuonLowMTTag,
                 probes=self.events.TauVetoProbeTrack,
                 tag_mass=MUON_MASS,
@@ -1262,6 +1350,7 @@ class DisappTrksProcessor(BaseProcessorABC):
         if self._mode_enabled("tau_ele_pveto"):
             self._store_lepton_pveto_pairs(
                 prefix="TauEle",
+                flavor="tau_ele",
                 tags=self.events.ElectronLowMTTag,
                 probes=self.events.TauVetoProbeTrack,
                 tag_mass=ELECTRON_MASS,

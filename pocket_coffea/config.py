@@ -632,6 +632,22 @@ for prefix, label in (
 ):
     lepton_pair_count_variables.update(
         {
+            f"n{prefix}TriggerEffProbesPT55": _event_count_hist(
+                f"n{prefix}TriggerEffProbesPT55",
+                f"N(OS {label} trigger-efficiency probes with pt > 55 GeV)",
+            ),
+            f"n{prefix}TriggerEffProbesSSPT55": _event_count_hist(
+                f"n{prefix}TriggerEffProbesSSPT55",
+                f"N(SS {label} trigger-efficiency probes with pt > 55 GeV)",
+            ),
+            f"n{prefix}TriggerEffProbesFiringTrigger": _event_count_hist(
+                f"n{prefix}TriggerEffProbesFiringTrigger",
+                f"N(OS {label} trigger-efficiency probes firing trigger)",
+            ),
+            f"n{prefix}TriggerEffSSProbesFiringTrigger": _event_count_hist(
+                f"n{prefix}TriggerEffSSProbesFiringTrigger",
+                f"N(SS {label} trigger-efficiency probes firing trigger)",
+            ),
             f"n{prefix}TagProbePair": _event_count_hist(
                 f"n{prefix}TagProbePair",
                 f"N({label} tag-probe pairs)",
@@ -679,6 +695,27 @@ for prefix, label in (
                 ),
             }
         )
+
+lepton_pair_count_variables.update(
+    {
+        "nMuonTriggerEffProbesPT55": _event_count_hist(
+            "nMuonTriggerEffProbesPT55",
+            "N(OS muon trigger-efficiency probes with pt > 55 GeV)",
+        ),
+        "nMuonTriggerEffProbesSSPT55": _event_count_hist(
+            "nMuonTriggerEffProbesSSPT55",
+            "N(SS muon trigger-efficiency probes with pt > 55 GeV)",
+        ),
+        "nMuonTriggerEffProbesFiringTrigger": _event_count_hist(
+            "nMuonTriggerEffProbesFiringTrigger",
+            "N(OS muon trigger-efficiency probes firing trigger)",
+        ),
+        "nMuonTriggerEffSSProbesFiringTrigger": _event_count_hist(
+            "nMuonTriggerEffSSProbesFiringTrigger",
+            "N(SS muon trigger-efficiency probes firing trigger)",
+        ),
+    }
+)
 
 lepton_background_count_variables = {}
 for prefix, label in (
@@ -729,6 +766,30 @@ for prefix, label in (
                                 f"{label} lepton-removed MET with MET trigger "
                                 f"({layer}) [GeV]"
                             ),
+                        )
+                    ]
+                ),
+                f"n{prefix}BackgroundMetNoMuPt_{layer}": HistConf(
+                    [
+                        Axis(
+                            coll="events",
+                            field=f"n{prefix}BackgroundMetNoMuPt_{layer}",
+                            bins=100,
+                            start=0,
+                            stop=1000,
+                            label=f"{label} MET no mu ({layer}) [GeV]",
+                        )
+                    ]
+                ),
+                f"n{prefix}BackgroundMetNoMuPtTrig_{layer}": HistConf(
+                    [
+                        Axis(
+                            coll="events",
+                            field=f"n{prefix}BackgroundMetNoMuPtTrig_{layer}",
+                            bins=100,
+                            start=0,
+                            stop=1000,
+                            label=f"{label} MET no mu with MET trigger ({layer}) [GeV]",
                         )
                     ]
                 ),

@@ -133,6 +133,26 @@ def probability_from_counts(numerator: Count, denominator: Count) -> Count:
     return Count(value, variance)
 
 
+def trigger_efficiency_from_counts(
+    *,
+    total_os: Count,
+    total_ss: Count,
+    passes_os: Count,
+    passes_ss: Count,
+) -> Count:
+    """Legacy lepton trigger efficiency with same-sign subtraction."""
+
+    passes = Count(
+        passes_os.value - passes_ss.value,
+        passes_os.variance + passes_ss.variance,
+    )
+    total = Count(
+        total_os.value - total_ss.value,
+        total_os.variance + total_ss.variance,
+    )
+    return probability_from_counts(passes, total)
+
+
 def _walk_hists(value: Any):
     if hasattr(value, "axes") and hasattr(value, "values"):
         yield value
@@ -300,8 +320,10 @@ def legacy_met_probabilities_from_outputs(
 
     probabilities: dict[str, tuple[Count, Count]] = {}
     for layer in layers:
-        met_variable = f"n{prefix}BackgroundMetMinusOnePt_{layer}"
-        trig_variable = f"n{prefix}BackgroundMetMinusOnePtTrig_{layer}"
+        met_variable = f"n{prefix}BackgroundMetNoMuPt_{layer}"
+        trig_variable = f"n{prefix}BackgroundMetNoMuPtTrig_{layer}"
+        fallback_met_variable = f"n{prefix}BackgroundMetMinusOnePt_{layer}"
+        fallback_trig_variable = f"n{prefix}BackgroundMetMinusOnePtTrig_{layer}"
         met_phi_variable = (
             f"n{prefix}BackgroundDeltaPhiMetJetLeadingVsMetMinusOnePt_{layer}"
         )
@@ -319,6 +341,21 @@ def legacy_met_probabilities_from_outputs(
             sample=sample,
             category=category,
         )
+        if met_hist is None or trig_hist is None:
+            met_hist = _summed_hist_counts_edges_nd(
+                outputs,
+                fallback_met_variable,
+                dataset=dataset,
+                sample=sample,
+                category=category,
+            )
+            trig_hist = _summed_hist_counts_edges_nd(
+                outputs,
+                fallback_trig_variable,
+                dataset=dataset,
+                sample=sample,
+                category=category,
+            )
         met_phi_hist = _summed_hist_counts_edges_nd(
             outputs,
             met_phi_variable,
@@ -366,9 +403,9 @@ def pveto_count_from_pair_counts(
 ) -> Count:
     """Convert OS/SS Pveto pair counts into a symmetric Count approximation.
 
-    The legacy electron/muon background estimate treats the tag-probe event as
-    a two-lepton Z candidate and uses ``N_pass / (2*N_total - N_pass)`` after
-    same-sign subtraction.  Tau estimates use the direct tag-probe ratio.
+    The legacy histogram-based path, used by the 2022/2023 background scripts,
+    uses the same-sign-subtracted direct ratio.  The two-lepton denominator is
+    kept for reproducing the older non-histogram fallback path.
     """
 
     if use_two_lepton_denominator:
@@ -481,7 +518,7 @@ def estimate_lepton_background(
             )
         p_veto = pveto_count_from_pair_counts(
             pair_counts.get(layer, {}),
-            use_two_lepton_denominator=flavor in ("electron", "muon", r"$e$", r"$\mu$"),
+            use_two_lepton_denominator=False,
         )
         estimates.append(
             LeptonBackgroundEstimate(

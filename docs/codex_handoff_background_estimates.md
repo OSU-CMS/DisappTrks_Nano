@@ -164,8 +164,9 @@ Definitions:
   control events.
 - `Pveto`: probability from the tag-probe pair categories.
 - `epsilon_trig^lepton`: lepton trigger efficiency. The postprocessor default
-  is `1.0`; pass the AN/legacy value with `--trigger-efficiency` and
-  `--trigger-efficiency-error`.
+  is calculated from the Pveto output trigger-efficiency counters when they are
+  present. `--trigger-efficiency` and `--trigger-efficiency-error` are manual
+  overrides.
 
 `N_ctrl` can also be scaled with `--control-prescale`. This matches the legacy
 MET/lepton-dataset luminosity or prescale correction. The default is `1.0`.
@@ -183,14 +184,16 @@ where `<mode>` is `muon`, `electron`, `tau_mu`, or `tau_ele`, and `{layer}` is
 
 ## Important Legacy Convention For Pveto
 
-For electron and muon backgrounds, the legacy code does not use the direct
-tag-probe ratio for `Pveto`. It uses:
+For the 2022/2023 background scripts, the legacy code uses the histogram-based
+branch for `Pveto`:
 
 ```text
-Pveto = N_pass / (2*N_total - N_pass)
+Pveto = (N_pass_OS - N_pass_SS) / (N_total_OS - N_total_SS)
 ```
 
-after same-sign subtraction.
+The electron/muon two-lepton denominator,
+`N_pass / (2*N_total - N_pass)`, appears only in the older non-histogram
+fallback branch.
 
 Reference:
 
@@ -208,11 +211,18 @@ else:
     eff = scaledPasses / total
 ```
 
-Tau uses the direct `N_pass / N_total` branch.
+For the 2022/2023 scripts, `_useHistogramsForPpassVeto=True` by default, so
+electron, muon, and tau all use the direct histogram-branch ratio after
+same-sign subtraction:
+
+```text
+Pveto = (N_pass_OS - N_pass_SS) / (N_total_OS - N_total_SS)
+```
+
+The two-lepton denominator is only for the older non-histogram fallback branch.
 
 Nano implements this in `src/disapptrks/lepton_backgrounds.py` via
-`pveto_count_from_pair_counts(..., use_two_lepton_denominator=True)` for
-electron/muon flavors.
+`pveto_count_from_pair_counts(...)`.
 
 ## Poffline/Pmiss Control Selection
 
@@ -246,10 +256,21 @@ legacy `ElectronTagPt55` and `MuonTagPt55` control channels include
 pocket_coffea/workflow.py::_store_lepton_background_controls
 ```
 
-The offline event uses:
+The control denominator mirrors the legacy `ElectronTagPt55`, `MuonTagPt55`,
+and `TauTagPt55` event-side baseline:
 
 - event quality: golden JSON, MET filters, jet-veto map
 - at least one tag
+- at least one jet with `pt > 110 GeV`, `|eta| < 2.4`, and tight-lepton-veto ID
+- maximum dijet delta phi `< 2.5`
+
+It intentionally does not include ordinary `MetNoMu > 120` or ordinary
+`deltaPhi(MetNoMu, leading jet) > 0.5`; the legacy code applies the
+lepton-removed MET and delta-phi requirements through the Poffline/Pmiss
+histogram integrals.
+
+The offline numerator adds:
+
 - MET-no-mu-minus-selected-lepton `pt >= 120 GeV`
 - leading-jet delta phi to that MET direction `>= 0.5`
 
@@ -263,6 +284,8 @@ New outputs from the `*_pmiss_poffline` modes also store the histograms needed
 to reproduce the legacy integration:
 
 ```text
+n<Prefix>BackgroundMetNoMuPt_{layer}
+n<Prefix>BackgroundMetNoMuPtTrig_{layer}
 n<Prefix>BackgroundMetMinusOnePt_{layer}
 n<Prefix>BackgroundMetMinusOnePtTrig_{layer}
 n<Prefix>BackgroundDeltaPhiMetJetLeadingVsMetMinusOnePt_{layer}
@@ -271,10 +294,10 @@ n<Prefix>BackgroundDeltaPhiMetJetLeadingVsMetMinusOnePt_{layer}
 where `<Prefix>` is `Muon`, `Electron`, `TauMu`, or `TauEle`.
 
 The postprocessor uses these histograms automatically when present. It builds a
-MET-trigger turn-on from the first two histograms, weights the 2D
-lepton-removed MET versus delta-phi histogram, and integrates the region above
-`--met-cut` and `--phi-cut`. If the histograms are missing, it falls back to
-the older scalar cutflow ratios and prints `met_method=cutflow-ratio`.
+MET-trigger turn-on from ordinary no-muon MET, weights the 2D lepton-removed MET
+versus delta-phi histogram, and integrates the region above `--met-cut` and
+`--phi-cut`. If the histograms are missing, it falls back to the older scalar
+cutflow ratios and prints `met_method=cutflow-ratio`.
 
 After changing this code, rerun the relevant `*_pmiss_poffline` jobs. Existing
 Pveto outputs can be reused.
@@ -282,7 +305,18 @@ Pveto outputs can be reused.
 For 2022 electrons, the legacy script calls `useFilesForTriggerEfficiency()`
 unless the flat trigger-efficiency option is enabled. The flat fallback in that
 script is `0.840 +/- 0.005`, but the file-derived value is the nominal AN-style
-choice.
+choice. Nano now calculates the file-derived equivalent from:
+
+```text
+n<Prefix>TriggerEffProbesPT55
+n<Prefix>TriggerEffProbesSSPT55
+n<Prefix>TriggerEffProbesFiringTrigger
+n<Prefix>TriggerEffSSProbesFiringTrigger
+```
+
+using `(passes_OS - passes_SS) / (total_OS - total_SS)`. If the postprocessor
+prints `trigger_efficiency_method=default`, rerun the relevant Pveto job with
+current code.
 
 ## Typical Commands
 
@@ -329,8 +363,6 @@ cd DisappTrks_Nano
 disapptrks estimate-lepton-background \
   --mode electron \
   --run-period 2022CD \
-  --trigger-efficiency <epsilon> \
-  --trigger-efficiency-error <epsilon_error> \
   --output-json tables/electron_background_2022CD.json \
   --output-tex tables/electron_background_2022CD.tex \
   pocket_coffea/analysis_output/2022CD_electron_pveto/output_*.coffea \
@@ -381,7 +413,7 @@ If the fiducial map seems to have no effect:
 If electron 2022CD numbers do not match AN Table 28:
 
 - Check the `Pveto` convention first:
-  electron/muon should use `N_pass/(2*N_total - N_pass)` after SS subtraction.
+  2022/2023 should use the direct histogram-branch OS-minus-SS ratio.
 - Check that the Poffline/Pmiss control track includes `dR(track, jet) > 0.5`.
 - Check the legacy prescale/luminosity factor:
   `MET lumi / EGamma lumi` is used in legacy 2022 electron estimates.

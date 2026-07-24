@@ -37,6 +37,7 @@ from .fiducial import (
 from .lepton_backgrounds import (
     estimate_lepton_background,
     legacy_met_probabilities_from_outputs,
+    trigger_efficiency_from_counts,
     write_lepton_background_json,
     write_lepton_background_latex,
 )
@@ -179,6 +180,40 @@ def _sum_pair_count_maps(
         }
         for layer in layers
     }
+
+
+def _trigger_efficiency_from_outputs(
+    outputs: list[dict],
+    *,
+    prefix: str,
+    dataset: str | None = None,
+    sample: str | None = None,
+) -> Count | None:
+    variables = {
+        "total_os": f"n{prefix}TriggerEffProbesPT55",
+        "total_ss": f"n{prefix}TriggerEffProbesSSPT55",
+        "passes_os": f"n{prefix}TriggerEffProbesFiringTrigger",
+        "passes_ss": f"n{prefix}TriggerEffSSProbesFiringTrigger",
+    }
+    if not any(
+        variable in output.get("variables", {})
+        for output in outputs
+        for variable in variables.values()
+    ):
+        return None
+    counts = {}
+    for key, variable in variables.items():
+        value = sum(
+            variable_count_sum(
+                output.get("variables", {}),
+                variable,
+                dataset=dataset,
+                sample=sample,
+            )
+            for output in outputs
+        )
+        counts[key] = Count(value, value)
+    return trigger_efficiency_from_counts(**counts)
 
 
 LEPTON_PVETO_PAIR_VARIABLES = {
@@ -845,6 +880,24 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         met_cut=args.met_cut,
         phi_cut=args.phi_cut,
     )
+    if args.trigger_efficiency is None:
+        trigger_efficiency = _trigger_efficiency_from_outputs(
+            outputs,
+            prefix=prefix,
+            dataset=args.dataset,
+            sample=args.sample,
+        )
+        trigger_efficiency_method = (
+            "tag-probe" if trigger_efficiency is not None else "default"
+        )
+        if trigger_efficiency is None:
+            trigger_efficiency = Count(1.0, 0.0)
+    else:
+        trigger_efficiency = Count(
+            args.trigger_efficiency,
+            args.trigger_efficiency_error * args.trigger_efficiency_error,
+        )
+        trigger_efficiency_method = "manual"
 
     estimates = estimate_lepton_background(
         flavor=flavor,
@@ -857,10 +910,7 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         pmiss_numerator_category=pmiss_numerator_category,
         pmiss_denominator_category=pmiss_denominator_category,
         control_prescale=args.control_prescale,
-        trigger_efficiency=Count(
-            args.trigger_efficiency,
-            args.trigger_efficiency_error * args.trigger_efficiency_error,
-        ),
+        trigger_efficiency=trigger_efficiency,
         met_probabilities=met_probabilities,
         dataset=args.dataset,
         sample=args.sample,
@@ -892,6 +942,7 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
             f"P_offline={estimate.p_offline.value:.6g}, "
             f"P_miss={estimate.p_miss.value:.6g}, "
             f"trigger_efficiency={estimate.trigger_efficiency.value:.6g}, "
+            f"trigger_efficiency_method={trigger_efficiency_method}, "
             f"met_method={met_method})"
         )
     return 0
@@ -1343,10 +1394,10 @@ def main():
     lepton_background.add_argument(
         "--trigger-efficiency",
         type=float,
-        default=1.0,
         help=(
-            "Lepton trigger efficiency epsilon_trig^ell. N_lepton is divided by "
-            "this value. Defaults to 1.0 for backward-compatible output."
+            "Manual lepton trigger-efficiency override. By default the value "
+            "is calculated from tag-probe trigger-matching counters when available; "
+            "old outputs without those counters use 1.0."
         ),
     )
     lepton_background.add_argument(

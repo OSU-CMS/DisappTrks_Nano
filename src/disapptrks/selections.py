@@ -60,6 +60,16 @@ def isomu24_trigger_object_mask(
     )
 
 
+def single_electron_trigger_object_mask(
+    trigobjs,
+    *,
+    wptight_bit: int = 1 << 3,
+):
+    """NanoAOD trigger objects corresponding to the tight SingleElectron leg."""
+
+    return (trigobjs.id == 11) & ((trigobjs.filterBits & wptight_bit) != 0)
+
+
 def add_muon_derived_fields(events, *, trigger_match_dr: float = 0.3):
     """Attach muon quantities needed for the tag-and-probe selections."""
     import awkward as ak
@@ -164,6 +174,36 @@ def single_electron_trigger_mask(events):
         if "HLT" in events.fields and name in events.HLT.fields:
             mask = events.HLT[name] if mask is None else (mask | events.HLT[name])
     return mask if mask is not None else _event_bool_like(events, False)
+
+
+def trigger_matched_track_mask(
+    events,
+    tracks,
+    *,
+    flavor: str,
+    trigger_match_dr: float = 0.3,
+):
+    """Return probe tracks matched to the lepton trigger object."""
+
+    import awkward as ak
+
+    if flavor in ("muon", "tau_mu"):
+        trigger_objects = events.TrigObj[isomu24_trigger_object_mask(events.TrigObj)]
+        event_trigger = (
+            events.HLT.IsoMu24
+            if "HLT" in events.fields and "IsoMu24" in events.HLT.fields
+            else _event_bool_like(events, False)
+        )
+    elif flavor in ("electron", "tau_ele"):
+        trigger_objects = events.TrigObj[
+            single_electron_trigger_object_mask(events.TrigObj)
+        ]
+        event_trigger = single_electron_trigger_mask(events)
+    else:
+        raise ValueError(f"unknown lepton trigger flavor: {flavor}")
+
+    d_r_min = minimum_delta_r(tracks, trigger_objects)
+    return event_trigger & (d_r_min >= 0.0) & (d_r_min < trigger_match_dr)
 
 
 def electron_tag_progression_masks(
@@ -819,6 +859,9 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
     d_r_min_loose_muon = (
         probe.dRMinLooseMuon if "dRMinLooseMuon" in probe.fields else probe.dRMinMuon
     )
+    probe_fires_trigger = (
+        probe.firesTrigger if "firesTrigger" in probe.fields else probe.pt > 1.0e12
+    )
     return ak.zip(
         {
             "mass": mass,
@@ -843,6 +886,7 @@ def build_muon_veto_tag_probe_pairs(tags, probes):
                 ((probe.dRMinMuon < 0.0) | (probe.dRMinMuon > 0.15))
                 & (probe.missingOuterHits >= 3)
             ),
+            "probe_firesTrigger": probe_fires_trigger,
         }
     )
 
@@ -863,6 +907,9 @@ def build_lepton_veto_tag_probe_pairs(
         probe.dRMinVetoElectron
         if "dRMinVetoElectron" in probe.fields
         else probe.dRMinElectron
+    )
+    probe_fires_trigger = (
+        probe.firesTrigger if "firesTrigger" in probe.fields else probe.pt > 1.0e12
     )
     return ak.zip(
         {
@@ -903,6 +950,7 @@ def build_lepton_veto_tag_probe_pairs(
                 & (probe.caloEnergy < 10.0)
                 & (probe.missingOuterHits >= 3)
             ),
+            "probe_firesTrigger": probe_fires_trigger,
         }
     )
 

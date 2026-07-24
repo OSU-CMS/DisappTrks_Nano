@@ -6,6 +6,7 @@ from disapptrks.fake_tracks import Count
 from disapptrks.lepton_backgrounds import (
     estimate_lepton_background,
     legacy_met_probabilities_from_outputs,
+    trigger_efficiency_from_counts,
     write_lepton_background_json,
     write_lepton_background_latex,
 )
@@ -54,11 +55,11 @@ def test_estimate_lepton_background_uses_an_product():
     )
 
     estimate = estimates[0]
-    assert estimate.p_veto.value == 4.0 / 76.0
+    assert estimate.p_veto.value == 4.0 / 40.0
     assert estimate.p_offline.value == 0.25
     assert estimate.p_miss.value == 0.8
     assert estimate.p_trigger.value == 0.8
-    assert estimate.estimate.value == 100.0 * (4.0 / 76.0) * 0.25 * 0.8
+    assert estimate.estimate.value == 100.0 * (4.0 / 40.0) * 0.25 * 0.8
 
 
 def test_estimate_lepton_background_applies_control_prescale_and_trigger_efficiency():
@@ -91,7 +92,18 @@ def test_estimate_lepton_background_applies_control_prescale_and_trigger_efficie
     assert estimate.control_raw.value == 100.0
     assert estimate.control.value == 200.0
     assert estimate.trigger_efficiency.value == 0.5
-    assert estimate.estimate.value == 200.0 * (4.0 / 76.0) * 0.25 * 0.8 / 0.5
+    assert estimate.estimate.value == 200.0 * (4.0 / 40.0) * 0.25 * 0.8 / 0.5
+
+
+def test_trigger_efficiency_uses_same_sign_subtraction():
+    efficiency = trigger_efficiency_from_counts(
+        total_os=Count(100.0, 100.0),
+        total_ss=Count(20.0, 20.0),
+        passes_os=Count(70.0, 70.0),
+        passes_ss=Count(10.0, 10.0),
+    )
+
+    assert efficiency.value == 60.0 / 80.0
 
 
 def test_legacy_met_probabilities_integrate_trigger_turn_on():
@@ -140,6 +152,49 @@ def test_legacy_met_probabilities_integrate_trigger_turn_on():
     poffline, pmiss = probabilities["NLayers4"]
     assert poffline.value == 6.0 / 40.0
     assert pmiss.value == 0.5
+
+
+def test_legacy_met_probabilities_prefer_met_no_mu_turn_on():
+    met_edges = [0.0, 120.0, 240.0]
+    phi_edges = [0.0, 0.5, 1.0]
+    output = {
+        "variables": {
+            "nElectronBackgroundMetNoMuPt_NLayers4": {
+                "sample": {"dataset": FakeHist([10.0, 20.0], [FakeAxis("met", met_edges)])}
+            },
+            "nElectronBackgroundMetNoMuPtTrig_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 5.0], [FakeAxis("met", met_edges)])}
+            },
+            "nElectronBackgroundMetMinusOnePt_NLayers4": {
+                "sample": {"dataset": FakeHist([10.0, 20.0], [FakeAxis("met", met_edges)])}
+            },
+            "nElectronBackgroundMetMinusOnePtTrig_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 20.0], [FakeAxis("met", met_edges)])}
+            },
+            "nElectronBackgroundDeltaPhiMetJetLeadingVsMetMinusOnePt_NLayers4": {
+                "sample": {
+                    "dataset": FakeHist(
+                        [[5.0, 5.0], [4.0, 8.0]],
+                        [FakeAxis("met", met_edges), FakeAxis("dphi", phi_edges)],
+                    )
+                }
+            },
+        }
+    }
+
+    probabilities = legacy_met_probabilities_from_outputs(
+        [output],
+        prefix="Electron",
+        layers=["NLayers4"],
+        control_counts={"NLayers4": Count(40.0, 40.0)},
+        dataset="dataset",
+        sample="sample",
+        met_cut=120.0,
+        phi_cut=0.5,
+    )
+
+    _, pmiss = probabilities["NLayers4"]
+    assert pmiss.value == 0.25
 
 
 def test_write_lepton_background_outputs(tmp_path: Path):
