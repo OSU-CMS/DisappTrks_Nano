@@ -154,10 +154,29 @@ def _fiducial_map_path(flavor: str) -> Path | None:
 def _load_fiducial_hot_spots(flavor: str) -> tuple[dict[str, float], ...]:
     path = _fiducial_map_path(flavor)
     if path is None:
+        if os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            raise FileNotFoundError(
+                f"No fiducial-map path configured for {flavor}. Set "
+                f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON or "
+                "DISAPPTRKS_FIDUCIAL_MAP_DIR."
+            )
         return ()
     with path.open() as handle:
         payload = json.load(handle)
-    return tuple(payload.get("hot_spots", ()))
+    hot_spots = tuple(payload.get("hot_spots", ()))
+    if (
+        not hot_spots
+        and os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower()
+        in ("1", "true", "yes", "on")
+    ):
+        raise ValueError(f"Fiducial map {path} has no hot spots")
+    print(f"Loaded {len(hot_spots)} {flavor} fiducial-map hot spot(s) from {path}")
+    return hot_spots
 
 
 def _outside_fiducial_hot_spots(pairs, hot_spots):
@@ -808,6 +827,9 @@ class DisappTrksProcessor(BaseProcessorABC):
     def _lepton_fiducial_hot_spots(self):
         return self._fiducial_hot_spots("electron") + self._fiducial_hot_spots("muon")
 
+    def _event_int_like(self, value):
+        return ak.ones_like(self.events.event, dtype=np.int64) * int(value)
+
     def _apply_lepton_fiducial_maps_to_track_cutflow(self, masks):
         fiducial_hot_spots = self._lepton_fiducial_hot_spots()
         fiducial_map_mask = None
@@ -1031,11 +1053,22 @@ class DisappTrksProcessor(BaseProcessorABC):
             muon_veto_pairs = build_muon_veto_tag_probe_pairs(
                 self.events.MuonTag, self.events.MuonVetoProbeTrack
             )
-            muon_pveto_pass_mask = muon_pveto_pair_pass_mask(
+            lepton_fiducial_hot_spots = self._lepton_fiducial_hot_spots()
+            muon_pveto_pass_no_fiducial_mask = muon_pveto_pair_pass_mask(
                 muon_veto_pairs
-            ) & _outside_fiducial_hot_spots(
+            )
+            outside_fiducial_map_mask = _outside_fiducial_hot_spots(
                 muon_veto_pairs,
-                self._lepton_fiducial_hot_spots(),
+                lepton_fiducial_hot_spots,
+            )
+            muon_pveto_pass_mask = (
+                muon_pveto_pass_no_fiducial_mask & outside_fiducial_map_mask
+            )
+            self.events["nElectronFiducialHotSpotsLoaded"] = self._event_int_like(
+                len(self._fiducial_hot_spots("electron"))
+            )
+            self.events["nMuonFiducialHotSpotsLoaded"] = self._event_int_like(
+                len(self._fiducial_hot_spots("muon"))
             )
             self.events["MuonVetoTagProbePair"] = muon_veto_pairs
             self.events["MuonVetoTagProbePairOS"] = muon_veto_pairs[
@@ -1071,6 +1104,19 @@ class DisappTrksProcessor(BaseProcessorABC):
                 os_z_window_muon_probe_pair_mask(muon_veto_pairs)
                 & muon_pveto_pass_mask
             ]
+            self.events["MuonPVetoTagProbePairZWindowPassNoFiducial"] = (
+                muon_veto_pairs[
+                    os_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                    & muon_pveto_pass_no_fiducial_mask
+                ]
+            )
+            self.events["MuonPVetoTagProbePairZWindowFiducialRejected"] = (
+                muon_veto_pairs[
+                    os_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                    & muon_pveto_pass_no_fiducial_mask
+                    & ~outside_fiducial_map_mask
+                ]
+            )
             self.events["MuonVetoTagProbePairSSZWindow"] = muon_veto_pairs[
                 ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
             ]
@@ -1086,6 +1132,19 @@ class DisappTrksProcessor(BaseProcessorABC):
                 ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
                 & muon_pveto_pass_mask
             ]
+            self.events["MuonPVetoTagProbePairSSZWindowPassNoFiducial"] = (
+                muon_veto_pairs[
+                    ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                    & muon_pveto_pass_no_fiducial_mask
+                ]
+            )
+            self.events["MuonPVetoTagProbePairSSZWindowFiducialRejected"] = (
+                muon_veto_pairs[
+                    ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                    & muon_pveto_pass_no_fiducial_mask
+                    & ~outside_fiducial_map_mask
+                ]
+            )
             for layer in PVETO_LAYERS:
                 layer_mask = muon_probe_pair_layer_mask(muon_veto_pairs, layer)
                 self.events[f"MuonVetoTagProbePairZWindow_{layer}"] = muon_veto_pairs[
@@ -1311,6 +1370,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["nMuonPVetoTagProbePairZWindowPass"] = ak.num(
             self.events.MuonPVetoTagProbePairZWindowPass
         )
+        self.events["nMuonPVetoTagProbePairZWindowPassNoFiducial"] = ak.num(
+            self.events.MuonPVetoTagProbePairZWindowPassNoFiducial
+        )
+        self.events["nMuonPVetoTagProbePairZWindowFiducialRejected"] = ak.num(
+            self.events.MuonPVetoTagProbePairZWindowFiducialRejected
+        )
         self.events["nMuonVetoTagProbePairSSZWindow"] = ak.num(
             self.events.MuonVetoTagProbePairSSZWindow
         )
@@ -1322,6 +1387,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         )
         self.events["nMuonPVetoTagProbePairSSZWindowPass"] = ak.num(
             self.events.MuonPVetoTagProbePairSSZWindowPass
+        )
+        self.events["nMuonPVetoTagProbePairSSZWindowPassNoFiducial"] = ak.num(
+            self.events.MuonPVetoTagProbePairSSZWindowPassNoFiducial
+        )
+        self.events["nMuonPVetoTagProbePairSSZWindowFiducialRejected"] = ak.num(
+            self.events.MuonPVetoTagProbePairSSZWindowFiducialRejected
         )
         for layer in PVETO_LAYERS:
             self.events[f"nMuonVetoTagProbePairZWindow_{layer}"] = ak.num(

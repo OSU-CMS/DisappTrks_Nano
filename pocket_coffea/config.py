@@ -854,6 +854,30 @@ cfg = Configurator(
                 )
             ]
         ),
+        "nMuonPVetoTagProbePairZWindowPassNoFiducial": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonPVetoTagProbePairZWindowPassNoFiducial",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(OS Z-window muon Pveto numerator before fiducial maps)",
+                )
+            ]
+        ),
+        "nMuonPVetoTagProbePairZWindowFiducialRejected": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonPVetoTagProbePairZWindowFiducialRejected",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(OS Z-window muon Pveto numerator rejected by fiducial maps)",
+                )
+            ]
+        ),
         "nMuonVetoTagProbePairSSZWindow": HistConf(
             [
                 Axis(
@@ -899,6 +923,54 @@ cfg = Configurator(
                     start=0,
                     stop=10,
                     label="N(SS Z-window pairs passing muon Pveto numerator)",
+                )
+            ]
+        ),
+        "nMuonPVetoTagProbePairSSZWindowPassNoFiducial": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonPVetoTagProbePairSSZWindowPassNoFiducial",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(SS Z-window muon Pveto numerator before fiducial maps)",
+                )
+            ]
+        ),
+        "nMuonPVetoTagProbePairSSZWindowFiducialRejected": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonPVetoTagProbePairSSZWindowFiducialRejected",
+                    bins=10,
+                    start=0,
+                    stop=10,
+                    label="N(SS Z-window muon Pveto numerator rejected by fiducial maps)",
+                )
+            ]
+        ),
+        "nElectronFiducialHotSpotsLoaded": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nElectronFiducialHotSpotsLoaded",
+                    bins=100,
+                    start=0,
+                    stop=100,
+                    label="N(electron fiducial-map hot spots loaded)",
+                )
+            ]
+        ),
+        "nMuonFiducialHotSpotsLoaded": HistConf(
+            [
+                Axis(
+                    coll="events",
+                    field="nMuonFiducialHotSpotsLoaded",
+                    bins=100,
+                    start=0,
+                    stop=100,
+                    label="N(muon fiducial-map hot spots loaded)",
                 )
             ]
         ),

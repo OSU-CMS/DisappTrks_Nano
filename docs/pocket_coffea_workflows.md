@@ -204,6 +204,26 @@ muon Pveto pair pass mask AND probe is outside all lepton fiducial hot spots
 
 If no fiducial-map path is set, no hot spots are applied.
 
+For production checks, set:
+
+```bash
+DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS=1
+```
+
+This makes the job fail if either the electron or muon fiducial-map JSON is not
+configured, not readable by the worker, or contains no hot spots. Muon Pveto
+outputs also include diagnostic variables:
+
+- `nElectronFiducialHotSpotsLoaded`
+- `nMuonFiducialHotSpotsLoaded`
+- `nMuonPVetoTagProbePairZWindowPassNoFiducial`
+- `nMuonPVetoTagProbePairZWindowFiducialRejected`
+- `nMuonPVetoTagProbePairSSZWindowPassNoFiducial`
+- `nMuonPVetoTagProbePairSSZWindowFiducialRejected`
+
+Use these to verify that the maps were loaded and that they actually overlap
+the Z-window numerator probes.
+
 ### Output Categories
 
 The most important muon Pveto categories are:
