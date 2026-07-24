@@ -282,6 +282,7 @@ Run from `DisappTrks_Nano/pocket_coffea` inside the LPC `./shell` environment:
 ```bash
 DISAPPTRKS_CATEGORY_MODE=muon_pveto \
 DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1 \
+DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS=0 \
 DISAPPTRKS_DATASET_JSON=datasets/eos_2022CD_Muon.json \
 DISAPPTRKS_FIDUCIAL_MAP_DIR=/path/to/fiducial_maps/2022CD \
 python -m pocket_coffea.scripts.runner run \
@@ -328,6 +329,7 @@ relationship remains obvious.
 | `DISAPPTRKS_DATASET_YEAR` | Optional year override, e.g. `2022_preEE`. Usually inferred from metadata. |
 | `DISAPPTRKS_CATEGORY_MODE` | Workflow/category mode. Default is `muon_pveto`. |
 | `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES` | Adds Poffline/Pmiss control categories. |
+| `DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS` | Adds detailed Pveto cutflow diagnostic categories. Leave off for production Pmiss/Poffline runs unless you need the diagnostic tables. |
 | `DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS` | Adds detailed search/cutflow diagnostic categories. |
 | `DISAPPTRKS_FAKE_TRACK_CONTROL` | Fake-track control choice: `basic`, `zmumu`, or `zee`. |
 | `DISAPPTRKS_FIDUCIAL_MAP_DIR` | Directory containing `electron_fiducial_map.json` and `muon_fiducial_map.json`. |

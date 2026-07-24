@@ -230,6 +230,9 @@ enable_search_diagnostics = os.environ.get(
 enable_lepton_background_categories = os.environ.get(
     "DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES", ""
 ).lower() in ("1", "true", "yes", "on")
+enable_pveto_diagnostics = os.environ.get(
+    "DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS", ""
+).lower() in ("1", "true", "yes", "on")
 category_mode = os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
 fake_track_control_mode = os.environ.get("DISAPPTRKS_FAKE_TRACK_CONTROL", "basic").lower()
 if fake_track_control_mode in ("jetmet", "basic_selection"):
@@ -247,6 +250,7 @@ parameters["disapptrks"] = {
     "full_variables": os.environ.get("DISAPPTRKS_FULL_VARIABLES", "").lower()
     in ("1", "true", "yes", "on"),
     "search_diagnostics": enable_search_diagnostics,
+    "pveto_diagnostics": enable_pveto_diagnostics,
 }
 data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 
@@ -314,17 +318,28 @@ lepton_background_categories = {
     name: [cut] for name, cut in lepton_background_cuts.items()
 }
 fake_track_categories = {name: [cut] for name, cut in fake_track_cuts.items()}
-muon_table16_categories = {
-    f"muon_table16_{name}": [cut] for name, cut in muon_table16_cuts.items()
-}
-electron_pveto_diagnostic_categories = {
-    f"electron_pveto_diag_{name}": [cut]
-    for name, cut in electron_pveto_diagnostic_cuts.items()
-}
-tau_pveto_diagnostic_categories = {
-    f"tau_pveto_diag_{name}": [cut]
-    for name, cut in tau_pveto_diagnostic_cuts.items()
-}
+include_pveto_diagnostics = enable_pveto_diagnostics or category_mode == "all"
+muon_table16_categories = (
+    {f"muon_table16_{name}": [cut] for name, cut in muon_table16_cuts.items()}
+    if include_pveto_diagnostics
+    else {}
+)
+electron_pveto_diagnostic_categories = (
+    {
+        f"electron_pveto_diag_{name}": [cut]
+        for name, cut in electron_pveto_diagnostic_cuts.items()
+    }
+    if include_pveto_diagnostics
+    else {}
+)
+tau_pveto_diagnostic_categories = (
+    {
+        f"tau_pveto_diag_{name}": [cut]
+        for name, cut in tau_pveto_diagnostic_cuts.items()
+    }
+    if include_pveto_diagnostics
+    else {}
+)
 
 common_categories = {
     "inclusive": [passthrough],
