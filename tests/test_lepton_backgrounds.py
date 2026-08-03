@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
+from disapptrks.cli import _lepton_background_outputs, _trigger_efficiency_from_outputs
 from disapptrks.fake_tracks import Count
 from disapptrks.lepton_backgrounds import (
     estimate_lepton_background,
@@ -95,6 +96,41 @@ def test_estimate_lepton_background_applies_control_prescale_and_trigger_efficie
     assert estimate.estimate.value == 200.0 * (4.0 / 40.0) * 0.25 * 0.8 / 0.5
 
 
+def test_estimate_lepton_background_accepts_layer_trigger_efficiencies():
+    pair_counts = {
+        "NLayers4": {"den_os": 50.0, "num_os": 5.0, "den_ss": 10.0, "num_ss": 1.0},
+        "NLayers5": {"den_os": 50.0, "num_os": 5.0, "den_ss": 10.0, "num_ss": 1.0},
+    }
+    counts = {
+        "control_NLayers4": 100.0,
+        "offline_NLayers4": 25.0,
+        "trigger_NLayers4": 20.0,
+        "control_NLayers5": 100.0,
+        "offline_NLayers5": 25.0,
+        "trigger_NLayers5": 20.0,
+    }
+
+    estimates = estimate_lepton_background(
+        flavor=r"$e$",
+        layers=["NLayers4", "NLayers5"],
+        pair_counts=pair_counts,
+        counts=counts,
+        control_category="control_{layer}",
+        poffline_numerator_category="offline_{layer}",
+        poffline_denominator_category="control_{layer}",
+        pmiss_numerator_category="trigger_{layer}",
+        pmiss_denominator_category="offline_{layer}",
+        trigger_efficiency={
+            "NLayers4": Count(0.5, 0.0),
+            "NLayers5": Count(1.0, 0.0),
+        },
+    )
+
+    assert estimates[0].trigger_efficiency.value == 0.5
+    assert estimates[1].trigger_efficiency.value == 1.0
+    assert estimates[0].estimate.value == 2.0 * estimates[1].estimate.value
+
+
 def test_trigger_efficiency_uses_same_sign_subtraction():
     efficiency = trigger_efficiency_from_counts(
         total_os=Count(100.0, 100.0),
@@ -104,6 +140,48 @@ def test_trigger_efficiency_uses_same_sign_subtraction():
     )
 
     assert efficiency.value == 60.0 / 80.0
+
+
+def test_trigger_efficiency_from_outputs_uses_legacy_counters():
+    output = {
+        "variables": {
+            "nElectronTriggerEffProbesPT55_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 100.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nElectronTriggerEffProbesSSPT55_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 20.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nElectronTriggerEffProbesFiringTrigger_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 70.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nElectronTriggerEffSSProbesFiringTrigger_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 10.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nElectronTriggerEffProbesPT55_NLayers5": {
+                "sample": {"dataset": FakeHist([0.0, 50.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nElectronTriggerEffProbesSSPT55_NLayers5": {
+                "sample": {"dataset": FakeHist([0.0, 10.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nElectronTriggerEffProbesFiringTrigger_NLayers5": {
+                "sample": {"dataset": FakeHist([0.0, 30.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nElectronTriggerEffSSProbesFiringTrigger_NLayers5": {
+                "sample": {"dataset": FakeHist([0.0, 2.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+        }
+    }
+
+    efficiencies = _trigger_efficiency_from_outputs(
+        [output],
+        prefix="Electron",
+        layers=["NLayers4", "NLayers5"],
+        dataset="dataset",
+        sample="sample",
+    )
+
+    assert efficiencies["NLayers4"].value == 60.0 / 80.0
+    assert efficiencies["NLayers5"].value == 28.0 / 40.0
 
 
 def test_legacy_met_probabilities_integrate_trigger_turn_on():
@@ -195,6 +273,28 @@ def test_legacy_met_probabilities_prefer_met_no_mu_turn_on():
 
     _, pmiss = probabilities["NLayers4"]
     assert pmiss.value == 0.25
+
+
+def test_lepton_background_outputs_ignore_pveto_duplicates():
+    pveto_output = {
+        "cutflow": {},
+        "variables": {
+            "nElectronTagProbePairMassWindow_NLayers4": {},
+            "nElectronBackgroundMetNoMuPt_NLayers4": {},
+        },
+    }
+    dedicated_output = {
+        "cutflow": {},
+        "variables": {
+            "nElectronBackgroundMetNoMuPt_NLayers4": {},
+            "nElectronBackgroundDeltaPhiMetJetLeadingVsMetMinusOnePt_NLayers4": {},
+        },
+    }
+
+    assert _lepton_background_outputs(
+        [pveto_output, dedicated_output],
+        prefix="Electron",
+    ) == [dedicated_output]
 
 
 def test_write_lepton_background_outputs(tmp_path: Path):

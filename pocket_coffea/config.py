@@ -251,6 +251,7 @@ parameters["disapptrks"] = {
     in ("1", "true", "yes", "on"),
     "search_diagnostics": enable_search_diagnostics,
     "pveto_diagnostics": enable_pveto_diagnostics,
+    "lepton_background_categories": enable_lepton_background_categories,
 }
 data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 
@@ -617,11 +618,24 @@ def _variables_for_mode(mode, variables):
     prefixes = prefixes_by_mode.get(mode)
     if prefixes is None:
         return variables
-    return {
+    selected = {
         name: variable
         for name, variable in variables.items()
         if any(name.startswith(prefix) for prefix in prefixes)
     }
+    pveto_background_prefixes = {
+        "muon_pveto": ("nMuonBackground",),
+        "electron_pveto": ("nElectronBackground",),
+        "tau_mu_pveto": ("nTauMuBackground",),
+        "tau_ele_pveto": ("nTauEleBackground",),
+    }.get(mode, ())
+    if pveto_background_prefixes and not enable_lepton_background_categories:
+        selected = {
+            name: variable
+            for name, variable in selected.items()
+            if not any(name.startswith(prefix) for prefix in pveto_background_prefixes)
+        }
+    return selected
 
 
 lepton_pair_count_variables = {}
@@ -677,6 +691,22 @@ for prefix, label in (
     for layer in pveto_layers:
         lepton_pair_count_variables.update(
             {
+                f"n{prefix}TriggerEffProbesPT55_{layer}": _event_count_hist(
+                    f"n{prefix}TriggerEffProbesPT55_{layer}",
+                    f"N(OS {label} trigger-efficiency probes with pt > 55 GeV, {layer})",
+                ),
+                f"n{prefix}TriggerEffProbesSSPT55_{layer}": _event_count_hist(
+                    f"n{prefix}TriggerEffProbesSSPT55_{layer}",
+                    f"N(SS {label} trigger-efficiency probes with pt > 55 GeV, {layer})",
+                ),
+                f"n{prefix}TriggerEffProbesFiringTrigger_{layer}": _event_count_hist(
+                    f"n{prefix}TriggerEffProbesFiringTrigger_{layer}",
+                    f"N(OS {label} trigger-efficiency probes firing trigger, {layer})",
+                ),
+                f"n{prefix}TriggerEffSSProbesFiringTrigger_{layer}": _event_count_hist(
+                    f"n{prefix}TriggerEffSSProbesFiringTrigger_{layer}",
+                    f"N(SS {label} trigger-efficiency probes firing trigger, {layer})",
+                ),
                 f"n{prefix}TagProbePairMassWindow_{layer}": _event_count_hist(
                     f"n{prefix}TagProbePairMassWindow_{layer}",
                     f"N(OS {label} mass-window pairs, {layer})",
@@ -716,6 +746,27 @@ lepton_pair_count_variables.update(
         ),
     }
 )
+for layer in pveto_layers:
+    lepton_pair_count_variables.update(
+        {
+            f"nMuonTriggerEffProbesPT55_{layer}": _event_count_hist(
+                f"nMuonTriggerEffProbesPT55_{layer}",
+                f"N(OS muon trigger-efficiency probes with pt > 55 GeV, {layer})",
+            ),
+            f"nMuonTriggerEffProbesSSPT55_{layer}": _event_count_hist(
+                f"nMuonTriggerEffProbesSSPT55_{layer}",
+                f"N(SS muon trigger-efficiency probes with pt > 55 GeV, {layer})",
+            ),
+            f"nMuonTriggerEffProbesFiringTrigger_{layer}": _event_count_hist(
+                f"nMuonTriggerEffProbesFiringTrigger_{layer}",
+                f"N(OS muon trigger-efficiency probes firing trigger, {layer})",
+            ),
+            f"nMuonTriggerEffSSProbesFiringTrigger_{layer}": _event_count_hist(
+                f"nMuonTriggerEffSSProbesFiringTrigger_{layer}",
+                f"N(SS muon trigger-efficiency probes firing trigger, {layer})",
+            ),
+        }
+    )
 
 lepton_background_count_variables = {}
 for prefix, label in (

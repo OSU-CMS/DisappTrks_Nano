@@ -42,11 +42,12 @@ DisappTrks Nano/PocketCoffea background-estimate migration.
 The current working baseline has:
 
 - fiducial-map production and loading for electron and muon veto hot spots;
-- dedicated `*_pveto` jobs for `Pveto` and lepton-trigger-efficiency counters;
+- dedicated `*_pveto` jobs for `Pveto` and the legacy epsilon counters;
 - dedicated `*_pmiss_poffline` jobs for legacy-style `Poffline`/`Pmiss`
   histograms;
-- postprocessing that combines the two outputs and calculates
-  `epsilon_trig^lepton` automatically.
+- postprocessing that combines the two outputs and calculates the legacy
+  epsilon divisor from Pveto tag-probe counters. `Pmiss` separately handles the
+  MET-trigger turn-on.
 
 Joyce reports that the latest 2022CD electron `Poffline`/`Pmiss` values look
 much closer to the AN after the current fixes. Continue from this baseline.
@@ -204,22 +205,32 @@ The `dR(track, jet) > 0.5` requirement was added to match the legacy
 - After adding the legacy-style MET integration histograms, rerun the
   `*_pmiss_poffline` jobs again. The postprocessor prints
   `met_method=hist-integrated` when it found and used the new histograms.
+- Older Pveto outputs can contain duplicate `n<Prefix>Background...`
+  Poffline/Pmiss histograms. When such a Pveto output is combined with a
+  dedicated `*_pmiss_poffline` output, the postprocessor now prefers the
+  dedicated background output and ignores the duplicate Pveto-side background
+  histograms for Poffline/Pmiss.
+- New focused Pveto jobs no longer write Poffline/Pmiss background histograms by
+  default. They are only added to Pveto outputs when
+  `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1` is explicitly set.
 - Legacy 2022 electron estimates use a `MET lumi / EGamma lumi` prescale
   factor. Nano postprocessing exposes this as `--control-prescale`; the default
   is `1.0`.
-- Legacy estimates divide by a lepton trigger efficiency. Nano now calculates
-  this from Pveto output trigger-efficiency counters and prints
-  `trigger_efficiency_method=tag-probe`. If it prints
-  `trigger_efficiency_method=default`, rerun the Pveto job with current code.
-  `--trigger-efficiency` and `--trigger-efficiency-error` are manual overrides.
+- The Pveto-output `n<Prefix>TriggerEff...` counters are used to reproduce the
+  legacy `calculateTriggerEfficiencyFile()` epsilon divisor. Do not confuse
+  this with `Pmiss`: `Pmiss` is the MET-trigger turn-on probability from
+  Pmiss/Poffline histograms. Epsilon is layer-specific for `NLayers4`,
+  `NLayers5`, and `NLayers6plus`; `combinedBins` uses the unsuffixed combined
+  counters. `--trigger-efficiency` and `--trigger-efficiency-error` are manual
+  overrides.
 - Legacy `Pmiss` can use trigger-efficiency files via
   `useFilesForTriggerEfficiency()`, rather than a simple event-level MET HLT
   bit. Nano now duplicates this with histogram integration when the new
   Pmiss/Poffline histograms are available.
 - For AN comparisons, the expected postprocessing diagnostics are
-  `trigger_efficiency_method=tag-probe` and `met_method=hist-integrated`.
-  `default` epsilon or `cutflow-ratio` MET means the input files are stale or
-  incomplete for the nominal estimate.
+  `trigger_efficiency_method=legacy-tag-probe` and
+  `met_method=hist-integrated`. `default` epsilon or `cutflow-ratio` MET means
+  the input files are stale or incomplete for the nominal estimate.
 - Do not pass `--trigger-efficiency` for normal production. That option is a
   manual override. Omitting it lets the extractor use the counters from the
   `*_pveto` output.

@@ -140,7 +140,7 @@ def trigger_efficiency_from_counts(
     passes_os: Count,
     passes_ss: Count,
 ) -> Count:
-    """Legacy lepton trigger efficiency with same-sign subtraction."""
+    """Legacy OS-minus-SS trigger-efficiency ratio helper."""
 
     passes = Count(
         passes_os.value - passes_ss.value,
@@ -447,7 +447,7 @@ def estimate_lepton_background(
     ptrigger_numerator_category: str | None = None,
     ptrigger_denominator_category: str | None = None,
     control_prescale: float = 1.0,
-    trigger_efficiency: Count | None = None,
+    trigger_efficiency: Count | Mapping[str, Count] | None = None,
     met_probabilities: Mapping[str, tuple[Count, Count]] | None = None,
     dataset: str | None = None,
     sample: str | None = None,
@@ -520,6 +520,11 @@ def estimate_lepton_background(
             pair_counts.get(layer, {}),
             use_two_lepton_denominator=False,
         )
+        layer_trigger_efficiency = (
+            trigger_efficiency.get(layer, Count(1.0, 0.0))
+            if isinstance(trigger_efficiency, Mapping)
+            else trigger_efficiency
+        )
         estimates.append(
             LeptonBackgroundEstimate(
                 flavor=flavor,
@@ -529,8 +534,12 @@ def estimate_lepton_background(
                 p_veto=p_veto,
                 p_offline=poffline,
                 p_miss=pmiss,
-                trigger_efficiency=trigger_efficiency,
-                estimate=control * p_veto * poffline * pmiss / trigger_efficiency,
+                trigger_efficiency=layer_trigger_efficiency,
+                estimate=control
+                * p_veto
+                * poffline
+                * pmiss
+                / layer_trigger_efficiency,
                 control_category=control_name,
                 poffline_numerator_category=poffline_num_name,
                 poffline_denominator_category=poffline_den_name,

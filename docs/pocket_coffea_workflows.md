@@ -276,14 +276,21 @@ These feed the postprocessing estimate:
 - The scalar categories `background_control`, `background_offline`, and
   `background_trigger` remain available as fallback/debugging counts.
 - `N_lepton = N_ctrl * Pveto * Poffline * Pmiss / epsilon_trig^lepton`.
+  `epsilon_trig^lepton` is the separate legacy trigger-efficiency divisor, not
+  the same quantity as `Pmiss`.
 
 You can still add these categories to a full Pveto job with
 `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier and can
 run into the Coffea `PackedSelection` slot limit when combined with diagnostic
-categories. Keep `DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS=0` for production unless
-you are explicitly debugging a cutflow.
+categories. It also makes it easier to accidentally include duplicate
+Poffline/Pmiss histograms when combining outputs. By default, Pveto modes no
+longer write the `n<Prefix>Background...` histograms; use the dedicated
+`*_pmiss_poffline` modes for production Poffline/Pmiss. Keep
+`DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS=0` for production unless you are explicitly
+debugging a cutflow.
 
-New Pveto outputs also contain the four legacy trigger-efficiency counters:
+Pveto outputs contain the four counters used to reproduce the legacy
+`calculateTriggerEfficiencyFile()` epsilon divisor:
 
 - `n<Prefix>TriggerEffProbesPT55`
 - `n<Prefix>TriggerEffProbesSSPT55`
@@ -292,15 +299,16 @@ New Pveto outputs also contain the four legacy trigger-efficiency counters:
 
 The `estimate-lepton-background` command calculates
 `epsilon_trig^lepton = (passes_OS - passes_SS) / (total_OS - total_SS)` from
-these counters automatically and prints `trigger_efficiency_method=tag-probe`.
-Manual `--trigger-efficiency` and `--trigger-efficiency-error` are now
-overrides for comparisons/debugging. Old Pveto outputs without these counters
-fall back to `epsilon_trig^lepton = 1.0` and print
-`trigger_efficiency_method=default`.
+these counters and prints `trigger_efficiency_method=legacy-tag-probe`.
+Layer rows use the suffixed counters, e.g.
+`n<Prefix>TriggerEffProbesPT55_NLayers4`; `combinedBins` uses the unsuffixed
+combined counters.
+Manual `--trigger-efficiency` and `--trigger-efficiency-error` are explicit
+overrides for comparisons/debugging.
 
-After this change, rerun the relevant Pveto job before comparing the final
-estimate to the AN. The `*_pmiss_poffline` jobs also need to be rerun if they
-were produced before the MET-integration histograms were added.
+After this change, rerun the relevant Pveto job if the `Pveto` pair counts
+changed. The `*_pmiss_poffline` jobs also need to be rerun if they were produced
+before the MET-integration histograms were added.
 
 New `*_pmiss_poffline` outputs also contain the histograms needed to duplicate
 the legacy integration:
@@ -322,13 +330,20 @@ AN. Existing Pveto outputs can still be reused.
 For nominal AN comparisons, the postprocessor should print:
 
 ```text
-trigger_efficiency_method=tag-probe
+trigger_efficiency_method=legacy-tag-probe
 met_method=hist-integrated
 ```
 
-If it prints `trigger_efficiency_method=default`, rerun the relevant `*_pveto`
+If `--trigger-efficiency` was supplied, the method prints `manual` instead. If
+it prints `trigger_efficiency_method=default`, rerun the relevant `*_pveto`
 job with current code. If it prints `met_method=cutflow-ratio`, rerun the
 relevant `*_pmiss_poffline` job with current code.
+
+If older Pveto outputs already contain duplicate `n<Prefix>Background...`
+histograms and are passed together with dedicated `*_pmiss_poffline` outputs,
+the postprocessor now prefers the dedicated Pmiss/Poffline outputs and prints a
+message saying how many files are used for those factors. This avoids summing
+the same Poffline/Pmiss histograms twice.
 
 Postprocess with:
 

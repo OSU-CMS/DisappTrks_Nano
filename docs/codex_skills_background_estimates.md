@@ -153,21 +153,22 @@ Remember:
   prints `met_method=hist-integrated`.
 - If the extractor prints `met_method=cutflow-ratio`, rerun the
   `*_pmiss_poffline` job with current code.
+- If older Pveto outputs also contain `n<Prefix>Background...` histograms, do
+  not sum them with the dedicated Pmiss/Poffline histograms. The extractor now
+  prefers dedicated background-only outputs when both kinds are passed.
 - Current 2022/2023 histogram-based `Pveto` uses the direct OS-minus-SS ratio.
   The electron/muon two-lepton denominator is only for the older non-histogram
   fallback branch in legacy.
-- The estimate is divided by `epsilon_trig^lepton`; the default
-  is calculated from Pveto tag-probe trigger-efficiency counters when available.
-  `--trigger-efficiency` is only a manual override.
-- If the extractor prints `trigger_efficiency_method=default`, rerun the Pveto
-  job with current code.
+- Use the Pveto tag-probe trigger-matching counters for the separate legacy
+  epsilon divisor. The MET-trigger turn-on probability is handled separately by
+  `Pmiss`. `--trigger-efficiency` is only a manual override.
 - Use `--control-prescale` for the legacy MET/lepton-dataset luminosity or
   prescale factor when it is not unity.
 
 Expected nominal diagnostics:
 
 ```text
-trigger_efficiency_method=tag-probe
+trigger_efficiency_method=legacy-tag-probe
 met_method=hist-integrated
 ```
 

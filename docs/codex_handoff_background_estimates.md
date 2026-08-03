@@ -17,7 +17,7 @@ The Nano lepton-background path now implements the pieces needed for the
 AN-style estimate:
 
 - fiducial-map production and loading for electron and muon veto hot spots
-- focused `*_pveto` modes for `Pveto` and lepton-trigger-efficiency counters
+- focused `*_pveto` modes for `Pveto` and the legacy epsilon counters
 - focused `*_pmiss_poffline` modes for `Poffline`/`Pmiss` control histograms
 - postprocessing that uses the legacy-style histogram integrations when those
   histograms are available
@@ -32,7 +32,7 @@ Pmiss/Poffline output together. Do not pass `--trigger-efficiency` unless doing
 an explicit manual-override comparison. The expected successful diagnostics are:
 
 ```text
-trigger_efficiency_method=tag-probe
+trigger_efficiency_method=legacy-tag-probe
 met_method=hist-integrated
 ```
 
@@ -188,10 +188,16 @@ Definitions:
 - `Pmiss`: ratio of MET-trigger-passing control events to offline-MET-passing
   control events.
 - `Pveto`: probability from the tag-probe pair categories.
-- `epsilon_trig^lepton`: lepton trigger efficiency. The postprocessor default
-  is calculated from the Pveto output trigger-efficiency counters when they are
-  present. `--trigger-efficiency` and `--trigger-efficiency-error` are manual
-  overrides.
+- `epsilon_trig^lepton`: separate trigger-efficiency divisor from the legacy
+  `calculateTriggerEfficiencyFile()` path. Nano calculates it from the Pveto
+  output counters `n<Prefix>TriggerEffProbesPT55`,
+  `n<Prefix>TriggerEffProbesSSPT55`,
+  `n<Prefix>TriggerEffProbesFiringTrigger`, and
+  `n<Prefix>TriggerEffSSProbesFiringTrigger`, using the same OS-minus-SS
+  formula as legacy. This is separate from `Pmiss`, which handles the
+  MET-trigger turn-on. For `NLayers4`, `NLayers5`, and `NLayers6plus`, Nano
+  uses the suffixed layer-specific counters; for `combinedBins`, it uses the
+  unsuffixed combined counters.
 
 `N_ctrl` can also be scaled with `--control-prescale`. This matches the legacy
 MET/lepton-dataset luminosity or prescale correction. The default is `1.0`.
@@ -326,33 +332,22 @@ missing, it falls back to the older scalar cutflow ratios and prints
 `met_method=cutflow-ratio`.
 
 After changing this code, rerun the relevant `*_pmiss_poffline` jobs. Existing
-Pveto outputs can be reused.
+Pveto outputs can be reused for `Pveto`, but do not use their
+`n<Prefix>Background...` histograms for Poffline/Pmiss if those histograms are
+also present in the dedicated `*_pmiss_poffline` output. The postprocessor now
+protects against this by preferring background-histogram outputs that do not
+also contain Pveto tag-probe pair histograms.
 
-For 2022 electrons, the legacy script calls `useFilesForTriggerEfficiency()`
-unless the flat trigger-efficiency option is enabled. The flat fallback in that
-script is `0.840 +/- 0.005`, but the file-derived value is the nominal AN-style
-choice. Nano now calculates the file-derived equivalent from:
-
-```text
-n<Prefix>TriggerEffProbesPT55
-n<Prefix>TriggerEffProbesSSPT55
-n<Prefix>TriggerEffProbesFiringTrigger
-n<Prefix>TriggerEffSSProbesFiringTrigger
-```
-
-using `(passes_OS - passes_SS) / (total_OS - total_SS)`. If the postprocessor
-prints `trigger_efficiency_method=default`, rerun the relevant Pveto job with
-current code.
+Pveto outputs contain `n<Prefix>TriggerEff...` counters used to reproduce the
+legacy `calculateTriggerEfficiencyFile()` epsilon divisor. This is not the same
+quantity as `Pmiss`: `Pmiss` is the MET-trigger turn-on probability from the
+Pmiss/Poffline histograms.
 
 Quick output sanity check:
 
 ```bash
 python - <<'PY'
 from coffea.util import load
-out = load("pocket_coffea/analysis_output/2022CD_electron_pveto/output_all.coffea")
-for key in sorted(str(k) for k in out.get("variables", {}).keys()):
-    if "TriggerEff" in key:
-        print(key)
 out = load("pocket_coffea/analysis_output/2022CD_electron_pmiss_poffline/output_all.coffea")
 for key in sorted(str(k) for k in out.get("variables", {}).keys()):
     if "BackgroundMet" in key or "BackgroundDeltaPhi" in key:
@@ -486,14 +481,15 @@ for quick validation.
 ## Current Validation Items
 
 The Nano implementation now has the full plumbing for fiducial maps, `Pveto`,
-`Poffline`, `Pmiss`, and lepton-trigger efficiency. The remaining work is
-validation and polishing rather than inventing missing infrastructure:
+`Poffline`, and `Pmiss`. The remaining work is validation and polishing rather
+than inventing missing infrastructure:
 
 - Compare all layer bins and combined bins to the AN tables after rerunning
   both the relevant `*_pveto` and `*_pmiss_poffline` jobs with current code.
 - Confirm whether a non-unity legacy `MET lumi / lepton lumi` prescale should
   be passed with `--control-prescale` for each run period and channel.
-- Keep checking that postprocessing reports `trigger_efficiency_method=tag-probe`
+- Keep checking that postprocessing reports
+  `trigger_efficiency_method=legacy-tag-probe`
   and `met_method=hist-integrated`; otherwise the inputs were produced with
   older code or the wrong mode.
 - If a remaining discrepancy appears, compare the exact legacy channel in

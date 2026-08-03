@@ -86,6 +86,58 @@ def _load_outputs(files: list[Path]) -> list[dict]:
     return [load(path) for path in files]
 
 
+def _variable_names(output: dict) -> set[str]:
+    return {str(name) for name in output.get("variables", {})}
+
+
+def _has_background_variables(output: dict, *, prefix: str) -> bool:
+    background_prefix = f"n{prefix}Background"
+    return any(name.startswith(background_prefix) for name in _variable_names(output))
+
+
+def _has_pveto_pair_variables(output: dict, *, prefix: str) -> bool:
+    names = _variable_names(output)
+    pair_prefixes = [
+        f"n{prefix}TagProbePair",
+        f"n{prefix}PVetoTagProbePair",
+    ]
+    if prefix == "Muon":
+        pair_prefixes.extend(
+            [
+                "nMuonVetoTagProbePair",
+                "nMuonPVetoTagProbePair",
+            ]
+        )
+    return any(
+        any(name.startswith(pair_prefix) for pair_prefix in pair_prefixes)
+        for name in names
+    )
+
+
+def _lepton_background_outputs(outputs: list[dict], *, prefix: str) -> list[dict]:
+    """Prefer dedicated Pmiss/Poffline outputs over Pveto outputs.
+
+    Older Pveto productions could also write ``n<Prefix>Background...``
+    histograms.  When those files are combined with the dedicated
+    ``*_pmiss_poffline`` outputs, blindly summing every input double counts the
+    MET histograms.  The dedicated outputs contain the background histograms
+    without the Pveto tag-probe pair histograms, so prefer that subset when it
+    exists.
+    """
+
+    with_background = [
+        output for output in outputs if _has_background_variables(output, prefix=prefix)
+    ]
+    if not with_background:
+        return outputs
+    dedicated = [
+        output
+        for output in with_background
+        if not _has_pveto_pair_variables(output, prefix=prefix)
+    ]
+    return dedicated or with_background
+
+
 def _pair_counts_from_outputs(
     outputs: list[dict],
     *,
@@ -186,34 +238,41 @@ def _trigger_efficiency_from_outputs(
     outputs: list[dict],
     *,
     prefix: str,
+    layers: list[str],
     dataset: str | None = None,
     sample: str | None = None,
-) -> Count | None:
-    variables = {
-        "total_os": f"n{prefix}TriggerEffProbesPT55",
-        "total_ss": f"n{prefix}TriggerEffProbesSSPT55",
-        "passes_os": f"n{prefix}TriggerEffProbesFiringTrigger",
-        "passes_ss": f"n{prefix}TriggerEffSSProbesFiringTrigger",
-    }
-    if not any(
-        variable in output.get("variables", {})
-        for output in outputs
-        for variable in variables.values()
-    ):
-        return None
-    counts = {}
-    for key, variable in variables.items():
-        value = sum(
-            variable_count_sum(
-                output.get("variables", {}),
-                variable,
-                dataset=dataset,
-                sample=sample,
-            )
+) -> dict[str, Count]:
+    """Calculate the legacy epsilon divisor from Pveto tag-probe counters."""
+
+    efficiencies = {}
+    for layer in layers:
+        suffix = "" if layer == "combinedBins" else f"_{layer}"
+        variables = {
+            "total_os": f"n{prefix}TriggerEffProbesPT55{suffix}",
+            "total_ss": f"n{prefix}TriggerEffProbesSSPT55{suffix}",
+            "passes_os": f"n{prefix}TriggerEffProbesFiringTrigger{suffix}",
+            "passes_ss": f"n{prefix}TriggerEffSSProbesFiringTrigger{suffix}",
+        }
+        if not any(
+            variable in output.get("variables", {})
             for output in outputs
-        )
-        counts[key] = Count(value, value)
-    return trigger_efficiency_from_counts(**counts)
+            for variable in variables.values()
+        ):
+            continue
+        counts = {}
+        for key, variable in variables.items():
+            value = sum(
+                variable_count_sum(
+                    output.get("variables", {}),
+                    variable,
+                    dataset=dataset,
+                    sample=sample,
+                )
+                for output in outputs
+            )
+            counts[key] = Count(value, value)
+        efficiencies[layer] = trigger_efficiency_from_counts(**counts)
+    return efficiencies
 
 
 LEPTON_PVETO_PAIR_VARIABLES = {
@@ -858,10 +917,21 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         "tau_mu": "TauMu",
         "tau_ele": "TauEle",
     }[args.mode]
+    background_outputs = _lepton_background_outputs(outputs, prefix=prefix)
+    if background_outputs is not outputs and len(background_outputs) < len(outputs):
+        print(
+            "Using "
+            f"{len(background_outputs)} of {len(outputs)} input output(s) for "
+            "Poffline/Pmiss to avoid summing duplicate background histograms "
+            "from Pveto outputs."
+        )
+    background_cutflow = {}
+    for output in background_outputs:
+        background_cutflow = _sum_nested_numeric(background_cutflow, output["cutflow"])
     control_counts = {
         layer: Count(
             cutflow_count(
-                cutflow,
+                background_cutflow,
                 control_category.format(layer=layer),
                 dataset=args.dataset,
                 sample=args.sample,
@@ -871,7 +941,7 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         for layer in args.layers
     }
     met_probabilities = legacy_met_probabilities_from_outputs(
-        outputs,
+        background_outputs,
         prefix=prefix,
         layers=args.layers,
         control_counts=control_counts,
@@ -884,14 +954,15 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         trigger_efficiency = _trigger_efficiency_from_outputs(
             outputs,
             prefix=prefix,
+            layers=args.layers,
             dataset=args.dataset,
             sample=args.sample,
         )
-        trigger_efficiency_method = (
-            "tag-probe" if trigger_efficiency is not None else "default"
-        )
-        if trigger_efficiency is None:
+        if trigger_efficiency:
+            trigger_efficiency_method = "legacy-tag-probe"
+        else:
             trigger_efficiency = Count(1.0, 0.0)
+            trigger_efficiency_method = "default"
     else:
         trigger_efficiency = Count(
             args.trigger_efficiency,
@@ -903,7 +974,7 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         flavor=flavor,
         layers=args.layers,
         pair_counts=pair_counts,
-        cutflow=cutflow,
+        cutflow=background_cutflow,
         control_category=control_category,
         poffline_numerator_category=poffline_numerator_category,
         poffline_denominator_category=poffline_denominator_category,
@@ -1395,9 +1466,9 @@ def main():
         "--trigger-efficiency",
         type=float,
         help=(
-            "Manual lepton trigger-efficiency override. By default the value "
-            "is calculated from tag-probe trigger-matching counters when available; "
-            "old outputs without those counters use 1.0."
+            "Manual epsilon trigger-efficiency divisor override. By default "
+            "epsilon is calculated from legacy-style Pveto tag-probe trigger "
+            "counters when available."
         ),
     )
     lepton_background.add_argument(
