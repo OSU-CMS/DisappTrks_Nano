@@ -29,43 +29,40 @@ def isomu24_trigger_object_mask(
     trigobjs,
     *,
     iso_bit: int = 1 << 1,
-    single_muon_bits: tuple[int, ...] = (1 << 2, 1 << 3),
+    single_muon_bit: int = 1 << 3,
 ):
     """NanoAOD trigger objects corresponding to the isolated SingleMuon leg.
 
     The legacy unversioned DisappTrks muon tag-and-probe path configured
     ``EventMuonTPProducer`` to use PAT trigger objects from
     ``hltIterL3MuonCandidates::HLT`` with the
-    ``hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered`` filter.  NanoAOD
-    stores the trigger-object collection/filter information as compact
-    ``TrigObj`` IDs and filter bits.  For ``HLT_IsoMu24``, the closest NanoAOD
-    equivalent is a muon trigger object carrying the isolated-muon bit and a
-    SingleMuon-path bit.
-
-    Run-3 NanoAOD samples are not fully uniform in which SingleMuon path bit is
-    set.  The 2022--2024 samples we checked use bit 2, while 2025 samples can
-    carry the isolated-muon bit together with bit 3 and no bit 2.  Accept both
-    to keep the matching tied to the isolated SingleMuon trigger object without
-    rejecting all 2025 muon tags.
+    ``hltL3crIsoL1sSingleMu22L1f0L2f10QL3f24QL3trkIsoFiltered`` filter.  For
+    2022 C/D the legacy config uses the ``...Filtered0p08`` variant.  NanoAOD
+    stores this trigger-object collection/filter information as compact
+    ``TrigObj`` IDs and filter bits: bit 1 is the isolated-muon bit, and bit 3
+    is the SingleMuon-path bit.  Bit 2 is the muon-tau overlap bit, so it should
+    not be accepted for the SingleMuon tag-and-probe trigger match.
     """
-
-    single_muon_match = False
-    for bit in single_muon_bits:
-        single_muon_match = single_muon_match | ((trigobjs.filterBits & bit) != 0)
 
     return (
         (trigobjs.id == 13)
         & ((trigobjs.filterBits & iso_bit) != 0)
-        & single_muon_match
+        & ((trigobjs.filterBits & single_muon_bit) != 0)
     )
 
 
 def single_electron_trigger_object_mask(
     trigobjs,
     *,
-    wptight_bit: int = 1 << 3,
+    wptight_bit: int = 1 << 1,
 ):
-    """NanoAOD trigger objects corresponding to the tight SingleElectron leg."""
+    """NanoAOD trigger objects corresponding to the tight SingleElectron leg.
+
+    In the NanoAOD ``TrigObj`` electron quality-bit ordering, bit 1 corresponds
+    to ``hltEle*WPTight*TrackIsoFilter*``.  That is the compact-Nano analogue of
+    the legacy ``hltEle32WPTightGsfTrackIsoFilter`` trigger-object filter used
+    for the electron tag-and-probe trigger matching.
+    """
 
     return (trigobjs.id == 11) & ((trigobjs.filterBits & wptight_bit) != 0)
 
