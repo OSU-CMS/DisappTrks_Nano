@@ -34,6 +34,7 @@ from disapptrks.selections import (
     low_mt_mask,
     mass10_muon_probe_pair_mask,
     mass_window_pair_mask,
+    met_no_mu_minus_lepton,
     muon_tag_progression_masks,
     muon_tag_mask,
     muon_pveto_pair_pass_mask,
@@ -305,18 +306,6 @@ def _met_trigger_mask(events):
         if "HLT" in events.fields and name in events.HLT.fields:
             mask = events.HLT[name] if mask is None else (mask | events.HLT[name])
     return mask if mask is not None else _all_true_like(events) & False
-
-
-def _met_no_mu_minus_lepton(events, leptons):
-    """Legacy MET-minus-one proxy: remove the selected lepton from MET-no-mu."""
-    import awkward as ak
-
-    tag = ak.firsts(leptons)
-    tag_pt = ak.fill_none(tag.pt, 0.0)
-    tag_phi = ak.fill_none(tag.phi, 0.0)
-    met_x = events.MetNoMu.pt * np.cos(events.MetNoMu.phi) + tag_pt * np.cos(tag_phi)
-    met_y = events.MetNoMu.pt * np.sin(events.MetNoMu.phi) + tag_pt * np.sin(tag_phi)
-    return np.sqrt(met_x * met_x + met_y * met_y), np.arctan2(met_y, met_x)
 
 
 def _leading_jet_delta_phi(events, phi):
@@ -1061,10 +1050,15 @@ class DisappTrksProcessor(BaseProcessorABC):
         flavor,
         tags,
         event_quality,
+        fiducial_hot_spots=(),
         met_cut=120.0,
         phi_cut=0.5,
     ):
-        met_pt, met_phi = _met_no_mu_minus_lepton(self.events, tags)
+        met_pt, met_phi = met_no_mu_minus_lepton(
+            self.events,
+            tags,
+            flavor=flavor,
+        )
         tag_event = (
             event_quality
             & (ak.num(tags) >= 1)
@@ -1083,6 +1077,10 @@ class DisappTrksProcessor(BaseProcessorABC):
                 self.events.IsoTrack,
                 flavor=flavor,
                 layer=layer,
+            )
+            track_mask = track_mask & _outside_fiducial_hot_spots(
+                self.events.IsoTrack,
+                fiducial_hot_spots,
             )
             has_track = ak.num(self.events.IsoTrack[track_mask]) >= 1
             control_event = tag_event & has_track
@@ -1400,6 +1398,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 window_low=91.1876 - 50.0,
                 window_high=91.1876 - 15.0,
                 pass_mask_function=tau_pveto_pair_pass_mask,
+                fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
             )
 
         if self._mode_enabled("tau_ele_pveto", "tau_ele_pmiss_poffline"):
@@ -1419,6 +1418,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 window_low=91.1876 - 50.0,
                 window_high=91.1876 - 15.0,
                 pass_mask_function=tau_pveto_pair_pass_mask,
+                fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
             )
 
         store_background_controls_in_pveto = self._lepton_background_categories_enabled()
@@ -1455,6 +1455,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     is_mc=self._isMC,
                 )
             )
+            lepton_fiducial_hot_spots = self._lepton_fiducial_hot_spots()
             if (
                 (
                     self._mode_enabled("muon_pmiss_poffline")
@@ -1470,6 +1471,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="muon",
                     tags=self.events.MuonTag,
                     event_quality=event_quality,
+                    fiducial_hot_spots=lepton_fiducial_hot_spots,
                 )
             if (
                 (
@@ -1486,6 +1488,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="electron",
                     tags=self.events.ElectronTag,
                     event_quality=event_quality,
+                    fiducial_hot_spots=lepton_fiducial_hot_spots,
                 )
             # The Run-3 tau estimate is measured with muon/electron tau-control
             # legs in this Nano workflow, matching the existing tau Pveto split.
@@ -1504,6 +1507,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="muon",
                     tags=self.events.MuonLowMTTag,
                     event_quality=event_quality,
+                    fiducial_hot_spots=lepton_fiducial_hot_spots,
                 )
             if (
                 (
@@ -1520,6 +1524,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="electron",
                     tags=self.events.ElectronLowMTTag,
                     event_quality=event_quality,
+                    fiducial_hot_spots=lepton_fiducial_hot_spots,
                 )
 
         if self._mode_enabled("fiducial_maps"):

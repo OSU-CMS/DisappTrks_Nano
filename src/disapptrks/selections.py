@@ -9,6 +9,30 @@ def delta_phi(phi1, phi2):
     return np.arctan2(np.sin(phi1 - phi2), np.cos(phi1 - phi2))
 
 
+def met_no_mu_minus_lepton(events, leptons, *, flavor: str):
+    """Return legacy MET-no-muon-minus-one for a selected lepton tag.
+
+    ``MetNoMu`` already treats every muon as invisible, so a muon tag must not
+    be added a second time. Visible electron and tau tags still need to be
+    added to the stored no-muon MET vector.
+    """
+    import awkward as ak
+
+    if flavor == "muon":
+        return events.MetNoMu.pt, events.MetNoMu.phi
+    if flavor not in {"electron", "tau"}:
+        raise ValueError(f"unknown lepton flavor: {flavor}")
+
+    tag = ak.firsts(leptons)
+    tag_pt = ak.fill_none(tag.pt, 0.0)
+    tag_phi = ak.fill_none(tag.phi, 0.0)
+    met_x = events.MetNoMu.pt * np.cos(events.MetNoMu.phi)
+    met_y = events.MetNoMu.pt * np.sin(events.MetNoMu.phi)
+    met_x = met_x + tag_pt * np.cos(tag_phi)
+    met_y = met_y + tag_pt * np.sin(tag_phi)
+    return np.sqrt(met_x * met_x + met_y * met_y), np.arctan2(met_y, met_x)
+
+
 def minimum_delta_r(tracks, objects, object_mask=None):
     """Return the minimum ΔR for every track, using -1 when no object exists."""
     import awkward as ak

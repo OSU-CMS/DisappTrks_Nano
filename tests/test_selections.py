@@ -6,8 +6,29 @@ from disapptrks.selections import (
     build_lepton_veto_tag_probe_pairs,
     build_muon_veto_tag_probe_pairs,
     fiducial_map_probe_track_mask,
+    met_no_mu_minus_lepton,
     muon_veto_probe_track_mask,
 )
+
+
+def test_met_no_mu_minus_muon_does_not_add_muon_twice():
+    events = ak.Array([{"MetNoMu": {"pt": 100.0, "phi": 0.0}}])
+    muons = ak.Array([[{"pt": 40.0, "phi": 0.0}]])
+
+    pt, phi = met_no_mu_minus_lepton(events, muons, flavor="muon")
+
+    assert ak.to_list(pt) == pytest.approx([100.0])
+    assert ak.to_list(phi) == pytest.approx([0.0])
+
+
+def test_met_no_mu_minus_electron_adds_visible_tag():
+    events = ak.Array([{"MetNoMu": {"pt": 100.0, "phi": 0.0}}])
+    electrons = ak.Array([[{"pt": 40.0, "phi": 0.0}]])
+
+    pt, phi = met_no_mu_minus_lepton(events, electrons, flavor="electron")
+
+    assert ak.to_list(pt) == pytest.approx([140.0])
+    assert ak.to_list(phi) == pytest.approx([0.0])
 
 
 def test_lepton_pairs_keep_probe_coordinates_for_fiducial_maps():
