@@ -928,8 +928,8 @@ class DisappTrksProcessor(BaseProcessorABC):
             len(self._fiducial_hot_spots("muon")) if "muon" in flavors else 0
         )
 
-    def _apply_lepton_fiducial_maps_to_track_cutflow(self, masks):
-        fiducial_hot_spots = self._lepton_fiducial_hot_spots()
+    def _apply_lepton_fiducial_maps_to_track_cutflow(self, masks, *flavors):
+        fiducial_hot_spots = self._lepton_fiducial_hot_spots(*flavors)
         fiducial_map_mask = None
         if fiducial_hot_spots:
             fiducial_map_mask = _outside_fiducial_hot_spots(
@@ -1794,7 +1794,8 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         has_selected_muon_tag = muon_table16_diagnostics["muon_selected_tag"]
         table16_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
-            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack),
+            "muon",
         )
         pre_pair_track_fields = {
             "track_pt30",
@@ -1919,7 +1920,8 @@ class DisappTrksProcessor(BaseProcessorABC):
             "electron_selected_tag"
         ]
         electron_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
-            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack),
+            "electron",
         )
         for name in (
             "track_pt30",
@@ -2446,7 +2448,8 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         has_selected_muon_tag = muon_table16_diagnostics["muon_selected_tag"]
         table16_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
-            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack),
+            "muon",
         )
         pre_pair_track_fields = {
             "track_pt30",
@@ -2578,7 +2581,8 @@ class DisappTrksProcessor(BaseProcessorABC):
             "electron_selected_tag"
         ]
         electron_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
-            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack),
+            "electron",
         )
         for name in (
             "track_pt30",
