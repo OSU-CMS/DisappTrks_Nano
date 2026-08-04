@@ -64,6 +64,14 @@ def get_worker_env(run_options,x509_path,exec_name="dask"):
                     f'if [ ! -d "${name}" ] && [ -d "$(basename "${name}")" ]; '
                     f'then export {name}="$(basename "${name}")"; fi'
                 )
+                env_worker.append(
+                    f'if [ ! -d "${name}" ] && [ -f "electron_fiducial_map.json" ]; '
+                    'then export DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON="electron_fiducial_map.json"; fi'
+                )
+                env_worker.append(
+                    f'if [ ! -d "${name}" ] && [ -f "muon_fiducial_map.json" ]; '
+                    'then export DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON="muon_fiducial_map.json"; fi'
+                )
     
     # Adding list of custom setup commands from user defined run options
     if run_options.get("custom-setup-commands", None):
@@ -101,6 +109,9 @@ def _split_transfer_input_files(value):
 
 
 def _fiducial_map_transfer_inputs():
+    if os.environ.get("DISAPPTRKS_CATEGORY_MODE") == "fiducial_maps":
+        return []
+
     transfer_inputs = []
     for name in (
         "DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON",
@@ -112,7 +123,10 @@ def _fiducial_map_transfer_inputs():
 
     map_dir = os.environ.get("DISAPPTRKS_FIDUCIAL_MAP_DIR")
     if map_dir and not map_dir.startswith(("root://", "http://", "https://")):
-        transfer_inputs.append(map_dir)
+        for filename in ("electron_fiducial_map.json", "muon_fiducial_map.json"):
+            path = os.path.join(map_dir, filename)
+            if os.path.isfile(path):
+                transfer_inputs.append(path)
 
     return transfer_inputs
 
