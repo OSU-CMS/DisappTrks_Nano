@@ -6,6 +6,7 @@ import sys
 import socket
 import glob
 import shlex
+import json
 from coffea import processor as coffea_processor
 from pocket_coffea.executors.executors_base import ExecutorFactoryABC
 from pocket_coffea.executors.executors_manual_jobs import ExecutorFactoryManualABC
@@ -72,6 +73,10 @@ def get_worker_env(run_options,x509_path,exec_name="dask"):
                     f'if [ ! -d "${name}" ] && [ -f "muon_fiducial_map.json" ]; '
                     'then export DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON="muon_fiducial_map.json"; fi'
                 )
+
+    for name, payload in _fiducial_hot_spot_payloads().items():
+        env_worker.append(f"export {name}={shlex.quote(payload)}")
+        print(f">> Embedded {len(json.loads(payload))} fiducial-map hot spot(s) in {name}")
     
     # Adding list of custom setup commands from user defined run options
     if run_options.get("custom-setup-commands", None):
@@ -106,6 +111,33 @@ def _split_transfer_input_files(value):
     if isinstance(value, str):
         return [item.strip() for item in value.split(",") if item.strip()]
     return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _read_hot_spot_payload(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except OSError:
+        return None
+    return json.dumps(payload.get("hot_spots", ()), separators=(",", ":"))
+
+
+def _fiducial_hot_spot_payloads():
+    payloads = {}
+    for flavor in ("electron", "muon"):
+        env_name = f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON"
+        path = os.environ.get(env_name)
+        if not path and os.environ.get("DISAPPTRKS_FIDUCIAL_MAP_DIR"):
+            path = os.path.join(
+                os.environ["DISAPPTRKS_FIDUCIAL_MAP_DIR"],
+                f"{flavor}_fiducial_map.json",
+            )
+        if not path or path.startswith(("root://", "http://", "https://")):
+            continue
+        hot_spots = _read_hot_spot_payload(path)
+        if hot_spots is not None:
+            payloads[f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_HOT_SPOTS_JSON"] = hot_spots
+    return payloads
 
 
 def _fiducial_map_transfer_inputs():
@@ -338,6 +370,7 @@ class DaskExecutorFactory(ExecutorFactoryABC):
         )
         if transfer_input_files:
             job_extra_directives["transfer_input_files"] = transfer_input_files
+            print(f">> Dask worker transfer_input_files: {transfer_input_files}")
         worker_image = self.run_options.get("worker-image", None)
         if worker_image:
             # LPC accepts +ApptainerImage; keep Singularity key for compatibility.

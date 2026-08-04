@@ -156,6 +156,19 @@ def _fiducial_map_path(flavor: str) -> Path | None:
 
 
 def _load_fiducial_hot_spots(flavor: str) -> tuple[dict[str, float], ...]:
+    hot_spot_env_name = f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_HOT_SPOTS_JSON"
+    hot_spot_env = os.environ.get(hot_spot_env_name)
+    if hot_spot_env:
+        hot_spots = tuple(json.loads(hot_spot_env))
+        if (
+            not hot_spots
+            and os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower()
+            in ("1", "true", "yes", "on")
+        ):
+            raise ValueError(f"Embedded {flavor} fiducial map has no hot spots")
+        print(f"Loaded {len(hot_spots)} embedded {flavor} fiducial-map hot spot(s)")
+        return hot_spots
+
     path = _fiducial_map_path(flavor)
     if path is None:
         if os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower() in (
@@ -170,6 +183,7 @@ def _load_fiducial_hot_spots(flavor: str) -> tuple[dict[str, float], ...]:
                 "DISAPPTRKS_FIDUCIAL_MAP_DIR."
             )
         return ()
+    print(f"Opening {flavor} fiducial map from {path} in {Path.cwd()}")
     with path.open() as handle:
         payload = json.load(handle)
     hot_spots = tuple(payload.get("hot_spots", ()))
