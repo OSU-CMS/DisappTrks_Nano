@@ -836,8 +836,13 @@ class DisappTrksProcessor(BaseProcessorABC):
             )
         return self._disapptrks_fiducial_hot_spots[flavor]
 
-    def _lepton_fiducial_hot_spots(self):
-        return self._fiducial_hot_spots("electron") + self._fiducial_hot_spots("muon")
+    def _lepton_fiducial_hot_spots(self, *flavors):
+        if not flavors:
+            flavors = ("electron", "muon")
+        hot_spots = ()
+        for flavor in flavors:
+            hot_spots += self._fiducial_hot_spots(flavor)
+        return hot_spots
 
     def _event_int_like(self, value):
         return ak.ones_like(self.events.event, dtype=np.int64) * int(value)
@@ -901,12 +906,12 @@ class DisappTrksProcessor(BaseProcessorABC):
                 np.int64,
             )
 
-    def _store_fiducial_hot_spot_counts(self):
+    def _store_fiducial_hot_spot_counts(self, flavors=("electron", "muon")):
         self.events["nElectronFiducialHotSpotsLoaded"] = self._event_int_like(
-            len(self._fiducial_hot_spots("electron"))
+            len(self._fiducial_hot_spots("electron")) if "electron" in flavors else 0
         )
         self.events["nMuonFiducialHotSpotsLoaded"] = self._event_int_like(
-            len(self._fiducial_hot_spots("muon"))
+            len(self._fiducial_hot_spots("muon")) if "muon" in flavors else 0
         )
 
     def _apply_lepton_fiducial_maps_to_track_cutflow(self, masks):
@@ -1211,8 +1216,13 @@ class DisappTrksProcessor(BaseProcessorABC):
             candidate_track_selection_mask(self.events.IsoTrack)
         ]
 
-        if self._mode_enabled("muon_pveto", "electron_pveto"):
-            self._store_fiducial_hot_spot_counts()
+        fiducial_count_flavors = []
+        if self._mode_enabled("electron_pveto"):
+            fiducial_count_flavors.append("electron")
+        if self._mode_enabled("muon_pveto"):
+            fiducial_count_flavors.append("muon")
+        if fiducial_count_flavors:
+            self._store_fiducial_hot_spot_counts(tuple(fiducial_count_flavors))
 
         tag_met = None
         if self._mode_enabled("muon_pveto", "muon_pmiss_poffline"):
@@ -1234,7 +1244,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             muon_veto_pairs = build_muon_veto_tag_probe_pairs(
                 self.events.MuonTag, self.events.MuonVetoProbeTrack
             )
-            lepton_fiducial_hot_spots = self._lepton_fiducial_hot_spots()
+            lepton_fiducial_hot_spots = self._fiducial_hot_spots("muon")
             muon_pveto_pass_no_fiducial_mask = muon_pveto_pair_pass_mask(
                 muon_veto_pairs
             )
@@ -1363,7 +1373,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 window_low=91.1876 - 10.0,
                 window_high=91.1876 + 10.0,
                 pass_mask_function=electron_pveto_pair_pass_mask,
-                fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
+                fiducial_hot_spots=self._fiducial_hot_spots("electron"),
             )
 
         if self._mode_enabled(
@@ -1455,7 +1465,6 @@ class DisappTrksProcessor(BaseProcessorABC):
                     is_mc=self._isMC,
                 )
             )
-            lepton_fiducial_hot_spots = self._lepton_fiducial_hot_spots()
             if (
                 (
                     self._mode_enabled("muon_pmiss_poffline")
@@ -1471,7 +1480,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="muon",
                     tags=self.events.MuonTag,
                     event_quality=event_quality,
-                    fiducial_hot_spots=lepton_fiducial_hot_spots,
+                    fiducial_hot_spots=self._fiducial_hot_spots("muon"),
                 )
             if (
                 (
@@ -1488,7 +1497,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="electron",
                     tags=self.events.ElectronTag,
                     event_quality=event_quality,
-                    fiducial_hot_spots=lepton_fiducial_hot_spots,
+                    fiducial_hot_spots=self._fiducial_hot_spots("electron"),
                 )
             # The Run-3 tau estimate is measured with muon/electron tau-control
             # legs in this Nano workflow, matching the existing tau Pveto split.
@@ -1507,7 +1516,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="muon",
                     tags=self.events.MuonLowMTTag,
                     event_quality=event_quality,
-                    fiducial_hot_spots=lepton_fiducial_hot_spots,
+                    fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
                 )
             if (
                 (
@@ -1524,7 +1533,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="electron",
                     tags=self.events.ElectronLowMTTag,
                     event_quality=event_quality,
-                    fiducial_hot_spots=lepton_fiducial_hot_spots,
+                    fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
                 )
 
         if self._mode_enabled("fiducial_maps"):

@@ -118,7 +118,11 @@ def _fiducial_map_transfer_inputs():
         "DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON",
     ):
         path = os.environ.get(name)
-        if path and not path.startswith(("root://", "http://", "https://")):
+        if (
+            path
+            and not path.startswith(("root://", "http://", "https://"))
+            and os.path.isfile(path)
+        ):
             transfer_inputs.append(path)
 
     map_dir = os.environ.get("DISAPPTRKS_FIDUCIAL_MAP_DIR")
