@@ -328,7 +328,22 @@ def test_write_lepton_background_outputs(tmp_path: Path):
 
     assert '"p_miss"' in json_path.read_text()
     text = tex_path.read_text()
-    assert "\\epsilon_{\\mathrm{trig}}^{\\ell}" in text
+    assert "muon background" in text
+    assert "\\multirow{1}{*}{2023D}" in text
+    assert "n_{\\mathrm{layers}}" in text
+    assert "\\epsilon_{\\mathrm{trigger}}^{\\ell}" in text
     assert "P_{\\mathrm{offline}}" in text
-    assert "P_{\\mathrm{miss}}" in text
+    assert "P_{\\mathrm{trigger}}" in text
     assert "2023D" in text
+    assert "('" not in text
+
+    tau_tex_path = tmp_path / "tau_lepton.tex"
+    write_lepton_background_latex(
+        estimates,
+        tau_tex_path,
+        run_period="2023D",
+        tau_probability=Count(1.46, 0.00239 * 0.00239),
+    )
+    tau_text = tau_tex_path.read_text()
+    assert "P(\\tau)" in tau_text
+    assert "1.4600 $\\pm$ 0.0024" in tau_text

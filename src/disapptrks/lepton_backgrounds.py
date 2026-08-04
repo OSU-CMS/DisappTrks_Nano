@@ -15,9 +15,7 @@ from .summaries import cutflow_count
 from .tables import (
     CountWithVariance,
     POISSON_ZERO_UPPER_68,
-    format_count,
     format_pm_latex,
-    format_value_with_uncertainty,
     pveto_with_asymmetric_uncertainty,
 )
 
@@ -558,40 +556,78 @@ def write_lepton_background_json(
     path.write_text(json.dumps([estimate.as_dict() for estimate in estimates], indent=2, sort_keys=True))
 
 
+def _an_layer_label(layer: str) -> str:
+    return {
+        "NLayers4": "4",
+        "NLayers5": "5",
+        "NLayers6plus": r"$\geq 6$",
+        "combinedBins": "combined",
+    }.get(layer, layer)
+
+
+def _an_background_title(flavor: str) -> str:
+    normalized = flavor.replace("$", "").replace("\\", "").lower()
+    if "tau" in normalized:
+        return "tau background"
+    if "mu" in normalized:
+        return "muon background"
+    if "e" in normalized:
+        return "electron background"
+    return f"{flavor} background"
+
+
 def write_lepton_background_latex(
     estimates: Sequence[LeptonBackgroundEstimate],
     path: Path,
     *,
     run_period: str,
     include_table_env: bool = False,
+    tau_probability: Count | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    title = _an_background_title(estimates[0].flavor) if estimates else "lepton background"
+    include_tau_probability = tau_probability is not None
+    n_columns = 9 if include_tau_probability else 8
+    column_spec = "ll" + ("c" * (n_columns - 2))
     with path.open("w") as out:
         if include_table_env:
             out.write(r"\begin{table}" + "\n")
             out.write(r"\centering" + "\n")
-            out.write(r"\caption{Lepton-background estimate.}" + "\n")
+            out.write(r"\caption{" + title.capitalize() + r" estimate.}" + "\n")
             out.write(r"\label{tab:lepton_background_estimate}" + "\n")
-        out.write(r"\begin{tabular}{llrrrrrr}" + "\n")
+        out.write(r"\begin{tiny}" + "\n")
+        out.write(r"\begin{tabular}{" + column_spec + r"}" + "\n")
         out.write(r"\hline" + "\n")
+        out.write(r"\multicolumn{" + str(n_columns) + r"}{c}{" + title + r"} \\" + "\n")
         out.write(
-            r"run period & flavor/layer & $N_{\mathrm{ctrl}}$ & "
-            r"$\epsilon_{\mathrm{trig}}^{\ell}$ & $P_{\mathrm{veto}}$ & "
-            r"$P_{\mathrm{offline}}$ & $P_{\mathrm{miss}}$ & $N_{\ell}$ \\" + "\n"
+            r"run period & $n_{\mathrm{layers}}$ & "
+            r"$\epsilon_{\mathrm{trigger}}^{\ell}$ & "
+            + (r"$P(\tau)$ & " if include_tau_probability else "")
+            + r"$N_{\mathrm{ctrl}}^{\ell}$ & $P_{\mathrm{veto}}$ & "
+            r"$P_{\mathrm{offline}}$ & $P_{\mathrm{trigger}}$ & estimate \\" + "\n"
         )
         out.write(r"\hline" + "\n")
-        for estimate in estimates:
+        n_rows = len(estimates)
+        for index, estimate in enumerate(estimates):
+            run_period_cell = rf"\multirow{{{n_rows}}}{{*}}{{{run_period}}}" if index == 0 else ""
+            tau_probability_cell = (
+                f"{format_pm_latex(tau_probability.value, tau_probability.error)} & "
+                if include_tau_probability
+                else ""
+            )
             out.write(
-                f"{run_period} & {estimate.flavor} {estimate.layer} & "
-                f"{format_count(estimate.control.value)} & "
+                f"{run_period_cell} & {_an_layer_label(estimate.layer)} & "
                 f"{format_pm_latex(estimate.trigger_efficiency.value, estimate.trigger_efficiency.error)} & "
+                f"{tau_probability_cell}"
+                f"{format_pm_latex(estimate.control.value, estimate.control.error)} & "
                 f"{format_pm_latex(estimate.p_veto.value, estimate.p_veto.error)} & "
                 f"{format_pm_latex(estimate.p_offline.value, estimate.p_offline.error)} & "
                 f"{format_pm_latex(estimate.p_miss.value, estimate.p_miss.error)} & "
-                f"{format_value_with_uncertainty(estimate.estimate.value, estimate.estimate.error)} "
+                f"{format_pm_latex(estimate.estimate.value, estimate.estimate.error)} "
                 r"\\" + "\n"
             )
         out.write(r"\hline" + "\n")
         out.write(r"\end{tabular}" + "\n")
+        out.write(r"\end{tiny}" + "\n")
         if include_table_env:
             out.write(r"\end{table}" + "\n")

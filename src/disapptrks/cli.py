@@ -992,11 +992,17 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         write_lepton_background_json(estimates, args.output_json)
         print(f"Wrote {args.output_json}")
     if args.output_tex is not None:
+        tau_probability = (
+            Count(args.tau_probability, args.tau_probability_error * args.tau_probability_error)
+            if args.tau_probability is not None
+            else None
+        )
         write_lepton_background_latex(
             estimates,
             args.output_tex,
             run_period=args.run_period,
             include_table_env=args.table_env,
+            tau_probability=tau_probability,
         )
         print(f"Wrote {args.output_tex}")
 
@@ -1476,6 +1482,20 @@ def main():
         type=float,
         default=0.0,
         help="Absolute uncertainty on --trigger-efficiency.",
+    )
+    lepton_background.add_argument(
+        "--tau-probability",
+        type=float,
+        help=(
+            "Optional P(tau) value to display in the AN-style tau background "
+            "LaTeX table. This is a table-formatting input only."
+        ),
+    )
+    lepton_background.add_argument(
+        "--tau-probability-error",
+        type=float,
+        default=0.0,
+        help="Absolute uncertainty on --tau-probability.",
     )
     lepton_background.add_argument(
         "--met-cut",
