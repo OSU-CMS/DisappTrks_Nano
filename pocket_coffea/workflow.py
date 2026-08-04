@@ -13,6 +13,7 @@ from coffea.lumi_tools import LumiMask
 from pocket_coffea.workflows.base import BaseProcessorABC
 
 from disapptrks.selections import (
+    add_electron_derived_fields,
     add_event_derived_fields,
     add_isotrack_derived_fields,
     add_muon_derived_fields,
@@ -411,12 +412,18 @@ def _z_electron_tag_mask(electrons, *, pt_min=25.0, eta_max=2.1):
     dz_ok = (barrel & (abs(electrons.dz) < 0.10)) | (
         endcap & (abs(electrons.dz) < 0.20)
     )
+    trigger_match_ok = (
+        electrons.matchedSingleElectron
+        if "matchedSingleElectron" in electrons.fields
+        else True
+    )
     return (
         (electrons.pt > pt_min)
         & (abs(electrons.eta) < eta_max)
         & (electrons.cutBased >= 4)
         & dxy_ok
         & dz_ok
+        & trigger_match_ok
     )
 
 
@@ -1169,6 +1176,19 @@ class DisappTrksProcessor(BaseProcessorABC):
             ]
 
     def apply_object_preselection(self, variation):
+        if (
+            "Electron" in self.events.fields
+            and
+            self._mode_enabled(
+                "electron_pveto",
+                "tau_ele_pveto",
+                "electron_pmiss_poffline",
+                "tau_ele_pmiss_poffline",
+                "fake_zee",
+                "fiducial_maps",
+            )
+        ):
+            self.events["Electron"] = add_electron_derived_fields(self.events)
         if (
             self._mode_enabled(
                 "muon_pveto",

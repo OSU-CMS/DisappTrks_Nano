@@ -67,6 +67,31 @@ def single_electron_trigger_object_mask(
     return (trigobjs.id == 11) & ((trigobjs.filterBits & wptight_bit) != 0)
 
 
+def add_electron_derived_fields(events, *, trigger_match_dr: float = 0.3):
+    """Attach electron quantities needed for legacy-style tag selections."""
+    import awkward as ak
+
+    electrons = events.Electron
+    single_ele_objects = single_electron_trigger_object_mask(events.TrigObj)
+    d_r_min_single_ele = minimum_delta_r(
+        electrons,
+        events.TrigObj,
+        single_ele_objects,
+    )
+    matched_single_ele = (
+        single_electron_trigger_mask(events)
+        & (d_r_min_single_ele >= 0.0)
+        & (d_r_min_single_ele < trigger_match_dr)
+    )
+    electrons = ak.with_field(
+        electrons,
+        d_r_min_single_ele,
+        "dRMinSingleElectronTrigObj",
+    )
+    electrons = ak.with_field(electrons, matched_single_ele, "matchedSingleElectron")
+    return electrons
+
+
 def add_muon_derived_fields(events, *, trigger_match_dr: float = 0.3):
     """Attach muon quantities needed for the tag-and-probe selections."""
     import awkward as ak
@@ -220,7 +245,10 @@ def electron_tag_progression_masks(
     dz_ok = (barrel & (abs(electrons.dz) < 0.10)) | (
         endcap & (abs(electrons.dz) < 0.20)
     )
-    mask = single_electron_trigger_mask(events) & (electrons.pt > pt_min)
+    tag_trigger = single_electron_trigger_mask(events)
+    if "matchedSingleElectron" in electrons.fields:
+        tag_trigger = tag_trigger & electrons.matchedSingleElectron
+    mask = tag_trigger & (electrons.pt > pt_min)
     masks = {"electron_pt35": mask}
 
     mask = mask & (abs(electrons.eta) < eta_max)
