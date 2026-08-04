@@ -11,6 +11,7 @@ LXPLUS-specific one that requests a Singularity image.
 from __future__ import annotations
 
 import os
+import shlex
 
 import pocket_coffea
 
@@ -207,6 +208,14 @@ echo 'Done'
         ]
         if not self.run_options["ignore-grid-certificate"]:
             env_worker.append(f"export X509_USER_PROXY={self.x509_path}")
+        for name in (
+            "DISAPPTRKS_FIDUCIAL_MAP_DIR",
+            "DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON",
+            "DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON",
+            "DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS",
+        ):
+            if name in os.environ:
+                env_worker.append(f"export {name}={shlex.quote(os.environ[name])}")
         if self.run_options.get("custom-setup-commands", None):
             env_worker += self.run_options["custom-setup-commands"]
         if self.run_options.get("local-virtualenv", False):

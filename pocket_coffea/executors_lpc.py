@@ -5,6 +5,7 @@ import os
 import sys
 import socket
 import glob
+import shlex
 from coffea import processor as coffea_processor
 from pocket_coffea.executors.executors_base import ExecutorFactoryABC
 from pocket_coffea.executors.executors_manual_jobs import ExecutorFactoryManualABC
@@ -44,6 +45,25 @@ def get_worker_env(run_options,x509_path,exec_name="dask"):
                 'elif [ -f "/tmp/x509up_u$(id -u)" ]; then export X509_USER_PROXY="/tmp/x509up_u$(id -u)"; '
                 'fi'
             )
+
+    for name in (
+        "DISAPPTRKS_FIDUCIAL_MAP_DIR",
+        "DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON",
+        "DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON",
+        "DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS",
+    ):
+        if name in os.environ:
+            env_worker.append(f"export {name}={shlex.quote(os.environ[name])}")
+            if name.endswith("_FIDUCIAL_MAP_JSON"):
+                env_worker.append(
+                    f'if [ ! -f "${name}" ] && [ -f "$(basename "${name}")" ]; '
+                    f'then export {name}="$(basename "${name}")"; fi'
+                )
+            elif name == "DISAPPTRKS_FIDUCIAL_MAP_DIR":
+                env_worker.append(
+                    f'if [ ! -d "${name}" ] && [ -d "$(basename "${name}")" ]; '
+                    f'then export {name}="$(basename "${name}")"; fi'
+                )
     
     # Adding list of custom setup commands from user defined run options
     if run_options.get("custom-setup-commands", None):
@@ -70,6 +90,42 @@ def get_worker_env(run_options,x509_path,exec_name="dask"):
             env_worker.append(f"export PYTHONPATH={pythonpath}")
 
     return env_worker
+
+
+def _split_transfer_input_files(value):
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _fiducial_map_transfer_inputs():
+    transfer_inputs = []
+    for name in (
+        "DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON",
+        "DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON",
+    ):
+        path = os.environ.get(name)
+        if path and not path.startswith(("root://", "http://", "https://")):
+            transfer_inputs.append(path)
+
+    map_dir = os.environ.get("DISAPPTRKS_FIDUCIAL_MAP_DIR")
+    if map_dir and not map_dir.startswith(("root://", "http://", "https://")):
+        transfer_inputs.append(map_dir)
+
+    return transfer_inputs
+
+
+def _merge_transfer_input_files(*values):
+    transfer_inputs = []
+    seen = set()
+    for value in values:
+        for item in _split_transfer_input_files(value):
+            if item not in seen:
+                transfer_inputs.append(item)
+                seen.add(item)
+    return ",".join(transfer_inputs)
 
 class DaskExecutorFactory(ExecutorFactoryABC):
 
@@ -257,6 +313,13 @@ class DaskExecutorFactory(ExecutorFactoryABC):
             "RequestCpus": str(cores_per_worker),
             "RequestMemory": memory_str,
         }
+        transfer_input_files = _merge_transfer_input_files(
+            self.run_options.get("dask-transfer-input-files", None),
+            self.run_options.get("transfer-input-files", None),
+            _fiducial_map_transfer_inputs(),
+        )
+        if transfer_input_files:
+            job_extra_directives["transfer_input_files"] = transfer_input_files
         worker_image = self.run_options.get("worker-image", None)
         if worker_image:
             # LPC accepts +ApptainerImage; keep Singularity key for compatibility.
