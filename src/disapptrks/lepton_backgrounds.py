@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from math import sqrt
+from math import floor, log10, sqrt
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -16,6 +16,7 @@ from .tables import (
     CountWithVariance,
     POISSON_ZERO_UPPER_68,
     format_pm_latex,
+    format_value_with_uncertainty,
     pveto_with_asymmetric_uncertainty,
 )
 
@@ -556,6 +557,39 @@ def write_lepton_background_json(
     path.write_text(json.dumps([estimate.as_dict() for estimate in estimates], indent=2, sort_keys=True))
 
 
+def _count_from_serialized(payload: Mapping[str, Any]) -> Count:
+    variance = payload.get("variance")
+    if variance is None:
+        error = float(payload.get("error", 0.0))
+        variance = error * error
+    return Count(float(payload["value"]), float(variance))
+
+
+def read_lepton_background_json(path: Path) -> list[LeptonBackgroundEstimate]:
+    payload = json.loads(path.read_text())
+    estimates = []
+    for item in payload:
+        estimates.append(
+            LeptonBackgroundEstimate(
+                flavor=item["flavor"],
+                layer=item["layer"],
+                control_raw=_count_from_serialized(item["control_raw"]),
+                control=_count_from_serialized(item["control"]),
+                p_veto=_count_from_serialized(item["p_veto"]),
+                p_offline=_count_from_serialized(item["p_offline"]),
+                p_miss=_count_from_serialized(item["p_miss"]),
+                trigger_efficiency=_count_from_serialized(item["trigger_efficiency"]),
+                estimate=_count_from_serialized(item["estimate"]),
+                control_category=item.get("control_category", ""),
+                poffline_numerator_category=item.get("poffline_numerator_category", ""),
+                poffline_denominator_category=item.get("poffline_denominator_category", ""),
+                pmiss_numerator_category=item.get("pmiss_numerator_category", ""),
+                pmiss_denominator_category=item.get("pmiss_denominator_category", ""),
+            )
+        )
+    return estimates
+
+
 def _an_layer_label(layer: str) -> str:
     return {
         "NLayers4": "4",
@@ -576,37 +610,45 @@ def _an_background_title(flavor: str) -> str:
     return f"{flavor} background"
 
 
-def write_lepton_background_latex(
-    estimates: Sequence[LeptonBackgroundEstimate],
-    path: Path,
+def _format_an_pm(value: float, error: float, *, scientific_threshold: float = 1.0e-3) -> str:
+    scale_value = max(abs(float(value)), abs(float(error)))
+    if scale_value == 0.0:
+        return r"$0 \pm 0$"
+    if scale_value < scientific_threshold:
+        exponent = int(floor(log10(scale_value)))
+        scale = 10.0**exponent
+        value_text, error_text = format_value_with_uncertainty(
+            value / scale,
+            error / scale,
+        )
+        return rf"$({value_text} \pm {error_text}) \times 10^{{{exponent}}}$"
+    return format_pm_latex(value, error)
+
+
+def _write_lepton_background_latex_body(
+    out,
+    period_estimates: Sequence[tuple[str, Sequence[LeptonBackgroundEstimate]]],
     *,
-    run_period: str,
-    include_table_env: bool = False,
     tau_probability: Count | None = None,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    title = _an_background_title(estimates[0].flavor) if estimates else "lepton background"
+    first_estimates = period_estimates[0][1] if period_estimates else []
+    title = _an_background_title(first_estimates[0].flavor) if first_estimates else "lepton background"
     include_tau_probability = tau_probability is not None
     n_columns = 9 if include_tau_probability else 8
     column_spec = "ll" + ("c" * (n_columns - 2))
-    with path.open("w") as out:
-        if include_table_env:
-            out.write(r"\begin{table}" + "\n")
-            out.write(r"\centering" + "\n")
-            out.write(r"\caption{" + title.capitalize() + r" estimate.}" + "\n")
-            out.write(r"\label{tab:lepton_background_estimate}" + "\n")
-        out.write(r"\begin{tiny}" + "\n")
-        out.write(r"\begin{tabular}{" + column_spec + r"}" + "\n")
-        out.write(r"\hline" + "\n")
-        out.write(r"\multicolumn{" + str(n_columns) + r"}{c}{" + title + r"} \\" + "\n")
-        out.write(
-            r"run period & $n_{\mathrm{layers}}$ & "
-            r"$\epsilon_{\mathrm{trigger}}^{\ell}$ & "
-            + (r"$P(\tau)$ & " if include_tau_probability else "")
-            + r"$N_{\mathrm{ctrl}}^{\ell}$ & $P_{\mathrm{veto}}$ & "
-            r"$P_{\mathrm{offline}}$ & $P_{\mathrm{trigger}}$ & estimate \\" + "\n"
-        )
-        out.write(r"\hline" + "\n")
+    out.write(r"\begin{tiny}" + "\n")
+    out.write(r"\begin{tabular}{" + column_spec + r"}" + "\n")
+    out.write(r"\hline" + "\n")
+    out.write(r"\multicolumn{" + str(n_columns) + r"}{c}{" + title + r"} \\" + "\n")
+    out.write(
+        r"run period & $n_{\mathrm{layers}}$ & "
+        r"$\epsilon_{\mathrm{trigger}}^{\ell}$ & "
+        + (r"$P(\tau)$ & " if include_tau_probability else "")
+        + r"$N_{\mathrm{ctrl}}^{\ell}$ & $P_{\mathrm{veto}}$ & "
+        r"$P_{\mathrm{offline}}$ & $P_{\mathrm{trigger}}$ & estimate \\" + "\n"
+    )
+    out.write(r"\hline" + "\n")
+    for run_period, estimates in period_estimates:
         n_rows = len(estimates)
         for index, estimate in enumerate(estimates):
             run_period_cell = rf"\multirow{{{n_rows}}}{{*}}{{{run_period}}}" if index == 0 else ""
@@ -620,14 +662,62 @@ def write_lepton_background_latex(
                 f"{format_pm_latex(estimate.trigger_efficiency.value, estimate.trigger_efficiency.error)} & "
                 f"{tau_probability_cell}"
                 f"{format_pm_latex(estimate.control.value, estimate.control.error)} & "
-                f"{format_pm_latex(estimate.p_veto.value, estimate.p_veto.error)} & "
+                f"{_format_an_pm(estimate.p_veto.value, estimate.p_veto.error)} & "
                 f"{format_pm_latex(estimate.p_offline.value, estimate.p_offline.error)} & "
                 f"{format_pm_latex(estimate.p_miss.value, estimate.p_miss.error)} & "
-                f"{format_pm_latex(estimate.estimate.value, estimate.estimate.error)} "
+                f"{_format_an_pm(estimate.estimate.value, estimate.estimate.error)} "
                 r"\\" + "\n"
             )
-        out.write(r"\hline" + "\n")
-        out.write(r"\end{tabular}" + "\n")
-        out.write(r"\end{tiny}" + "\n")
+    out.write(r"\hline" + "\n")
+    out.write(r"\end{tabular}" + "\n")
+    out.write(r"\end{tiny}" + "\n")
+
+
+def write_lepton_background_latex(
+    estimates: Sequence[LeptonBackgroundEstimate],
+    path: Path,
+    *,
+    run_period: str,
+    include_table_env: bool = False,
+    tau_probability: Count | None = None,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    title = _an_background_title(estimates[0].flavor) if estimates else "lepton background"
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}" + "\n")
+            out.write(r"\centering" + "\n")
+            out.write(r"\caption{" + title.capitalize() + r" estimate.}" + "\n")
+            out.write(r"\label{tab:lepton_background_estimate}" + "\n")
+        _write_lepton_background_latex_body(
+            out,
+            [(run_period, estimates)],
+            tau_probability=tau_probability,
+        )
+        if include_table_env:
+            out.write(r"\end{table}" + "\n")
+
+
+def write_combined_lepton_background_latex(
+    period_estimates: Sequence[tuple[str, Sequence[LeptonBackgroundEstimate]]],
+    path: Path,
+    *,
+    include_table_env: bool = False,
+    tau_probability: Count | None = None,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    first_estimates = period_estimates[0][1] if period_estimates else []
+    title = _an_background_title(first_estimates[0].flavor) if first_estimates else "lepton background"
+    with path.open("w") as out:
+        if include_table_env:
+            out.write(r"\begin{table}" + "\n")
+            out.write(r"\centering" + "\n")
+            out.write(r"\caption{" + title.capitalize() + r" estimate.}" + "\n")
+            out.write(r"\label{tab:lepton_background_estimate}" + "\n")
+        _write_lepton_background_latex_body(
+            out,
+            period_estimates,
+            tau_probability=tau_probability,
+        )
         if include_table_env:
             out.write(r"\end{table}" + "\n")

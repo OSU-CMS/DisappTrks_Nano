@@ -5,9 +5,12 @@ import numpy as np
 from disapptrks.cli import _lepton_background_outputs, _trigger_efficiency_from_outputs
 from disapptrks.fake_tracks import Count
 from disapptrks.lepton_backgrounds import (
+    _format_an_pm,
     estimate_lepton_background,
     legacy_met_probabilities_from_outputs,
+    read_lepton_background_json,
     trigger_efficiency_from_counts,
+    write_combined_lepton_background_latex,
     write_lepton_background_json,
     write_lepton_background_latex,
 )
@@ -347,3 +350,51 @@ def test_write_lepton_background_outputs(tmp_path: Path):
     tau_text = tau_tex_path.read_text()
     assert "P(\\tau)" in tau_text
     assert "1.4600 $\\pm$ 0.0024" in tau_text
+
+
+def test_write_combined_lepton_background_latex(tmp_path: Path):
+    estimates = estimate_lepton_background(
+        flavor=r"$e$",
+        layers=["NLayers4", "combinedBins"],
+        pair_counts={
+            "NLayers4": {"den_os": 10.0, "num_os": 1.0, "den_ss": 0.0, "num_ss": 0.0},
+            "combinedBins": {"den_os": 20.0, "num_os": 1.0, "den_ss": 0.0, "num_ss": 0.0},
+        },
+        counts={
+            "control_NLayers4": 10.0,
+            "offline_NLayers4": 5.0,
+            "trigger_NLayers4": 4.0,
+            "control_combinedBins": 20.0,
+            "offline_combinedBins": 10.0,
+            "trigger_combinedBins": 8.0,
+        },
+        control_category="control_{layer}",
+        poffline_numerator_category="offline_{layer}",
+        poffline_denominator_category="control_{layer}",
+        pmiss_numerator_category="trigger_{layer}",
+        pmiss_denominator_category="offline_{layer}",
+    )
+    first_json = tmp_path / "electron_2022CD.json"
+    second_json = tmp_path / "electron_2022EFG.json"
+    write_lepton_background_json(estimates, first_json)
+    write_lepton_background_json(estimates, second_json)
+    output = tmp_path / "combined.tex"
+
+    write_combined_lepton_background_latex(
+        [
+            ("2022 CD", read_lepton_background_json(first_json)),
+            ("2022 EFG", read_lepton_background_json(second_json)),
+        ],
+        output,
+    )
+
+    text = output.read_text()
+    assert text.count(r"\multirow{2}{*}") == 2
+    assert "2022 CD" in text
+    assert "2022 EFG" in text
+    assert "electron background" in text
+
+
+def test_an_pm_formatter_uses_scientific_notation_for_small_values():
+    assert _format_an_pm(1.62e-5, 0.31e-5) == r"$(1.62 \pm 0.31) \times 10^{-5}$"
+    assert _format_an_pm(0.642, 0.016) == r"0.642 $\pm$ 0.016"

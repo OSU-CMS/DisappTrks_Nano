@@ -37,7 +37,9 @@ from .fiducial import (
 from .lepton_backgrounds import (
     estimate_lepton_background,
     legacy_met_probabilities_from_outputs,
+    read_lepton_background_json,
     trigger_efficiency_from_counts,
+    write_combined_lepton_background_latex,
     write_lepton_background_json,
     write_lepton_background_latex,
 )
@@ -1025,6 +1027,48 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_period_json_input(value: str) -> tuple[str, Path]:
+    if "=" not in value:
+        raise ValueError(
+            f"combined table input {value!r} must be formatted as RUN_PERIOD=path.json"
+        )
+    period, path = value.split("=", 1)
+    period = period.strip()
+    if not period:
+        raise ValueError(f"combined table input {value!r} has an empty run period")
+    return period, Path(path.strip())
+
+
+def _combine_lepton_background_tables_command(args: argparse.Namespace) -> int:
+    period_estimates = []
+    for item in args.input:
+        run_period, path = _parse_period_json_input(item)
+        estimates = read_lepton_background_json(path)
+        if args.flavor:
+            estimates = [
+                estimate
+                for estimate in estimates
+                if estimate.flavor == args.flavor
+            ]
+        if not estimates:
+            raise ValueError(f"no estimates found in {path} for run period {run_period}")
+        period_estimates.append((run_period, estimates))
+
+    tau_probability = (
+        Count(args.tau_probability, args.tau_probability_error * args.tau_probability_error)
+        if args.tau_probability is not None
+        else None
+    )
+    write_combined_lepton_background_latex(
+        period_estimates,
+        args.output_tex,
+        include_table_env=args.table_env,
+        tau_probability=tau_probability,
+    )
+    print(f"Wrote {args.output_tex}")
+    return 0
+
+
 def _make_fiducial_map_command(args: argparse.Namespace) -> int:
     outputs = _load_outputs(args.files)
     prefix = {"electron": "electron", "muon": "muon"}[args.flavor]
@@ -1525,6 +1569,47 @@ def main():
         help="Wrap the LaTeX tabular in a table environment.",
     )
     lepton_background.set_defaults(func=_estimate_lepton_background_command)
+
+    combined_lepton_background = subparsers.add_parser(
+        "combine-lepton-background-tables",
+        help="Combine per-period lepton-background JSON summaries into one AN-style LaTeX table.",
+    )
+    combined_lepton_background.add_argument(
+        "--input",
+        action="append",
+        required=True,
+        help=(
+            "Run-period label and JSON path formatted as RUN_PERIOD=path.json. "
+            "Repeat this option in the desired table order."
+        ),
+    )
+    combined_lepton_background.add_argument(
+        "--output-tex",
+        type=Path,
+        required=True,
+        help="Write the combined LaTeX table.",
+    )
+    combined_lepton_background.add_argument(
+        "--flavor",
+        help="Optional exact flavor label filter, e.g. '$e$' or '$\\mu$'.",
+    )
+    combined_lepton_background.add_argument(
+        "--tau-probability",
+        type=float,
+        help="Optional P(tau) value to display in the AN-style tau table.",
+    )
+    combined_lepton_background.add_argument(
+        "--tau-probability-error",
+        type=float,
+        default=0.0,
+        help="Absolute uncertainty on --tau-probability.",
+    )
+    combined_lepton_background.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap the LaTeX tabular in a table environment.",
+    )
+    combined_lepton_background.set_defaults(func=_combine_lepton_background_tables_command)
 
     fiducial_map = subparsers.add_parser(
         "make-fiducial-map",
