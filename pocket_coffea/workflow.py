@@ -239,7 +239,15 @@ GOLDEN_JSON_PAYLOADS = {}
 
 
 def _all_true_like(events):
-    return ak.ones_like(events.HLT.IsoMu24, dtype=bool)
+    return ak.ones_like(events.event, dtype=bool)
+
+
+def _hlt_or_mask(events, names):
+    mask = None
+    for name in names:
+        if "HLT" in events.fields and name in events.HLT.fields:
+            mask = events.HLT[name] if mask is None else (mask | events.HLT[name])
+    return mask if mask is not None else _all_true_like(events) & False
 
 
 def _event_flag(events, name: str, *, default: bool = True):
@@ -290,9 +298,20 @@ def _met_for_transverse_mass(events):
 
 
 def _single_muon_trigger_mask(events):
-    if "HLT" in events.fields and "IsoMu24" in events.HLT.fields:
-        return events.HLT.IsoMu24
-    return _all_true_like(events) & False
+    return _hlt_or_mask(events, ("IsoMu24",))
+
+
+def _tau_probability_single_muon_trigger_mask(events):
+    return _hlt_or_mask(events, ("IsoMu20", "IsoMu24"))
+
+
+def _muon_tau_trigger_mask(events):
+    return _hlt_or_mask(
+        events,
+        (
+            "IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1",
+        ),
+    )
 
 
 def _met_trigger_mask(events):
@@ -315,11 +334,7 @@ def _met_trigger_mask(events):
         "PFMET250_HBHECleaned",
         "PFMET300_HBHECleaned",
     )
-    mask = None
-    for name in names:
-        if "HLT" in events.fields and name in events.HLT.fields:
-            mask = events.HLT[name] if mask is None else (mask | events.HLT[name])
-    return mask if mask is not None else _all_true_like(events) & False
+    return _hlt_or_mask(events, names)
 
 
 def _leading_jet_delta_phi(events, phi):
@@ -1194,6 +1209,11 @@ class DisappTrksProcessor(BaseProcessorABC):
 
     def apply_object_preselection(self, variation):
         if (
+            self._category_mode() == "tau_trigger_probability"
+            and not self._full_workflow_enabled()
+        ):
+            return
+        if (
             "Electron" in self.events.fields
             and
             self._mode_enabled(
@@ -1609,6 +1629,34 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events.IsoTrackSearchPreLeptonVeto
         )
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
+
+    def _has_eta_leg(self, collection_name, eta_max=2.1):
+        if collection_name not in self.events.fields:
+            return _all_true_like(self.events) & False
+        collection = self.events[collection_name]
+        if "eta" not in collection.fields:
+            return _all_true_like(self.events) & False
+        return ak.num(collection[abs(collection.eta) < eta_max]) >= 1
+
+    def _store_tau_trigger_probability_counts(self):
+        muon_eta_leg = self._has_eta_leg("Muon", eta_max=2.1)
+        tau_eta_leg = self._has_eta_leg("Tau", eta_max=2.1)
+        eta_legs = muon_eta_leg & tau_eta_leg
+        denominator = eta_legs & _tau_probability_single_muon_trigger_mask(self.events)
+        numerator = eta_legs & _muon_tau_trigger_mask(self.events)
+
+        self.events["nTauTriggerProbabilityMuonEtaLeg"] = ak.values_astype(
+            muon_eta_leg, np.int64
+        )
+        self.events["nTauTriggerProbabilityTauEtaLeg"] = ak.values_astype(
+            tau_eta_leg, np.int64
+        )
+        self.events["nTauTriggerProbabilityDenominator"] = ak.values_astype(
+            denominator, np.int64
+        )
+        self.events["nTauTriggerProbabilityNumerator"] = ak.values_astype(
+            numerator, np.int64
+        )
 
     def _count_muon_pveto_fields(self):
         self.events["nMuonTag"] = ak.num(self.events.MuonTag)
@@ -2183,7 +2231,8 @@ class DisappTrksProcessor(BaseProcessorABC):
 
     def _count_objects_mode_aware(self, variation):
         mode = self._category_mode()
-        self._count_common_search_fields()
+        if mode != "tau_trigger_probability":
+            self._count_common_search_fields()
 
         if mode == "muon_pveto":
             self._count_muon_pveto_fields()
@@ -2213,6 +2262,8 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events["nMuonLowMTTag"] = ak.num(self.events.MuonLowMTTag)
         elif mode == "tau_ele_pmiss_poffline":
             self.events["nElectronLowMTTag"] = ak.num(self.events.ElectronLowMTTag)
+        elif mode == "tau_trigger_probability":
+            self._store_tau_trigger_probability_counts()
         elif mode == "fake_tracks":
             self._count_fake_track_fields(controls=self._fake_track_controls())
         elif mode == "muon_backgrounds":

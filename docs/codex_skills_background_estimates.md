@@ -138,7 +138,25 @@ disapptrks estimate-lepton-background \
   pocket_coffea/analysis_output/2022CD_electron_pmiss_poffline/output_*.coffea
 ```
 
-Use `--mode muon`, `--mode tau_mu`, or `--mode tau_ele` for the other channels.
+Use `--mode muon` for muons. For the final tau background, use the dedicated
+combined command instead of making separate tau-muon and tau-electron final
+estimates:
+
+```bash
+disapptrks estimate-tau-background \
+  --run-period 2022CD \
+  --output-json tables/tau_background_2022CD.json \
+  --output-tex tables/tau_background_2022CD.tex \
+  --tau-mu-files \
+    pocket_coffea/analysis_output/2022CD_tau_mu_pveto/output_*.coffea \
+    pocket_coffea/analysis_output/2022CD_tau_mu_pmiss_poffline/output_*.coffea \
+  --tau-ele-files \
+    pocket_coffea/analysis_output/2022CD_tau_ele_pveto/output_*.coffea \
+    pocket_coffea/analysis_output/2022CD_tau_ele_pmiss_poffline/output_*.coffea
+```
+
+That command sums the raw tau-muon and tau-electron ingredients before forming
+`Pveto`, `Poffline`, `Pmiss`, `epsilon_trig^tau`, and final `N_tau`.
 Only pass `--trigger-efficiency` and `--trigger-efficiency-error` for an
 explicit manual-override comparison.
 
@@ -164,6 +182,12 @@ Remember:
   `Pmiss`. `--trigger-efficiency` is only a manual override.
 - Use `--control-prescale` for the legacy MET/lepton-dataset luminosity or
   prescale factor when it is not unity.
+- For tau, combine `tau_mu` and `tau_ele` with `estimate-tau-background`; do
+  not add finished per-leg `N_tau` values.
+- Omit `--tau-probability` for the current Nano tau background estimate because
+  the tau legs use single-muon and single-electron control triggers. Use
+  `tau_trigger_probability` only for an explicit legacy/AN muon+tau-trigger
+  normalization comparison.
 
 Expected nominal diagnostics:
 

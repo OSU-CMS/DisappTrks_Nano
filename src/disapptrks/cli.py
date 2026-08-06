@@ -36,7 +36,9 @@ from .fiducial import (
 )
 from .lepton_backgrounds import (
     estimate_lepton_background,
+    legacy_met_probability_components_from_outputs,
     legacy_met_probabilities_from_outputs,
+    probability_from_counts,
     read_lepton_background_json,
     trigger_efficiency_from_counts,
     write_combined_lepton_background_latex,
@@ -236,17 +238,48 @@ def _sum_pair_count_maps(
     }
 
 
-def _trigger_efficiency_from_outputs(
+def _add_counts(left: Count, right: Count) -> Count:
+    return Count(left.value + right.value, left.variance + right.variance)
+
+
+def _sum_named_count_maps(*maps: dict[str, dict[str, Count]]) -> dict[str, dict[str, Count]]:
+    out: dict[str, dict[str, Count]] = {}
+    for mapping in maps:
+        for layer, counts in mapping.items():
+            layer_counts = out.setdefault(layer, {})
+            for key, count in counts.items():
+                layer_counts[key] = (
+                    _add_counts(layer_counts[key], count)
+                    if key in layer_counts
+                    else count
+                )
+    return out
+
+
+def _met_probabilities_from_components(
+    components: dict[str, dict[str, Count]]
+) -> dict[str, tuple[Count, Count]]:
+    probabilities = {}
+    for layer, counts in components.items():
+        probabilities[layer] = (
+            probability_from_counts(counts["offline_pass"], counts["control"]),
+            probability_from_counts(
+                counts["weighted_trigger_pass"],
+                counts["offline_total"],
+            ),
+        )
+    return probabilities
+
+
+def _trigger_efficiency_count_components_from_outputs(
     outputs: list[dict],
     *,
     prefix: str,
     layers: list[str],
     dataset: str | None = None,
     sample: str | None = None,
-) -> dict[str, Count]:
-    """Calculate the legacy epsilon divisor from Pveto tag-probe counters."""
-
-    efficiencies = {}
+) -> dict[str, dict[str, Count]]:
+    count_components = {}
     for layer in layers:
         suffix = "" if layer == "combinedBins" else f"_{layer}"
         variables = {
@@ -273,8 +306,57 @@ def _trigger_efficiency_from_outputs(
                 for output in outputs
             )
             counts[key] = Count(value, value)
-        efficiencies[layer] = trigger_efficiency_from_counts(**counts)
-    return efficiencies
+        count_components[layer] = counts
+    return count_components
+
+
+def _trigger_efficiency_from_outputs(
+    outputs: list[dict],
+    *,
+    prefix: str,
+    layers: list[str],
+    dataset: str | None = None,
+    sample: str | None = None,
+) -> dict[str, Count]:
+    """Calculate the legacy epsilon divisor from Pveto tag-probe counters."""
+
+    return {
+        layer: trigger_efficiency_from_counts(**counts)
+        for layer, counts in _trigger_efficiency_count_components_from_outputs(
+            outputs,
+            prefix=prefix,
+            layers=layers,
+            dataset=dataset,
+            sample=sample,
+        ).items()
+    }
+
+
+def _tau_trigger_probability_from_outputs(
+    outputs: list[dict],
+    *,
+    dataset: str | None = None,
+    sample: str | None = None,
+) -> tuple[Count, Count, Count]:
+    numerator = 0.0
+    denominator = 0.0
+    for output in outputs:
+        variables = output.get("variables", {})
+        numerator += variable_count_sum(
+            variables,
+            "nTauTriggerProbabilityNumerator",
+            dataset=dataset,
+            sample=sample,
+        )
+        denominator += variable_count_sum(
+            variables,
+            "nTauTriggerProbabilityDenominator",
+            dataset=dataset,
+            sample=sample,
+        )
+    numerator_count = Count(numerator, numerator)
+    denominator_count = Count(denominator, denominator)
+    return numerator_count, denominator_count, numerator_count / denominator_count
 
 
 LEPTON_PVETO_PAIR_VARIABLES = {
@@ -972,6 +1054,11 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         )
         trigger_efficiency_method = "manual"
 
+    tau_probability = (
+        Count(args.tau_probability, args.tau_probability_error * args.tau_probability_error)
+        if args.tau_probability is not None
+        else None
+    )
     estimates = estimate_lepton_background(
         flavor=flavor,
         layers=args.layers,
@@ -984,6 +1071,7 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         pmiss_denominator_category=pmiss_denominator_category,
         control_prescale=args.control_prescale,
         trigger_efficiency=trigger_efficiency,
+        tau_probability=tau_probability,
         met_probabilities=met_probabilities,
         dataset=args.dataset,
         sample=args.sample,
@@ -994,11 +1082,6 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         write_lepton_background_json(estimates, args.output_json)
         print(f"Wrote {args.output_json}")
     if args.output_tex is not None:
-        tau_probability = (
-            Count(args.tau_probability, args.tau_probability_error * args.tau_probability_error)
-            if args.tau_probability is not None
-            else None
-        )
         write_lepton_background_latex(
             estimates,
             args.output_tex,
@@ -1021,6 +1104,237 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
             f"P_offline={estimate.p_offline.value:.6g}, "
             f"P_miss={estimate.p_miss.value:.6g}, "
             f"trigger_efficiency={estimate.trigger_efficiency.value:.6g}, "
+            f"P_tau={estimate.tau_probability.value:.6g}, "
+            f"trigger_efficiency_method={trigger_efficiency_method}, "
+            f"met_method={met_method})"
+        )
+    return 0
+
+
+def _estimate_tau_background_command(args: argparse.Namespace) -> int:
+    tau_mu_outputs = _load_outputs(args.tau_mu_files)
+    tau_ele_outputs = _load_outputs(args.tau_ele_files)
+    tau_mu_background_outputs = _lepton_background_outputs(tau_mu_outputs, prefix="TauMu")
+    tau_ele_background_outputs = _lepton_background_outputs(tau_ele_outputs, prefix="TauEle")
+
+    tau_mu_pair_counts = _pair_counts_from_outputs(
+        tau_mu_outputs,
+        layers=args.layers,
+        variable_templates=LEPTON_PVETO_PAIR_VARIABLES["tau_mu"],
+        dataset=args.tau_mu_dataset or args.dataset,
+        sample=args.tau_mu_sample,
+    )
+    tau_ele_pair_counts = _pair_counts_from_outputs(
+        tau_ele_outputs,
+        layers=args.layers,
+        variable_templates=LEPTON_PVETO_PAIR_VARIABLES["tau_ele"],
+        dataset=args.tau_ele_dataset or args.dataset,
+        sample=args.tau_ele_sample,
+    )
+    pair_counts = _sum_pair_count_maps(tau_mu_pair_counts, tau_ele_pair_counts)
+
+    def _merged_cutflow(outputs):
+        merged = {}
+        for output in outputs:
+            merged = _sum_nested_numeric(merged, output["cutflow"])
+        return merged
+
+    tau_mu_cutflow = _merged_cutflow(tau_mu_background_outputs)
+    tau_ele_cutflow = _merged_cutflow(tau_ele_background_outputs)
+
+    tau_mu_control_counts = {
+        layer: Count(
+            cutflow_count(
+                tau_mu_cutflow,
+                f"tau_mu_background_control_{layer}",
+                dataset=args.tau_mu_dataset or args.dataset,
+                sample=args.tau_mu_sample,
+                variation=args.variation,
+            )
+        )
+        for layer in args.layers
+    }
+    tau_ele_control_counts = {
+        layer: Count(
+            cutflow_count(
+                tau_ele_cutflow,
+                f"tau_ele_background_control_{layer}",
+                dataset=args.tau_ele_dataset or args.dataset,
+                sample=args.tau_ele_sample,
+                variation=args.variation,
+            )
+        )
+        for layer in args.layers
+    }
+    tau_mu_offline_counts = {
+        layer: Count(
+            cutflow_count(
+                tau_mu_cutflow,
+                f"tau_mu_background_offline_{layer}",
+                dataset=args.tau_mu_dataset or args.dataset,
+                sample=args.tau_mu_sample,
+                variation=args.variation,
+            )
+        )
+        for layer in args.layers
+    }
+    tau_ele_offline_counts = {
+        layer: Count(
+            cutflow_count(
+                tau_ele_cutflow,
+                f"tau_ele_background_offline_{layer}",
+                dataset=args.tau_ele_dataset or args.dataset,
+                sample=args.tau_ele_sample,
+                variation=args.variation,
+            )
+        )
+        for layer in args.layers
+    }
+    tau_mu_trigger_counts = {
+        layer: Count(
+            cutflow_count(
+                tau_mu_cutflow,
+                f"tau_mu_background_trigger_{layer}",
+                dataset=args.tau_mu_dataset or args.dataset,
+                sample=args.tau_mu_sample,
+                variation=args.variation,
+            )
+        )
+        for layer in args.layers
+    }
+    tau_ele_trigger_counts = {
+        layer: Count(
+            cutflow_count(
+                tau_ele_cutflow,
+                f"tau_ele_background_trigger_{layer}",
+                dataset=args.tau_ele_dataset or args.dataset,
+                sample=args.tau_ele_sample,
+                variation=args.variation,
+            )
+        )
+        for layer in args.layers
+    }
+    combined_control_counts = {
+        layer: _add_counts(tau_mu_control_counts[layer], tau_ele_control_counts[layer])
+        for layer in args.layers
+    }
+    combined_offline_counts = {
+        layer: _add_counts(tau_mu_offline_counts[layer], tau_ele_offline_counts[layer])
+        for layer in args.layers
+    }
+    combined_trigger_counts = {
+        layer: _add_counts(tau_mu_trigger_counts[layer], tau_ele_trigger_counts[layer])
+        for layer in args.layers
+    }
+
+    tau_mu_met_components = legacy_met_probability_components_from_outputs(
+        tau_mu_background_outputs,
+        prefix="TauMu",
+        layers=args.layers,
+        control_counts=tau_mu_control_counts,
+        dataset=args.tau_mu_dataset or args.dataset,
+        sample=args.tau_mu_sample,
+        met_cut=args.met_cut,
+        phi_cut=args.phi_cut,
+    )
+    tau_ele_met_components = legacy_met_probability_components_from_outputs(
+        tau_ele_background_outputs,
+        prefix="TauEle",
+        layers=args.layers,
+        control_counts=tau_ele_control_counts,
+        dataset=args.tau_ele_dataset or args.dataset,
+        sample=args.tau_ele_sample,
+        met_cut=args.met_cut,
+        phi_cut=args.phi_cut,
+    )
+    met_probabilities = _met_probabilities_from_components(
+        _sum_named_count_maps(tau_mu_met_components, tau_ele_met_components)
+    )
+
+    if args.trigger_efficiency is None:
+        trigger_components = _sum_named_count_maps(
+            _trigger_efficiency_count_components_from_outputs(
+                tau_mu_outputs,
+                prefix="TauMu",
+                layers=args.layers,
+                dataset=args.tau_mu_dataset or args.dataset,
+                sample=args.tau_mu_sample,
+            ),
+            _trigger_efficiency_count_components_from_outputs(
+                tau_ele_outputs,
+                prefix="TauEle",
+                layers=args.layers,
+                dataset=args.tau_ele_dataset or args.dataset,
+                sample=args.tau_ele_sample,
+            ),
+        )
+        trigger_efficiency = {
+            layer: trigger_efficiency_from_counts(**counts)
+            for layer, counts in trigger_components.items()
+        }
+        trigger_efficiency_method = "legacy-tag-probe" if trigger_efficiency else "default"
+        if not trigger_efficiency:
+            trigger_efficiency = Count(1.0, 0.0)
+    else:
+        trigger_efficiency = Count(
+            args.trigger_efficiency,
+            args.trigger_efficiency_error * args.trigger_efficiency_error,
+        )
+        trigger_efficiency_method = "manual"
+
+    tau_probability = (
+        Count(args.tau_probability, args.tau_probability_error * args.tau_probability_error)
+        if args.tau_probability is not None
+        else None
+    )
+    counts = {}
+    for layer in args.layers:
+        counts[f"tau_background_control_{layer}"] = combined_control_counts[layer]
+        counts[f"tau_background_offline_{layer}"] = combined_offline_counts[layer]
+        counts[f"tau_background_trigger_{layer}"] = combined_trigger_counts[layer]
+    estimates = estimate_lepton_background(
+        flavor=args.flavor,
+        layers=args.layers,
+        pair_counts=pair_counts,
+        counts=counts,
+        control_category="tau_background_control_{layer}",
+        poffline_numerator_category="tau_background_offline_{layer}",
+        poffline_denominator_category="tau_background_control_{layer}",
+        pmiss_numerator_category="tau_background_trigger_{layer}",
+        pmiss_denominator_category="tau_background_offline_{layer}",
+        control_prescale=args.control_prescale,
+        trigger_efficiency=trigger_efficiency,
+        tau_probability=tau_probability,
+        met_probabilities=met_probabilities,
+        variation=args.variation,
+    )
+
+    if args.output_json is not None:
+        write_lepton_background_json(estimates, args.output_json)
+        print(f"Wrote {args.output_json}")
+    if args.output_tex is not None:
+        write_lepton_background_latex(
+            estimates,
+            args.output_tex,
+            run_period=args.run_period,
+            include_table_env=args.table_env,
+            tau_probability=tau_probability,
+        )
+        print(f"Wrote {args.output_tex}")
+    for estimate in estimates:
+        met_method = (
+            "hist-integrated"
+            if estimate.layer in met_probabilities
+            else "cutflow-ratio"
+        )
+        print(
+            f"{estimate.layer}: N_tau = "
+            f"{estimate.estimate.value:.6g} ± {estimate.estimate.error:.6g} "
+            f"(P_veto={estimate.p_veto.value:.6g}, "
+            f"P_offline={estimate.p_offline.value:.6g}, "
+            f"P_miss={estimate.p_miss.value:.6g}, "
+            f"trigger_efficiency={estimate.trigger_efficiency.value:.6g}, "
+            f"P_tau={estimate.tau_probability.value:.6g}, "
             f"trigger_efficiency_method={trigger_efficiency_method}, "
             f"met_method={met_method})"
         )
@@ -1066,6 +1380,58 @@ def _combine_lepton_background_tables_command(args: argparse.Namespace) -> int:
         tau_probability=tau_probability,
     )
     print(f"Wrote {args.output_tex}")
+    return 0
+
+
+def _extract_tau_trigger_probability_command(args: argparse.Namespace) -> int:
+    outputs = _load_outputs(args.files)
+    numerator, denominator, probability = _tau_trigger_probability_from_outputs(
+        outputs,
+        dataset=args.dataset,
+        sample=args.sample,
+    )
+    if denominator.value <= 0.0:
+        raise ValueError(
+            "tau-trigger probability denominator is zero. Check that the input "
+            "was produced with DISAPPTRKS_CATEGORY_MODE=tau_trigger_probability "
+            "and that the NanoAOD contains the single-muon HLT branch."
+        )
+    payload = {
+        "numerator": numerator.as_dict() if hasattr(numerator, "as_dict") else {
+            "value": numerator.value,
+            "error": numerator.error,
+            "variance": numerator.variance,
+        },
+        "denominator": denominator.as_dict() if hasattr(denominator, "as_dict") else {
+            "value": denominator.value,
+            "error": denominator.error,
+            "variance": denominator.variance,
+        },
+        "tau_probability": {
+            "value": probability.value,
+            "error": probability.error,
+            "variance": probability.variance,
+        },
+    }
+    if args.output_json is not None:
+        args.output_json.parent.mkdir(parents=True, exist_ok=True)
+        args.output_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        print(f"Wrote {args.output_json}")
+    print(
+        "tau_probability="
+        f"{probability.value:.6g} ± {probability.error:.6g} "
+        f"(numerator={numerator.value:.6g}, denominator={denominator.value:.6g})"
+    )
+    print(
+        "Use with estimate-lepton-background: "
+        f"--tau-probability {probability.value:.8g} "
+        f"--tau-probability-error {probability.error:.8g}"
+    )
+    print(
+        "Only use that option for a legacy/AN-style tau estimate whose control "
+        "region is normalized through the muon+tau trigger. Omit it for the "
+        "current Nano tau_mu/tau_ele single-lepton-trigger control regions."
+    )
     return 0
 
 
@@ -1424,6 +1790,31 @@ def main():
     )
     tau_pveto_table.set_defaults(func=_make_tau_pveto_table_command)
 
+    tau_trigger_probability = subparsers.add_parser(
+        "extract-tau-trigger-probability",
+        help=(
+            "Extract the AN tau-trigger correction from "
+            "DISAPPTRKS_CATEGORY_MODE=tau_trigger_probability outputs."
+        ),
+    )
+    tau_trigger_probability.add_argument("files", nargs="+", type=Path)
+    tau_trigger_probability.add_argument(
+        "--dataset",
+        help="Restrict to one dataset key.",
+    )
+    tau_trigger_probability.add_argument(
+        "--sample",
+        help="Restrict to one sample key.",
+    )
+    tau_trigger_probability.add_argument(
+        "--output-json",
+        type=Path,
+        help="Write numerator, denominator, and tau_probability to JSON.",
+    )
+    tau_trigger_probability.set_defaults(
+        func=_extract_tau_trigger_probability_command
+    )
+
     lepton_background = subparsers.add_parser(
         "estimate-lepton-background",
         help=(
@@ -1531,8 +1922,9 @@ def main():
         "--tau-probability",
         type=float,
         help=(
-            "Optional P(tau) value to display in the AN-style tau background "
-            "LaTeX table. This is a table-formatting input only."
+            "Optional legacy/AN tau-trigger scale P(tau). This scales N_ctrl "
+            "and is stored in JSON. Omit it for the current Nano tau_mu/tau_ele "
+            "single-lepton-trigger control regions."
         ),
     )
     lepton_background.add_argument(
@@ -1570,6 +1962,138 @@ def main():
     )
     lepton_background.set_defaults(func=_estimate_lepton_background_command)
 
+    tau_background = subparsers.add_parser(
+        "estimate-tau-background",
+        help=(
+            "Compute the combined tau background estimate by summing tau_mu "
+            "and tau_ele raw ingredients before forming Pveto, Poffline, "
+            "Pmiss, and epsilon."
+        ),
+    )
+    tau_background.add_argument(
+        "--tau-mu-files",
+        nargs="+",
+        type=Path,
+        required=True,
+        help=(
+            "tau_mu PocketCoffea output files. Include the tau_mu_pveto "
+            "outputs and, for production, the tau_mu_pmiss_poffline outputs."
+        ),
+    )
+    tau_background.add_argument(
+        "--tau-ele-files",
+        nargs="+",
+        type=Path,
+        required=True,
+        help=(
+            "tau_ele PocketCoffea output files. Include the tau_ele_pveto "
+            "outputs and, for production, the tau_ele_pmiss_poffline outputs."
+        ),
+    )
+    tau_background.add_argument(
+        "--dataset",
+        help="Restrict both tau_mu and tau_ele inputs to one dataset key.",
+    )
+    tau_background.add_argument(
+        "--tau-mu-dataset",
+        help="Restrict tau_mu inputs to one dataset key. Overrides --dataset.",
+    )
+    tau_background.add_argument(
+        "--tau-ele-dataset",
+        help="Restrict tau_ele inputs to one dataset key. Overrides --dataset.",
+    )
+    tau_background.add_argument(
+        "--tau-mu-sample",
+        default="DATA_Muon",
+        help="Restrict tau_mu inputs to one sample key.",
+    )
+    tau_background.add_argument(
+        "--tau-ele-sample",
+        default="DATA_EGamma",
+        help="Restrict tau_ele inputs to one sample key.",
+    )
+    tau_background.add_argument("--variation", default="nominal")
+    tau_background.add_argument(
+        "--run-period",
+        required=True,
+        help="Run-period label used in the LaTeX table.",
+    )
+    tau_background.add_argument(
+        "--flavor",
+        default=r"$\tau_h$",
+        help="Flavor label used in the output table.",
+    )
+    tau_background.add_argument(
+        "--layers",
+        nargs="+",
+        default=["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"],
+        help="Layer-bin rows to estimate.",
+    )
+    tau_background.add_argument(
+        "--control-prescale",
+        type=float,
+        default=1.0,
+        help="Scale factor applied to the combined N_ctrl before computing N_tau.",
+    )
+    tau_background.add_argument(
+        "--trigger-efficiency",
+        type=float,
+        help=(
+            "Manual epsilon trigger-efficiency divisor override. By default "
+            "epsilon is calculated from the combined tau_mu and tau_ele "
+            "legacy tag-probe trigger counters when available."
+        ),
+    )
+    tau_background.add_argument(
+        "--trigger-efficiency-error",
+        type=float,
+        default=0.0,
+        help="Absolute uncertainty on --trigger-efficiency.",
+    )
+    tau_background.add_argument(
+        "--tau-probability",
+        type=float,
+        help=(
+            "Optional legacy/AN tau-trigger scale P(tau). This scales the "
+            "combined N_ctrl and is stored in JSON. Omit it for the current "
+            "Nano tau_mu/tau_ele single-lepton-trigger control regions."
+        ),
+    )
+    tau_background.add_argument(
+        "--tau-probability-error",
+        type=float,
+        default=0.0,
+        help="Absolute uncertainty on --tau-probability.",
+    )
+    tau_background.add_argument(
+        "--met-cut",
+        type=float,
+        default=120.0,
+        help="Offline lepton-removed MET threshold used for Poffline/Pmiss integration.",
+    )
+    tau_background.add_argument(
+        "--phi-cut",
+        type=float,
+        default=0.5,
+        help="Delta-phi threshold used for Poffline/Pmiss integration.",
+    )
+    tau_background.add_argument(
+        "--output-json",
+        type=Path,
+        help="Write detailed estimate components to JSON.",
+    )
+    tau_background.add_argument(
+        "--output-tex",
+        type=Path,
+        help="Write a LaTeX summary table.",
+    )
+    tau_background.add_argument(
+        "--table-env",
+        action="store_true",
+        help="Wrap the LaTeX tabular in a table environment.",
+    )
+    tau_background.set_defaults(func=_estimate_tau_background_command)
+
     combined_lepton_background = subparsers.add_parser(
         "combine-lepton-background-tables",
         help="Combine per-period lepton-background JSON summaries into one AN-style LaTeX table.",
@@ -1596,7 +2120,10 @@ def main():
     combined_lepton_background.add_argument(
         "--tau-probability",
         type=float,
-        help="Optional P(tau) value to display in the AN-style tau table.",
+        help=(
+            "Deprecated display override retained for compatibility. The "
+            "LaTeX background estimate table no longer includes a P(tau) column."
+        ),
     )
     combined_lepton_background.add_argument(
         "--tau-probability-error",

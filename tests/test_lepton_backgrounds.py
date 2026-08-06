@@ -2,7 +2,14 @@ from pathlib import Path
 
 import numpy as np
 
-from disapptrks.cli import _lepton_background_outputs, _trigger_efficiency_from_outputs
+from disapptrks.cli import (
+    _lepton_background_outputs,
+    _met_probabilities_from_components,
+    _sum_named_count_maps,
+    _tau_trigger_probability_from_outputs,
+    _trigger_efficiency_count_components_from_outputs,
+    _trigger_efficiency_from_outputs,
+)
 from disapptrks.fake_tracks import Count
 from disapptrks.lepton_backgrounds import (
     _format_an_pm,
@@ -99,6 +106,38 @@ def test_estimate_lepton_background_applies_control_prescale_and_trigger_efficie
     assert estimate.estimate.value == 200.0 * (4.0 / 40.0) * 0.25 * 0.8 / 0.5
 
 
+def test_estimate_lepton_background_applies_tau_probability_scale():
+    estimates = estimate_lepton_background(
+        flavor=r"$\tau$",
+        layers=["NLayers4"],
+        pair_counts={
+            "NLayers4": {
+                "den_os": 50.0,
+                "num_os": 5.0,
+                "den_ss": 10.0,
+                "num_ss": 1.0,
+            }
+        },
+        counts={
+            "control_NLayers4": 100.0,
+            "offline_NLayers4": 25.0,
+            "trigger_NLayers4": 20.0,
+        },
+        control_category="control_{layer}",
+        poffline_numerator_category="offline_{layer}",
+        poffline_denominator_category="control_{layer}",
+        pmiss_numerator_category="trigger_{layer}",
+        pmiss_denominator_category="offline_{layer}",
+        tau_probability=Count(1.5, 0.01),
+    )
+
+    estimate = estimates[0]
+    assert estimate.control_raw.value == 100.0
+    assert estimate.control.value == 150.0
+    assert estimate.tau_probability.value == 1.5
+    assert estimate.estimate.value == 150.0 * (4.0 / 40.0) * 0.25 * 0.8
+
+
 def test_estimate_lepton_background_accepts_layer_trigger_efficiencies():
     pair_counts = {
         "NLayers4": {"den_os": 50.0, "num_os": 5.0, "den_ss": 10.0, "num_ss": 1.0},
@@ -185,6 +224,113 @@ def test_trigger_efficiency_from_outputs_uses_legacy_counters():
 
     assert efficiencies["NLayers4"].value == 60.0 / 80.0
     assert efficiencies["NLayers5"].value == 28.0 / 40.0
+
+
+def test_count_component_helpers_sum_raw_tau_legs_before_ratios():
+    tau_mu_components = {
+        "NLayers4": {
+            "control": Count(100.0, 100.0),
+            "offline_pass": Count(20.0, 20.0),
+            "weighted_trigger_pass": Count(10.0, 10.0),
+            "offline_total": Count(25.0, 25.0),
+        }
+    }
+    tau_ele_components = {
+        "NLayers4": {
+            "control": Count(300.0, 300.0),
+            "offline_pass": Count(180.0, 180.0),
+            "weighted_trigger_pass": Count(30.0, 30.0),
+            "offline_total": Count(75.0, 75.0),
+        }
+    }
+
+    probabilities = _met_probabilities_from_components(
+        _sum_named_count_maps(tau_mu_components, tau_ele_components)
+    )
+
+    poffline, pmiss = probabilities["NLayers4"]
+    assert poffline.value == (20.0 + 180.0) / (100.0 + 300.0)
+    assert pmiss.value == (10.0 + 30.0) / (25.0 + 75.0)
+
+
+def test_trigger_efficiency_components_can_be_combined_before_ratio():
+    tau_mu_output = {
+        "variables": {
+            "nTauMuTriggerEffProbesPT55_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 100.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nTauMuTriggerEffProbesSSPT55_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 20.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nTauMuTriggerEffProbesFiringTrigger_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 70.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nTauMuTriggerEffSSProbesFiringTrigger_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 10.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+        }
+    }
+    tau_ele_output = {
+        "variables": {
+            "nTauEleTriggerEffProbesPT55_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 50.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nTauEleTriggerEffProbesSSPT55_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 10.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nTauEleTriggerEffProbesFiringTrigger_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 30.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+            "nTauEleTriggerEffSSProbesFiringTrigger_NLayers4": {
+                "sample": {"dataset": FakeHist([0.0, 2.0], [FakeAxis("n", [-0.5, 0.5, 1.5])])}
+            },
+        }
+    }
+
+    combined = _sum_named_count_maps(
+        _trigger_efficiency_count_components_from_outputs(
+            [tau_mu_output],
+            prefix="TauMu",
+            layers=["NLayers4"],
+            dataset="dataset",
+            sample="sample",
+        ),
+        _trigger_efficiency_count_components_from_outputs(
+            [tau_ele_output],
+            prefix="TauEle",
+            layers=["NLayers4"],
+            dataset="dataset",
+            sample="sample",
+        ),
+    )
+    efficiency = trigger_efficiency_from_counts(**combined["NLayers4"])
+
+    assert efficiency.value == ((70.0 + 30.0) - (10.0 + 2.0)) / (
+        (100.0 + 50.0) - (20.0 + 10.0)
+    )
+
+
+def test_tau_trigger_probability_from_outputs_uses_mode_counters():
+    output = {
+        "variables": {
+            "nTauTriggerProbabilityNumerator": {
+                "sample": {"dataset": FakeHist([0.0, 146.0], [FakeAxis("n", [0.0, 1.0, 2.0])])}
+            },
+            "nTauTriggerProbabilityDenominator": {
+                "sample": {"dataset": FakeHist([0.0, 100.0], [FakeAxis("n", [0.0, 1.0, 2.0])])}
+            },
+        }
+    }
+
+    numerator, denominator, probability = _tau_trigger_probability_from_outputs(
+        [output],
+        dataset="dataset",
+        sample="sample",
+    )
+
+    assert numerator.value == 146.0
+    assert denominator.value == 100.0
+    assert probability.value == 1.46
 
 
 def test_legacy_met_probabilities_integrate_trigger_turn_on():
@@ -348,8 +494,39 @@ def test_write_lepton_background_outputs(tmp_path: Path):
         tau_probability=Count(1.46, 0.00239 * 0.00239),
     )
     tau_text = tau_tex_path.read_text()
-    assert "P(\\tau)" in tau_text
-    assert "1.4600 $\\pm$ 0.0024" in tau_text
+    assert "P(\\tau)" not in tau_text
+    assert "1.4600 $\\pm$ 0.0024" not in tau_text
+
+    scaled_estimates = estimate_lepton_background(
+        flavor=r"$\tau$",
+        layers=["NLayers4"],
+        pair_counts={
+            "NLayers4": {
+                "den_os": 10.0,
+                "num_os": 1.0,
+                "den_ss": 0.0,
+                "num_ss": 0.0,
+            }
+        },
+        counts={
+            "control_NLayers4": 10.0,
+            "offline_NLayers4": 5.0,
+            "trigger_NLayers4": 4.0,
+        },
+        control_category="control_{layer}",
+        poffline_numerator_category="offline_{layer}",
+        poffline_denominator_category="control_{layer}",
+        pmiss_numerator_category="trigger_{layer}",
+        pmiss_denominator_category="offline_{layer}",
+        tau_probability=Count(1.46, 0.00239 * 0.00239),
+    )
+    scaled_json_path = tmp_path / "tau_scaled.json"
+    scaled_tex_path = tmp_path / "tau_scaled.tex"
+    write_lepton_background_json(scaled_estimates, scaled_json_path)
+    scaled_roundtrip = read_lepton_background_json(scaled_json_path)
+    assert scaled_roundtrip[0].tau_probability.value == 1.46
+    write_lepton_background_latex(scaled_roundtrip, scaled_tex_path, run_period="2023D")
+    assert "P(\\tau)" not in scaled_tex_path.read_text()
 
 
 def test_write_combined_lepton_background_latex(tmp_path: Path):

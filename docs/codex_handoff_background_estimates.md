@@ -97,6 +97,7 @@ Important modes:
 | `electron_pmiss_poffline` | `DATA_EGamma` | Electron `Poffline` and `Pmiss` control categories only. |
 | `tau_mu_pmiss_poffline` | `DATA_Muon` | Tau control `Poffline` and `Pmiss` with muon low-`MT` tags. |
 | `tau_ele_pmiss_poffline` | `DATA_EGamma` | Tau control `Poffline` and `Pmiss` with electron low-`MT` tags. |
+| `tau_trigger_probability` | `DATA_Tau` or tau-trigger dataset | Optional legacy/AN diagnostic counts for a muon+tau-trigger normalization. Not used by the current Nano tau_mu/tau_ele single-lepton-trigger control regions. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track estimate control regions. |
 
 Avoid using `muon_backgrounds`, `egamma_backgrounds`, or `all` for production
@@ -206,6 +207,44 @@ Definitions:
 
 `N_ctrl` can also be scaled with `--control-prescale`. This matches the legacy
 MET/lepton-dataset luminosity or prescale correction. The default is `1.0`.
+For the current Nano tau background, omit `--tau-probability`: `tau_mu` uses a
+single-muon-trigger control region and `tau_ele` uses a single-electron-trigger
+control region. The AN-style `P(tau)` correction is only relevant for a
+legacy/AN comparison in which the tau control normalization uses the muon+tau
+HLT path. That optional diagnostic can be measured with
+`DISAPPTRKS_CATEGORY_MODE=tau_trigger_probability`, then extracted with
+`disapptrks extract-tau-trigger-probability`.
+
+The final tau estimate must combine the tau-muon and tau-electron legs before
+forming probabilities. Use `disapptrks estimate-tau-background`, not two
+separate `estimate-lepton-background --mode tau_*` final tables. The combined
+command sums the raw ingredients from both legs first:
+
+- `Pveto` OS/SS tag-probe pair counts.
+- `N_ctrl`.
+- `Poffline` and `Pmiss` MET-integration numerator/denominator components.
+- `epsilon_trig^tau` tag-probe trigger-efficiency numerator/denominator
+  components.
+
+Then it forms the ratios and final `N_tau`.
+
+Example:
+
+```bash
+disapptrks estimate-tau-background \
+  --run-period 2022CD \
+  --output-json tables/tau_background_2022CD.json \
+  --output-tex tables/tau_background_2022CD.tex \
+  --tau-mu-files \
+    analysis_output/2022CD_tau_mu_pveto/output_*.coffea \
+    analysis_output/2022CD_tau_mu_pmiss_poffline/output_*.coffea \
+  --tau-ele-files \
+    analysis_output/2022CD_tau_ele_pveto/output_*.coffea \
+    analysis_output/2022CD_tau_ele_pmiss_poffline/output_*.coffea
+```
+
+The defaults are `--tau-mu-sample DATA_Muon` and
+`--tau-ele-sample DATA_EGamma`.
 
 Current category naming:
 
@@ -493,6 +532,9 @@ than inventing missing infrastructure:
   both the relevant `*_pveto` and `*_pmiss_poffline` jobs with current code.
 - Confirm whether a non-unity legacy `MET lumi / lepton lumi` prescale should
   be passed with `--control-prescale` for each run period and channel.
+- Do not pass `--tau-probability` for the current Nano tau background estimate
+  unless intentionally doing a legacy/AN muon+tau-trigger-normalization
+  comparison.
 - Keep checking that postprocessing reports
   `trigger_efficiency_method=legacy-tag-probe`
   and `met_method=hist-integrated`; otherwise the inputs were produced with

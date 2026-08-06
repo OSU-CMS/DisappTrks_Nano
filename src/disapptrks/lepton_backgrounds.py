@@ -33,6 +33,7 @@ class LeptonBackgroundEstimate:
     p_offline: Count
     p_miss: Count
     trigger_efficiency: Count
+    tau_probability: Count
     estimate: Count
     control_category: str
     poffline_numerator_category: str
@@ -49,6 +50,7 @@ class LeptonBackgroundEstimate:
             "p_offline",
             "p_miss",
             "trigger_efficiency",
+            "tau_probability",
             "estimate",
         ):
             value = out[key]
@@ -74,6 +76,8 @@ def _count_from_mapping(counts: Mapping[str, Any], category: str) -> Count:
     if category not in counts:
         raise KeyError(f"category {category!r} not found")
     value = counts[category]
+    if isinstance(value, Count):
+        return value
     if isinstance(value, Mapping):
         if "value" not in value:
             raise KeyError(f"category {category!r} mapping must contain a 'value' key")
@@ -303,7 +307,7 @@ def _weighted_met_trigger_integral(
     return weighted, offline_total
 
 
-def legacy_met_probabilities_from_outputs(
+def legacy_met_probability_components_from_outputs(
     outputs: Sequence[Mapping[str, Any]],
     *,
     prefix: str,
@@ -314,10 +318,10 @@ def legacy_met_probabilities_from_outputs(
     category: str = "inclusive",
     met_cut: float = 120.0,
     phi_cut: float = 0.5,
-) -> dict[str, tuple[Count, Count]]:
-    """Compute Poffline and Pmiss with the legacy MET-trigger turn-on method."""
+) -> dict[str, dict[str, Count]]:
+    """Return raw components used for the legacy Poffline/Pmiss ratios."""
 
-    probabilities: dict[str, tuple[Count, Count]] = {}
+    components: dict[str, dict[str, Count]] = {}
     for layer in layers:
         met_variable = f"n{prefix}BackgroundMetNoMuPt_{layer}"
         trig_variable = f"n{prefix}BackgroundMetNoMuPtTrig_{layer}"
@@ -365,7 +369,7 @@ def legacy_met_probabilities_from_outputs(
         if met_hist is None or trig_hist is None or met_phi_hist is None:
             continue
         met_counts, met_edges = met_hist
-        trig_counts, trig_edges = trig_hist
+        trig_counts, _ = trig_hist
         met_phi_counts, met_phi_edges = met_phi_hist
 
         offline_pass = _hist_integral(
@@ -373,10 +377,6 @@ def legacy_met_probabilities_from_outputs(
             met_phi_edges,
             met_cut=met_cut,
             phi_cut=phi_cut,
-        )
-        poffline = probability_from_counts(
-            Count(offline_pass, offline_pass),
-            control_counts[layer],
         )
         weighted_trigger_pass, offline_total = _weighted_met_trigger_integral(
             met_phi_counts,
@@ -387,9 +387,49 @@ def legacy_met_probabilities_from_outputs(
             met_cut=met_cut,
             phi_cut=phi_cut,
         )
+        components[layer] = {
+            "control": control_counts[layer],
+            "offline_pass": Count(offline_pass, offline_pass),
+            "weighted_trigger_pass": Count(weighted_trigger_pass, weighted_trigger_pass),
+            "offline_total": Count(offline_total, offline_total),
+        }
+    return components
+
+
+def legacy_met_probabilities_from_outputs(
+    outputs: Sequence[Mapping[str, Any]],
+    *,
+    prefix: str,
+    layers: Sequence[str],
+    control_counts: Mapping[str, Count],
+    dataset: str | None = None,
+    sample: str | None = None,
+    category: str = "inclusive",
+    met_cut: float = 120.0,
+    phi_cut: float = 0.5,
+) -> dict[str, tuple[Count, Count]]:
+    """Compute Poffline and Pmiss with the legacy MET-trigger turn-on method."""
+
+    components = legacy_met_probability_components_from_outputs(
+        outputs,
+        prefix=prefix,
+        layers=layers,
+        control_counts=control_counts,
+        dataset=dataset,
+        sample=sample,
+        category=category,
+        met_cut=met_cut,
+        phi_cut=phi_cut,
+    )
+    probabilities: dict[str, tuple[Count, Count]] = {}
+    for layer, values in components.items():
+        poffline = probability_from_counts(
+            values["offline_pass"],
+            values["control"],
+        )
         pmiss = probability_from_counts(
-            Count(weighted_trigger_pass, weighted_trigger_pass),
-            Count(offline_total, offline_total),
+            values["weighted_trigger_pass"],
+            values["offline_total"],
         )
         probabilities[layer] = (poffline, pmiss)
     return probabilities
@@ -447,6 +487,7 @@ def estimate_lepton_background(
     ptrigger_denominator_category: str | None = None,
     control_prescale: float = 1.0,
     trigger_efficiency: Count | Mapping[str, Count] | None = None,
+    tau_probability: Count | None = None,
     met_probabilities: Mapping[str, tuple[Count, Count]] | None = None,
     dataset: str | None = None,
     sample: str | None = None,
@@ -460,6 +501,7 @@ def estimate_lepton_background(
             "pmiss_numerator_category and pmiss_denominator_category are required"
         )
     trigger_efficiency = trigger_efficiency or Count(1.0, 0.0)
+    tau_probability = tau_probability or Count(1.0, 0.0)
     for layer in layers:
         control_name = _category_name(control_category, layer)
         poffline_num_name = _category_name(poffline_numerator_category, layer)
@@ -475,7 +517,7 @@ def estimate_lepton_background(
             sample=sample,
             variation=variation,
         )
-        control = control_raw * control_prescale
+        control = control_raw * control_prescale * tau_probability
         if met_probabilities is not None and layer in met_probabilities:
             poffline, pmiss = met_probabilities[layer]
         else:
@@ -534,6 +576,7 @@ def estimate_lepton_background(
                 p_offline=poffline,
                 p_miss=pmiss,
                 trigger_efficiency=layer_trigger_efficiency,
+                tau_probability=tau_probability,
                 estimate=control
                 * p_veto
                 * poffline
@@ -579,6 +622,9 @@ def read_lepton_background_json(path: Path) -> list[LeptonBackgroundEstimate]:
                 p_offline=_count_from_serialized(item["p_offline"]),
                 p_miss=_count_from_serialized(item["p_miss"]),
                 trigger_efficiency=_count_from_serialized(item["trigger_efficiency"]),
+                tau_probability=_count_from_serialized(
+                    item.get("tau_probability", {"value": 1.0, "variance": 0.0})
+                ),
                 estimate=_count_from_serialized(item["estimate"]),
                 control_category=item.get("control_category", ""),
                 poffline_numerator_category=item.get("poffline_numerator_category", ""),
@@ -633,8 +679,7 @@ def _write_lepton_background_latex_body(
 ) -> None:
     first_estimates = period_estimates[0][1] if period_estimates else []
     title = _an_background_title(first_estimates[0].flavor) if first_estimates else "lepton background"
-    include_tau_probability = tau_probability is not None
-    n_columns = 9 if include_tau_probability else 8
+    n_columns = 8
     column_spec = "ll" + ("c" * (n_columns - 2))
     out.write(r"\begin{tiny}" + "\n")
     out.write(r"\begin{tabular}{" + column_spec + r"}" + "\n")
@@ -643,8 +688,7 @@ def _write_lepton_background_latex_body(
     out.write(
         r"run period & $n_{\mathrm{layers}}$ & "
         r"$\epsilon_{\mathrm{trigger}}^{\ell}$ & "
-        + (r"$P(\tau)$ & " if include_tau_probability else "")
-        + r"$N_{\mathrm{ctrl}}^{\ell}$ & $P_{\mathrm{veto}}$ & "
+        r"$N_{\mathrm{ctrl}}^{\ell}$ & $P_{\mathrm{veto}}$ & "
         r"$P_{\mathrm{offline}}$ & $P_{\mathrm{trigger}}$ & estimate \\" + "\n"
     )
     out.write(r"\hline" + "\n")
@@ -652,15 +696,9 @@ def _write_lepton_background_latex_body(
         n_rows = len(estimates)
         for index, estimate in enumerate(estimates):
             run_period_cell = rf"\multirow{{{n_rows}}}{{*}}{{{run_period}}}" if index == 0 else ""
-            tau_probability_cell = (
-                f"{format_pm_latex(tau_probability.value, tau_probability.error)} & "
-                if include_tau_probability
-                else ""
-            )
             out.write(
                 f"{run_period_cell} & {_an_layer_label(estimate.layer)} & "
                 f"{format_pm_latex(estimate.trigger_efficiency.value, estimate.trigger_efficiency.error)} & "
-                f"{tau_probability_cell}"
                 f"{format_pm_latex(estimate.control.value, estimate.control.error)} & "
                 f"{_format_an_pm(estimate.p_veto.value, estimate.p_veto.error)} & "
                 f"{format_pm_latex(estimate.p_offline.value, estimate.p_offline.error)} & "

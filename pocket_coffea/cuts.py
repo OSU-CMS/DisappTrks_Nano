@@ -700,6 +700,18 @@ single_muon_hlt = Cut(
     function=_single_muon_hlt,
 )
 
+tau_trigger_probability_hlt = Cut(
+    name="tau_trigger_probability_hlt",
+    params={
+        "paths": (
+            "IsoMu20",
+            "IsoMu24",
+            "IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1",
+        )
+    },
+    function=_single_muon_hlt,
+)
+
 single_electron_hlt = Cut(
     name="single_electron_hlt",
     params={

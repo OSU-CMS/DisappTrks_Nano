@@ -47,6 +47,7 @@ from cuts import (
     search_kinematics,
     single_electron_hlt,
     single_muon_hlt,
+    tau_trigger_probability_hlt,
     tau_pveto_diagnostic_cuts,
 )
 from cuts import (
@@ -266,6 +267,8 @@ def _skim_cuts_for_mode(mode, sample):
         "muon_backgrounds",
     ):
         return [single_muon_hlt]
+    if mode == "tau_trigger_probability":
+        return [tau_trigger_probability_hlt]
     if mode in (
         "electron_pveto",
         "tau_ele_pveto",
@@ -480,6 +483,10 @@ elif category_mode == "tau_ele_pmiss_poffline":
         "inclusive": common_categories["inclusive"],
         **_categories_with_prefix(lepton_background_categories, "tau_ele_"),
     }
+elif category_mode == "tau_trigger_probability":
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+    }
 elif category_mode == "fake_tracks":
     if fake_track_control_mode == "zmumu":
         selected_categories = {
@@ -537,7 +544,7 @@ else:
         f"{category_mode!r}. Expected one of muon_pveto, electron_pveto, "
         "tau_mu_pveto, tau_ele_pveto, muon_pmiss_poffline, "
         "electron_pmiss_poffline, tau_mu_pmiss_poffline, "
-        "tau_ele_pmiss_poffline, fake_tracks, muon_backgrounds, "
+        "tau_ele_pmiss_poffline, tau_trigger_probability, fake_tracks, muon_backgrounds, "
         "egamma_backgrounds, fiducial_maps, all."
     )
 
@@ -610,6 +617,7 @@ def _variables_for_mode(mode, variables):
         "electron_pmiss_poffline": ("nElectronBackground",),
         "tau_mu_pmiss_poffline": ("nTauMuBackground",),
         "tau_ele_pmiss_poffline": ("nTauEleBackground",),
+        "tau_trigger_probability": ("nTauTriggerProbability",),
         "fake_tracks": fake_track_prefixes,
         "muon_backgrounds": ("nMuon", "nTauMu", "fakeZMuMuFitTrack_"),
         "egamma_backgrounds": ("nElectron", "nTauEle", "fakeZeeFitTrack_"),
@@ -897,6 +905,29 @@ for prefix, label in (
             ],
             only_categories=["inclusive"],
         )
+
+tau_trigger_probability_variables = {
+    "nTauTriggerProbabilityDenominator": _event_count_hist(
+        "nTauTriggerProbabilityDenominator",
+        "N(events passing tau-trigger eta legs and single-muon HLT)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityNumerator": _event_count_hist(
+        "nTauTriggerProbabilityNumerator",
+        "N(events passing tau-trigger eta legs and muon+tau HLT)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityMuonEtaLeg": _event_count_hist(
+        "nTauTriggerProbabilityMuonEtaLeg",
+        "N(events with at least one muon |eta| < 2.1)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityTauEtaLeg": _event_count_hist(
+        "nTauTriggerProbabilityTauEtaLeg",
+        "N(events with at least one tau |eta| < 2.1)",
+        bins=2,
+    ),
+}
 
 cfg = Configurator(
     parameters=parameters,
@@ -1252,6 +1283,7 @@ cfg = Configurator(
         **lepton_pair_count_variables,
         **lepton_background_count_variables,
         **fiducial_map_variables,
+        **tau_trigger_probability_variables,
         "nIsoTrackIsolated": HistConf(
             [
                 Axis(

@@ -65,6 +65,7 @@ Production-oriented modes:
 - `electron_pmiss_poffline`
 - `tau_mu_pmiss_poffline`
 - `tau_ele_pmiss_poffline`
+- `tau_trigger_probability` optional legacy/AN diagnostic only
 - `fake_tracks`
 
 Heavy/diagnostic modes:
@@ -219,6 +220,16 @@ The `dR(track, jet) > 0.5` requirement was added to match the legacy
 - Legacy 2022 electron estimates use a `MET lumi / EGamma lumi` prescale
   factor. Nano postprocessing exposes this as `--control-prescale`; the default
   is `1.0`.
+- Omit `--tau-probability` for the current Nano tau background estimate:
+  `tau_mu` uses the single-muon-trigger control region and `tau_ele` uses the
+  single-electron-trigger control region. The optional
+  `tau_trigger_probability` mode is only for a legacy/AN comparison involving
+  muon+tau-trigger normalization.
+- The final tau estimate combines the `tau_mu` and `tau_ele` legs before
+  forming ratios. Use `disapptrks estimate-tau-background` with both
+  `--tau-mu-files` and `--tau-ele-files`; it sums raw Pveto pair counts,
+  raw Poffline/Pmiss components, raw epsilon components, and `N_ctrl` first.
+  Do not combine finished per-leg `N_tau` estimates.
 - The Pveto-output `n<Prefix>TriggerEff...` counters are used to reproduce the
   legacy `calculateTriggerEfficiencyFile()` epsilon divisor. Do not confuse
   this with `Pmiss`: `Pmiss` is the MET-trigger turn-on probability from
