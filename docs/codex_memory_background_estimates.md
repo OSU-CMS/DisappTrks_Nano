@@ -99,6 +99,9 @@ DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON=/path/to/electron_fiducial_map.json
 DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON=/path/to/muon_fiducial_map.json
 ```
 
+For leg-specific tau workflows, only the active leg's map is required:
+`tau_ele_*` uses the electron map and `tau_mu_*` uses the muon map.
+
 or:
 
 ```bash

@@ -102,6 +102,11 @@ DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON=/path/to/electron_fiducial_map.json
 DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON=/path/to/muon_fiducial_map.json
 ```
 
+Leg-specific jobs only require the map for the leg being measured:
+`tau_ele_pveto` and `tau_ele_pmiss_poffline` require the electron map;
+`tau_mu_pveto` and `tau_mu_pmiss_poffline` require the muon map. Combined modes
+or directory-based production submissions may still provide both.
+
 or as a directory:
 
 ```bash

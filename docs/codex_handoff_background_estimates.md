@@ -145,6 +145,11 @@ DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON=/path/to/electron_fiducial_map.json
 DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON=/path/to/muon_fiducial_map.json
 ```
 
+Leg-specific tau jobs only require the fiducial map for the active leg:
+`tau_ele_pveto` and `tau_ele_pmiss_poffline` use the electron map, while
+`tau_mu_pveto` and `tau_mu_pmiss_poffline` use the muon map. The directory form
+can still be used when both files are available.
+
 or a directory:
 
 ```bash

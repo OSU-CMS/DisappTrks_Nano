@@ -1422,7 +1422,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 window_low=91.1876 - 50.0,
                 window_high=91.1876 - 15.0,
                 pass_mask_function=tau_pveto_pair_pass_mask,
-                fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
+                fiducial_hot_spots=self._lepton_fiducial_hot_spots("muon"),
             )
 
         if self._mode_enabled("tau_ele_pveto", "tau_ele_pmiss_poffline"):
@@ -1442,7 +1442,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 window_low=91.1876 - 50.0,
                 window_high=91.1876 - 15.0,
                 pass_mask_function=tau_pveto_pair_pass_mask,
-                fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
+                fiducial_hot_spots=self._lepton_fiducial_hot_spots("electron"),
             )
 
         store_background_controls_in_pveto = self._lepton_background_categories_enabled()
@@ -1530,7 +1530,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="muon",
                     tags=self.events.MuonLowMTTag,
                     event_quality=event_quality,
-                    fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
+                    fiducial_hot_spots=self._lepton_fiducial_hot_spots("muon"),
                 )
             if (
                 (
@@ -1547,7 +1547,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="electron",
                     tags=self.events.ElectronLowMTTag,
                     event_quality=event_quality,
-                    fiducial_hot_spots=self._lepton_fiducial_hot_spots(),
+                    fiducial_hot_spots=self._lepton_fiducial_hot_spots("electron"),
                 )
 
         if self._mode_enabled("fiducial_maps"):
