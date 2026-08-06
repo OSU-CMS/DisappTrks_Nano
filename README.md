@@ -187,10 +187,43 @@ This writes `tau_mu_cutflow.tex`, `tau_mu_pveto.tex`, `tau_ele_cutflow.tex`,
 `tau_ele_pveto.tex`, and `tau_pveto_combined.tex` under
 `tables/tau_pveto/<year>/`.
 
+## Standard LPC Dask launcher
+
+Run the production-style Dask command from `pocket_coffea` through the naming
+wrapper:
+
+```bash
+cd pocket_coffea
+DISAPPTRKS_CATEGORY_MODE=electron_pveto \
+DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS=1 \
+DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON=data/fiducial_maps/electron_fiducial_map_2022CD_v2.json \
+DISAPPTRKS_DATASET_JSON=datasets/eos_2022CD_EGamma.json \
+DISAPPTRKS_DATASET_SAMPLE=DATA_EGamma \
+DISAPPTRKS_DATASET_YEAR=2022_preEE \
+  scripts/run_lpc_dask.sh --scaleout 200 --skip-bad-files
+```
+
+The launcher infers the data-taking period from the dataset JSON and writes to
+`analysis_output/<period>/<category-mode>`. The example above therefore writes
+to `analysis_output/2022CD/electron_pveto`. Runner arguments are passed through
+unchanged. Set `DISAPPTRKS_OUTPUT_PERIOD` only when the period cannot be inferred.
+For a non-canonical test output, set `DISAPPTRKS_OUTPUT_VARIANT`, for example
+`newmap`; this adds a final, consistently placed directory component.
+
+Completed top-level `.coffea` outputs are copied to the LPC group area by
+default:
+
+```text
+root://cmseos.fnal.gov//store/group/lpcdisapptrks/disapptrks_output/<period>/<category-mode>
+```
+
+Set `DISAPPTRKS_COPY_TO_EOS=0` to disable the copy for a smoke test. The base
+can be overridden with `DISAPPTRKS_EOS_OUTPUT_BASE` when needed.
+
 ## LPC manual Condor fallback
 
 If Dask/lpcjobqueue is unavailable, the v2-style wrapper in
-`pocket_coffea/scripts` remains as a fallback.  The Condor worker runs in a
+`pocket_coffea/scripts` remains as a fallback. The Condor worker runs in a
 sandbox, so it does not depend on `/uscms` or `/uscms_data` paths being mounted
 inside the job.
 
