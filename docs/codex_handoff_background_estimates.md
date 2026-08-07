@@ -151,6 +151,13 @@ Leg-specific tau jobs only require the fiducial map for the active leg:
 `tau_mu_pveto` and `tau_mu_pmiss_poffline` use the muon map. The directory form
 can still be used when both files are available.
 
+Fake-track jobs are not leg-specific. Legacy fake-track selections inherited
+both `cutTrkFiducialElectron` and `cutTrkFiducialMuon` from `isoTrkCuts`, in
+addition to `cutTrkFiducialECAL`. Nano therefore applies both electron and muon
+hot-spot maps to fake-track candidates. For production `fake_tracks` jobs with
+`DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS=1`, provide both map JSONs or use
+`DISAPPTRKS_FIDUCIAL_MAP_DIR`.
+
 or a directory:
 
 ```bash

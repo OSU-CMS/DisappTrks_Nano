@@ -102,6 +102,8 @@ DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON=/path/to/muon_fiducial_map.json
 
 For leg-specific tau workflows, only the active leg's map is required:
 `tau_ele_*` uses the electron map and `tau_mu_*` uses the muon map.
+For fake-track workflows, provide both maps: legacy fake-track selections used
+both electron and muon fiducial vetoes plus the ECAL fiducial flag.
 
 or:
 

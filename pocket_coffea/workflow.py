@@ -391,7 +391,7 @@ def _z_to_mumu_control_mask(events, muons):
     return _single_muon_trigger_mask(events) & (ak.num(selected) == 2) & ak.any(os_z, axis=1)
 
 
-def _z_to_mumu_control_diagnostics(events, muons):
+def _z_to_mumu_control_diagnostics(events, muons, *, fiducial_hot_spots=()):
     trigger = _single_muon_trigger_mask(events)
     muon_masks = muon_tag_progression_masks(muons)
     selected = muons[muon_masks["muon_selected_tag"]]
@@ -414,6 +414,7 @@ def _z_to_mumu_control_diagnostics(events, muons):
                 z_os_window,
                 layer=layer,
                 d0_region="sideband",
+                fiducial_hot_spots=fiducial_hot_spots,
             )
             >= 1
         )
@@ -463,7 +464,7 @@ def _z_to_ee_control_mask(events, electrons):
     )
 
 
-def _z_to_ee_control_diagnostics(events, electrons):
+def _z_to_ee_control_diagnostics(events, electrons, *, fiducial_hot_spots=()):
     trigger = single_electron_trigger_mask(events)
     abs_sc_eta = abs(electrons.eta + electrons.deltaEtaSC)
     barrel = abs_sc_eta <= 1.479
@@ -512,27 +513,62 @@ def _z_to_ee_control_diagnostics(events, electrons):
                 z_os_window,
                 layer=layer,
                 d0_region="sideband",
+                fiducial_hot_spots=fiducial_hot_spots,
             )
             >= 1
         )
     return diagnostics
 
 
-def _fake_track_count_for_control(events, control_mask, *, layer, d0_region):
+def _fake_track_mask(
+    tracks,
+    *,
+    layer,
+    d0_region,
+    fiducial_hot_spots=(),
+    sideband_min: float = 0.05,
+    sideband_max: float = 0.50,
+):
+    mask = fake_track_no_d0_mask(
+        tracks,
+        layer=layer,
+        d0_region=d0_region,
+        sideband_min=sideband_min,
+        sideband_max=sideband_max,
+    )
+    if fiducial_hot_spots:
+        mask = mask & _outside_fiducial_hot_spots(tracks, fiducial_hot_spots)
+    return mask
+
+
+def _fake_track_count_for_control(
+    events,
+    control_mask,
+    *,
+    layer,
+    d0_region,
+    fiducial_hot_spots=(),
+):
     count = ak.num(
         events.IsoTrack[
-            fake_track_no_d0_mask(events.IsoTrack, layer=layer, d0_region=d0_region)
+            _fake_track_mask(
+                events.IsoTrack,
+                layer=layer,
+                d0_region=d0_region,
+                fiducial_hot_spots=fiducial_hot_spots,
+            )
         ]
     )
     return ak.where(control_mask, count, 0)
 
 
-def _fake_fit_tracks_for_control(events, control_mask):
+def _fake_fit_tracks_for_control(events, control_mask, *, fiducial_hot_spots=()):
     tracks = events.IsoTrack[
-        fake_track_no_d0_mask(
+        _fake_track_mask(
             events.IsoTrack,
             layer="NLayers4",
             d0_region="sideband",
+            fiducial_hot_spots=fiducial_hot_spots,
             sideband_min=0.0,
             sideband_max=0.5,
         )
@@ -1733,18 +1769,21 @@ class DisappTrksProcessor(BaseProcessorABC):
             )
 
     def _count_fake_track_fields(self, *, controls=("basic", "zmumu", "zee")):
+        fake_fiducial_hot_spots = self._lepton_fiducial_hot_spots("electron", "muon")
         fake_basic3hits_d0_signal = self.events.IsoTrack[
-            fake_track_no_d0_mask(
+            _fake_track_mask(
                 self.events.IsoTrack,
                 layer="NLayers4",
                 d0_region="signal",
+                fiducial_hot_spots=fake_fiducial_hot_spots,
             )
         ]
         fake_basic3hits_d0_sideband = self.events.IsoTrack[
-            fake_track_no_d0_mask(
+            _fake_track_mask(
                 self.events.IsoTrack,
                 layer="NLayers4",
                 d0_region="sideband",
+                fiducial_hot_spots=fake_fiducial_hot_spots,
             )
         ]
 
@@ -1754,10 +1793,11 @@ class DisappTrksProcessor(BaseProcessorABC):
             for layer in (*PVETO_LAYERS, "combinedBins"):
                 self.events[f"nFakeControl_{layer}"] = ak.num(
                     self.events.IsoTrack[
-                        fake_track_no_d0_mask(
+                        _fake_track_mask(
                             self.events.IsoTrack,
                             layer=layer,
                             d0_region="sideband",
+                            fiducial_hot_spots=fake_fiducial_hot_spots,
                         )
                     ]
                 )
@@ -1768,11 +1808,16 @@ class DisappTrksProcessor(BaseProcessorABC):
                 fake_zmumu_control, np.int64
             )
             self.events["FakeZMuMuDiag"] = ak.zip(
-                _z_to_mumu_control_diagnostics(self.events, self.events.Muon)
+                _z_to_mumu_control_diagnostics(
+                    self.events,
+                    self.events.Muon,
+                    fiducial_hot_spots=fake_fiducial_hot_spots,
+                )
             )
             self.events["FakeZMuMuFitTrack"] = _fake_fit_tracks_for_control(
                 self.events,
                 fake_zmumu_control,
+                fiducial_hot_spots=fake_fiducial_hot_spots,
             )
             for layer in (*PVETO_LAYERS, "combinedBins"):
                 self.events[f"nFakeZMuMuSideband_{layer}"] = _fake_track_count_for_control(
@@ -1780,17 +1825,23 @@ class DisappTrksProcessor(BaseProcessorABC):
                     fake_zmumu_control,
                     layer=layer,
                     d0_region="sideband",
+                    fiducial_hot_spots=fake_fiducial_hot_spots,
                 )
 
         if "zee" in controls:
             fake_zee_control = _z_to_ee_control_mask(self.events, self.events.Electron)
             self.events["nFakeZeeControl"] = ak.values_astype(fake_zee_control, np.int64)
             self.events["FakeZeeDiag"] = ak.zip(
-                _z_to_ee_control_diagnostics(self.events, self.events.Electron)
+                _z_to_ee_control_diagnostics(
+                    self.events,
+                    self.events.Electron,
+                    fiducial_hot_spots=fake_fiducial_hot_spots,
+                )
             )
             self.events["FakeZeeFitTrack"] = _fake_fit_tracks_for_control(
                 self.events,
                 fake_zee_control,
+                fiducial_hot_spots=fake_fiducial_hot_spots,
             )
             for layer in (*PVETO_LAYERS, "combinedBins"):
                 self.events[f"nFakeZeeSideband_{layer}"] = _fake_track_count_for_control(
@@ -1798,6 +1849,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     fake_zee_control,
                     layer=layer,
                     d0_region="sideband",
+                    fiducial_hot_spots=fake_fiducial_hot_spots,
                 )
 
     def _event_quality_masks(self):
@@ -2223,7 +2275,12 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events.AnalysisEvent
         )["event_dijetDphi2p5"]
         diagnostics = {}
-        for name, mask in fake_track_sideband_cutflow_masks(self.events.IsoTrack).items():
+        masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
+            fake_track_sideband_cutflow_masks(self.events.IsoTrack),
+            "electron",
+            "muon",
+        )
+        for name, mask in masks.items():
             n_name = f"nFakeDiag{name[0].upper()}{name[1:]}"
             self.events[n_name] = ak.num(self.events.IsoTrack[mask])
             diagnostics[name] = event_search_kinematics & (self.events[n_name] >= 1)
@@ -2405,18 +2462,21 @@ class DisappTrksProcessor(BaseProcessorABC):
         )
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
 
+        fake_fiducial_hot_spots = self._lepton_fiducial_hot_spots("electron", "muon")
         fake_basic3hits_d0_signal = self.events.IsoTrack[
-            fake_track_no_d0_mask(
+            _fake_track_mask(
                 self.events.IsoTrack,
                 layer="NLayers4",
                 d0_region="signal",
+                fiducial_hot_spots=fake_fiducial_hot_spots,
             )
         ]
         fake_basic3hits_d0_sideband = self.events.IsoTrack[
-            fake_track_no_d0_mask(
+            _fake_track_mask(
                 self.events.IsoTrack,
                 layer="NLayers4",
                 d0_region="sideband",
+                fiducial_hot_spots=fake_fiducial_hot_spots,
             )
         ]
         self.events["nFakeBasic3HitsD0Signal"] = ak.num(fake_basic3hits_d0_signal)
@@ -2424,10 +2484,11 @@ class DisappTrksProcessor(BaseProcessorABC):
         for layer in (*PVETO_LAYERS, "combinedBins"):
             self.events[f"nFakeControl_{layer}"] = ak.num(
                 self.events.IsoTrack[
-                    fake_track_no_d0_mask(
+                    _fake_track_mask(
                         self.events.IsoTrack,
                         layer=layer,
                         d0_region="sideband",
+                        fiducial_hot_spots=fake_fiducial_hot_spots,
                     )
                 ]
             )
@@ -2437,18 +2498,28 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["nFakeZMuMuControl"] = ak.values_astype(fake_zmumu_control, np.int64)
         self.events["nFakeZeeControl"] = ak.values_astype(fake_zee_control, np.int64)
         self.events["FakeZMuMuDiag"] = ak.zip(
-            _z_to_mumu_control_diagnostics(self.events, self.events.Muon)
+            _z_to_mumu_control_diagnostics(
+                self.events,
+                self.events.Muon,
+                fiducial_hot_spots=fake_fiducial_hot_spots,
+            )
         )
         self.events["FakeZeeDiag"] = ak.zip(
-            _z_to_ee_control_diagnostics(self.events, self.events.Electron)
+            _z_to_ee_control_diagnostics(
+                self.events,
+                self.events.Electron,
+                fiducial_hot_spots=fake_fiducial_hot_spots,
+            )
         )
         self.events["FakeZMuMuFitTrack"] = _fake_fit_tracks_for_control(
             self.events,
             fake_zmumu_control,
+            fiducial_hot_spots=fake_fiducial_hot_spots,
         )
         self.events["FakeZeeFitTrack"] = _fake_fit_tracks_for_control(
             self.events,
             fake_zee_control,
+            fiducial_hot_spots=fake_fiducial_hot_spots,
         )
         for layer in (*PVETO_LAYERS, "combinedBins"):
             self.events[f"nFakeZMuMuSideband_{layer}"] = _fake_track_count_for_control(
@@ -2456,12 +2527,14 @@ class DisappTrksProcessor(BaseProcessorABC):
                 fake_zmumu_control,
                 layer=layer,
                 d0_region="sideband",
+                fiducial_hot_spots=fake_fiducial_hot_spots,
             )
             self.events[f"nFakeZeeSideband_{layer}"] = _fake_track_count_for_control(
                 self.events,
                 fake_zee_control,
                 layer=layer,
                 d0_region="sideband",
+                fiducial_hot_spots=fake_fiducial_hot_spots,
             )
 
         event_golden_json = _golden_json_mask(

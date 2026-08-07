@@ -71,6 +71,7 @@ Supported modes are:
 | `electron_pmiss_poffline` | `DATA_EGamma` | Electron `Poffline` and `Pmiss` control categories only. No Pveto pair categories. |
 | `tau_mu_pmiss_poffline` | `DATA_Muon` | Tau estimate `Poffline` and `Pmiss` control categories with muon low-`MT` tags only. |
 | `tau_ele_pmiss_poffline` | `DATA_EGamma` | Tau estimate `Poffline` and `Pmiss` control categories with electron low-`MT` tags only. |
+| `tau_trigger_probability` | `DATA_Tau` or the tau-trigger dataset | Optional legacy/AN diagnostic counts for a muon+tau-trigger normalization. Not used by the current Nano tau_mu/tau_ele single-lepton-trigger control regions. |
 | `fiducial_maps` | `DATA_Muon` or `DATA_EGamma` | Before/after eta-phi histograms used to make electron and muon fiducial-map JSON/NPZ files. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
 | `muon_backgrounds` | `DATA_Muon` | Combined muon plus tau-mu categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
@@ -106,6 +107,13 @@ Leg-specific jobs only require the map for the leg being measured:
 `tau_ele_pveto` and `tau_ele_pmiss_poffline` require the electron map;
 `tau_mu_pveto` and `tau_mu_pmiss_poffline` require the muon map. Combined modes
 or directory-based production submissions may still provide both.
+
+The `fake_tracks` mode is different: legacy fake-track channels inherited both
+`cutTrkFiducialElectron` and `cutTrkFiducialMuon` from the generic track
+selection, in addition to the ECAL fiducial flag. To match that behavior, Nano
+fake-track candidates apply both the electron and muon fiducial hot-spot maps.
+For production fake-track jobs with `DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS=1`, pass
+both map JSONs or use `DISAPPTRKS_FIDUCIAL_MAP_DIR`.
 
 or as a directory:
 
@@ -283,6 +291,41 @@ These feed the postprocessing estimate:
 - `N_lepton = N_ctrl * Pveto * Poffline * Pmiss / epsilon_trig^lepton`.
   `epsilon_trig^lepton` is the separate legacy trigger-efficiency divisor, not
   the same quantity as `Pmiss`.
+- For the current Nano tau background, do not pass `--tau-probability`: the
+  `tau_mu` leg is selected with the single-muon trigger and the `tau_ele` leg is
+  selected with the single-electron trigger. The AN-style `P(tau)` correction is
+  only relevant for a legacy control-region definition normalized through a
+  muon+tau HLT path.
+
+If you explicitly need that legacy/AN muon+tau-trigger normalization for a
+comparison, measure it with the dedicated trigger-probability mode:
+
+```bash
+DISAPPTRKS_CATEGORY_MODE=tau_trigger_probability \
+DISAPPTRKS_DATASET_JSON=datasets/<tau_trigger_dataset>.json \
+DISAPPTRKS_DATASET_SAMPLE=DATA_Tau \
+DISAPPTRKS_DATASET_YEAR=2022_preEE \
+python -m pocket_coffea.scripts.runner run \
+  --cfg config.py \
+  --outputdir analysis_output/2022CD_tau_trigger_probability_dask \
+  --executor dask@lpc \
+  --executor-custom-setup executors_lpc.py \
+  --scaleout 200 \
+  --skip-bad-files
+```
+
+Then extract the factor:
+
+```bash
+disapptrks extract-tau-trigger-probability \
+  --sample DATA_Tau \
+  --output-json tables/tau_trigger_probability_2022CD.json \
+  analysis_output/2022CD_tau_trigger_probability_dask/output_*.coffea
+```
+
+The extractor prints the `--tau-probability` and `--tau-probability-error`
+arguments, but those should be omitted for the current Nano tau_mu/tau_ele
+single-lepton-trigger control-region workflow.
 
 You can still add these categories to a full Pveto job with
 `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier and can
@@ -361,6 +404,34 @@ disapptrks estimate-lepton-background \
   analysis_output/2022CD_muon_pveto/output_*.coffea \
   analysis_output/2022CD_muon_pmiss_poffline/output_*.coffea
 ```
+
+For the tau background, do not make separate final estimates for the electron
+and muon legs. Run the tau-muon and tau-electron PocketCoffea modes separately,
+then combine the two legs in postprocessing:
+
+```bash
+disapptrks estimate-tau-background \
+  --run-period 2022CD \
+  --output-json tables/tau_background_2022CD.json \
+  --output-tex tables/tau_background_2022CD.tex \
+  --tau-mu-files \
+    analysis_output/2022CD_tau_mu_pveto/output_*.coffea \
+    analysis_output/2022CD_tau_mu_pmiss_poffline/output_*.coffea \
+  --tau-ele-files \
+    analysis_output/2022CD_tau_ele_pveto/output_*.coffea \
+    analysis_output/2022CD_tau_ele_pmiss_poffline/output_*.coffea
+```
+
+This command sums the raw tau-muon and tau-electron ingredients first:
+
+- `Pveto` OS/SS tag-probe pair counts.
+- `N_ctrl` control counts.
+- `Poffline` and `Pmiss` MET-integration components.
+- `epsilon_trig^tau` tag-probe trigger-efficiency counts.
+
+Only after that summing does it form the ratios and final `N_tau`. The defaults
+assume `--tau-mu-sample DATA_Muon` and `--tau-ele-sample DATA_EGamma`; override
+those if the dataset JSON metadata uses different sample names.
 
 ### Example Dask@LPC Command
 
