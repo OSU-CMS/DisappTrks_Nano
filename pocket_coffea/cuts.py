@@ -75,7 +75,6 @@ FAKE_TRACK_DIAGNOSTIC_FIELDS = [
 
 TAU_BACKGROUND_DIAGNOSTIC_FIELDS = [
     "event_quality",
-    "low_mt_lepton",
     "tau_pt50",
     "tau_eta2p1",
     "tau_decay_mode",
@@ -96,7 +95,6 @@ TAU_BACKGROUND_DIAGNOSTIC_FIELDS = [
     "track_chargedIso0p05",
     "track_dxy0p02",
     "track_dz0p5",
-    "track_dRJet0p5",
     "track_tauMatch0p1",
     "track_NLayers4",
     "track_NLayers5",

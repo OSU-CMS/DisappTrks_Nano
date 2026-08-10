@@ -37,6 +37,7 @@ from disapptrks.selections import (
     mass10_muon_probe_pair_mask,
     mass_window_pair_mask,
     met_no_mu_minus_lepton,
+    minimum_delta_r,
     muon_tag_progression_masks,
     muon_tag_mask,
     muon_pveto_pair_pass_mask,
@@ -351,12 +352,20 @@ def _leading_jet_delta_phi(events, phi):
     return abs(delta_phi(leading_phi, phi))
 
 
-def _lepton_background_track_mask(tracks, *, flavor: str, layer: str):
+def _lepton_background_track_mask(
+    tracks,
+    *,
+    flavor: str,
+    layer: str,
+    matched_object_d_r=None,
+):
     mask = base_probe_track_mask(
         tracks,
         pt_min=55.0,
         layer=layer,
-        apply_jet_cut=True,
+        # Legacy TauTagPt55 explicitly removes cutTrkJetDeltaPhi because the
+        # tau-matched track naturally lies in the reconstructed tau jet.
+        apply_jet_cut=(flavor != "tau"),
         apply_calo_cut=(flavor == "muon"),
         apply_outer_hits_cut=False,
     )
@@ -365,7 +374,9 @@ def _lepton_background_track_mask(tracks, *, flavor: str, layer: str):
     elif flavor == "muon":
         mask = mask & ((tracks.dRMinMuon >= 0.0) & (tracks.dRMinMuon < 0.1))
     elif flavor == "tau":
-        mask = mask & ((tracks.dRMinTauHad >= 0.0) & (tracks.dRMinTauHad < 0.1))
+        if matched_object_d_r is None:
+            raise ValueError("tau background track selection requires selected-tau dR")
+        mask = mask & ((matched_object_d_r >= 0.0) & (matched_object_d_r < 0.1))
     else:
         raise ValueError(f"unknown lepton background flavor: {flavor}")
     return mask
@@ -1148,11 +1159,17 @@ class DisappTrksProcessor(BaseProcessorABC):
         trigger_event = offline_event & _met_trigger_mask(self.events)
         met_trigger_event = tag_event & _met_trigger_mask(self.events)
         dphi = _leading_jet_delta_phi(self.events, met_phi)
+        matched_object_d_r = (
+            minimum_delta_r(self.events.IsoTrack, tags)
+            if flavor == "tau"
+            else None
+        )
         for layer in (*PVETO_LAYERS, "combinedBins"):
             track_mask = _lepton_background_track_mask(
                 self.events.IsoTrack,
                 flavor=flavor,
                 layer=layer,
+                matched_object_d_r=matched_object_d_r,
             )
             track_mask = track_mask & _outside_fiducial_hot_spots(
                 self.events.IsoTrack,
@@ -1207,6 +1224,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 required_lepton=required_event_mask,
                 met_pt=met_pt,
                 met_phi=met_phi,
+                matched_object_d_r=matched_object_d_r,
             )
 
     def _store_tau_background_diagnostics(
@@ -1217,6 +1235,7 @@ class DisappTrksProcessor(BaseProcessorABC):
         required_lepton,
         met_pt,
         met_phi,
+        matched_object_d_r,
     ):
         """Store cumulative native-PocketCoffea stages for the tau control."""
 
@@ -1242,7 +1261,6 @@ class DisappTrksProcessor(BaseProcessorABC):
         cumulative = event_quality
         diagnostics = {"event_quality": cumulative}
         cumulative = cumulative & required_lepton
-        diagnostics["low_mt_lepton"] = cumulative
         for name, tau_mask in (
             ("tau_pt50", tau_pt),
             ("tau_eta2p1", tau_eta),
@@ -1273,18 +1291,19 @@ class DisappTrksProcessor(BaseProcessorABC):
             "track_chargedIso0p05",
             "track_dxy0p02",
             "track_dz0p5",
-            "track_dRJet0p5",
         )
         for name in track_stage_names:
             diagnostics[name] = cumulative & (
                 ak.num(self.events.IsoTrack[track_masks[name]]) >= 1
             )
 
+        # TauTagPt55 stops before the generic track--jet separation requirement.
+        tau_track_base = track_masks["track_dz0p5"]
         tau_match = (
-            (self.events.IsoTrack.dRMinTauHad >= 0.0)
-            & (self.events.IsoTrack.dRMinTauHad < 0.1)
+            (matched_object_d_r >= 0.0)
+            & (matched_object_d_r < 0.1)
         )
-        matched_base = track_masks["track_dRJet0p5"] & tau_match
+        matched_base = tau_track_base & tau_match
         diagnostics["track_tauMatch0p1"] = cumulative & (
             ak.num(self.events.IsoTrack[matched_base]) >= 1
         )
@@ -1558,8 +1577,6 @@ class DisappTrksProcessor(BaseProcessorABC):
         if self._mode_enabled(
             "tau_mu_pveto",
             "tau_ele_pveto",
-            "tau_mu_pmiss_poffline",
-            "tau_ele_pmiss_poffline",
         ):
             tag_met = _met_for_transverse_mass(self.events)
 
@@ -1568,7 +1585,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 tau_veto_probe_track_mask(self.events.IsoTrack)
             ]
 
-        if self._mode_enabled("tau_mu_pveto", "tau_mu_pmiss_poffline"):
+        if self._mode_enabled("tau_mu_pveto"):
             tau_mu_tag_mask = muon_tag_progression_masks(self.events.Muon)[
                 "muon_selected_tag"
             ]
@@ -1590,7 +1607,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 fiducial_hot_spots=self._lepton_fiducial_hot_spots("muon"),
             )
 
-        if self._mode_enabled("tau_ele_pveto", "tau_ele_pmiss_poffline"):
+        if self._mode_enabled("tau_ele_pveto"):
             tau_ele_tag_mask = _z_electron_tag_mask(self.events.Electron, pt_min=32.0)
             self.events["ElectronLowMTTag"] = self.events.Electron[tau_ele_tag_mask][
                 low_mt_mask(self.events.Electron[tau_ele_tag_mask], tag_met)
@@ -1694,7 +1711,6 @@ class DisappTrksProcessor(BaseProcessorABC):
                         and self._mode_enabled("tau_mu_pveto")
                     )
                 )
-                and "MuonLowMTTag" in self.events.fields
                 and "TauControlTag" in self.events.fields
             ):
                 self._store_lepton_background_controls(
@@ -1702,7 +1718,11 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="tau",
                     tags=self.events.TauControlTag,
                     event_quality=event_quality,
-                    required_event_mask=(ak.num(self.events.MuonLowMTTag) >= 1),
+                    required_event_mask=(
+                        ak.num(self.events.MuonLowMTTag) >= 1
+                        if self._mode_enabled("tau_mu_pveto")
+                        else None
+                    ),
                     fiducial_hot_spots=(),
                 )
             if (
@@ -1713,7 +1733,6 @@ class DisappTrksProcessor(BaseProcessorABC):
                         and self._mode_enabled("tau_ele_pveto")
                     )
                 )
-                and "ElectronLowMTTag" in self.events.fields
                 and "TauControlTag" in self.events.fields
             ):
                 self._store_lepton_background_controls(
@@ -1721,7 +1740,11 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="tau",
                     tags=self.events.TauControlTag,
                     event_quality=event_quality,
-                    required_event_mask=(ak.num(self.events.ElectronLowMTTag) >= 1),
+                    required_event_mask=(
+                        ak.num(self.events.ElectronLowMTTag) >= 1
+                        if self._mode_enabled("tau_ele_pveto")
+                        else None
+                    ),
                     fiducial_hot_spots=(),
                 )
 
@@ -2450,9 +2473,9 @@ class DisappTrksProcessor(BaseProcessorABC):
         elif mode == "electron_pmiss_poffline":
             self.events["nElectronTag"] = ak.num(self.events.ElectronTag)
         elif mode == "tau_mu_pmiss_poffline":
-            self.events["nMuonLowMTTag"] = ak.num(self.events.MuonLowMTTag)
+            pass
         elif mode == "tau_ele_pmiss_poffline":
-            self.events["nElectronLowMTTag"] = ak.num(self.events.ElectronLowMTTag)
+            pass
         elif mode == "tau_trigger_probability":
             self._store_tau_trigger_probability_counts()
         elif mode == "fake_tracks":

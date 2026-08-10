@@ -69,8 +69,8 @@ Supported modes are:
 | `tau_ele_pveto` | `DATA_EGamma` | Tau-veto measurement with electron tags and low-`MT` tags. |
 | `muon_pmiss_poffline` | `DATA_Muon` | Muon `Poffline` and `Pmiss` control categories only. No Pveto pair categories. |
 | `electron_pmiss_poffline` | `DATA_EGamma` | Electron `Poffline` and `Pmiss` control categories only. No Pveto pair categories. |
-| `tau_mu_pmiss_poffline` | `DATA_Muon` | Muon-triggered tau leg: reconstructed tau matched to the isolated track, used for `Nctrl`, `Poffline`, and `Pmiss`. |
-| `tau_ele_pmiss_poffline` | `DATA_EGamma` | Electron-triggered tau leg: reconstructed tau matched to the isolated track, used for `Nctrl`, `Poffline`, and `Pmiss`. |
+| `tau_mu_pmiss_poffline` | `DATA_Muon` | Legacy-equivalent single-muon-triggered tau control used for `Nctrl`, `Poffline`, and `Pmiss`; it does not require a low-`MT` muon. |
+| `tau_ele_pmiss_poffline` | `DATA_EGamma` | Compatibility/diagnostic tau control; it is not used by the final tau estimator. |
 | `tau_trigger_probability` | Muon data containing the cross-trigger path | Optional AN diagnostic for the muon+tau-trigger normalization factor. |
 | `fiducial_maps` | `DATA_Muon` or `DATA_EGamma` | Before/after eta-phi histograms used to make electron and muon fiducial-map JSON/NPZ files. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
@@ -407,10 +407,10 @@ disapptrks estimate-lepton-background \
 
 For the tau background, run the muon and electron legs on `DATA_Muon` and
 `DATA_EGamma`, respectively. In both `*_pmiss_poffline` modes the selected
-low-`MT` lepton establishes the triggered event leg, while `Nctrl`, `Poffline`,
-and `Pmiss` are formed from a reconstructed hadronic tau matched to the
-isolated track. The tau—not the tag lepton—is treated as invisible in the
-modified-MET calculation.
+The normalization uses the single-muon trigger skim without requiring a
+low-`MT` muon. `Nctrl`, `Poffline`, and `Pmiss` are formed from a reconstructed
+hadronic tau matched to the isolated track. The tau is treated as invisible in
+the modified-MET calculation.
 
 Combine both legs in postprocessing. The effective trigger efficiency is
 required explicitly until its per-leg treatment is finalized:
@@ -426,14 +426,13 @@ disapptrks estimate-tau-background \
     analysis_output/2022CD_tau_mu_pveto/output_*.coffea \
     analysis_output/2022CD_tau_mu_pmiss_poffline/output_*.coffea \
   --tau-ele-files \
-    analysis_output/2022CD_tau_ele_pveto/output_*.coffea \
-    analysis_output/2022CD_tau_ele_pmiss_poffline/output_*.coffea
+    analysis_output/2022CD_tau_ele_pveto/output_*.coffea
 ```
 
 This command combines:
 
 - `Pveto` OS/SS pairs from both tag-and-probe legs;
-- `Nctrl`, `Poffline`, and `Pmiss` from the reconstructed-tau controls in both datasets;
+- `Nctrl`, `Poffline`, and `Pmiss` from the single Muon-data tau control;
 - the explicitly supplied effective trigger efficiency.
 
 The defaults assume `DATA_Muon` and `DATA_EGamma` sample keys.

@@ -1117,9 +1117,6 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
     tau_mu_background_outputs = _lepton_background_outputs(
         tau_mu_outputs, prefix="TauMu"
     )
-    tau_ele_background_outputs = _lepton_background_outputs(
-        tau_ele_outputs, prefix="TauEle"
-    )
 
     tau_mu_pair_counts = _pair_counts_from_outputs(
         tau_mu_outputs,
@@ -1161,37 +1158,17 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
         }
 
     tau_mu_cutflow = _merged_cutflow(tau_mu_background_outputs)
-    tau_ele_cutflow = _merged_cutflow(tau_ele_background_outputs)
     tau_mu_counts = _leg_counts(
         tau_mu_cutflow,
         "tau_mu",
         args.tau_mu_dataset or args.dataset,
         args.tau_mu_sample,
     )
-    tau_ele_counts = _leg_counts(
-        tau_ele_cutflow,
-        "tau_ele",
-        args.tau_ele_dataset or args.dataset,
-        args.tau_ele_sample,
-    )
-    control_counts = {
-        layer: _add_counts(
-            tau_mu_counts["control"][layer], tau_ele_counts["control"][layer]
-        )
-        for layer in args.layers
-    }
-    offline_counts = {
-        layer: _add_counts(
-            tau_mu_counts["offline"][layer], tau_ele_counts["offline"][layer]
-        )
-        for layer in args.layers
-    }
-    trigger_counts = {
-        layer: _add_counts(
-            tau_mu_counts["trigger"][layer], tau_ele_counts["trigger"][layer]
-        )
-        for layer in args.layers
-    }
+    # Legacy TauTagPt55 uses one single-muon-triggered tau control sample.
+    # The EGamma leg contributes only to the combined P_veto measurement.
+    control_counts = tau_mu_counts["control"]
+    offline_counts = tau_mu_counts["offline"]
+    trigger_counts = tau_mu_counts["trigger"]
     tau_mu_met_components = legacy_met_probability_components_from_outputs(
         tau_mu_background_outputs,
         prefix="TauMu",
@@ -1202,19 +1179,7 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
         met_cut=args.met_cut,
         phi_cut=args.phi_cut,
     )
-    tau_ele_met_components = legacy_met_probability_components_from_outputs(
-        tau_ele_background_outputs,
-        prefix="TauEle",
-        layers=args.layers,
-        control_counts=tau_ele_counts["control"],
-        dataset=args.tau_ele_dataset or args.dataset,
-        sample=args.tau_ele_sample,
-        met_cut=args.met_cut,
-        phi_cut=args.phi_cut,
-    )
-    met_probabilities = _met_probabilities_from_components(
-        _sum_named_count_maps(tau_mu_met_components, tau_ele_met_components)
-    )
+    met_probabilities = _met_probabilities_from_components(tau_mu_met_components)
 
     trigger_efficiency = Count(
         args.trigger_efficiency,
@@ -1905,8 +1870,8 @@ def main():
     tau_background = subparsers.add_parser(
         "estimate-tau-background",
         help=(
-            "Compute the tau background by combining the Muon and EGamma "
-            "tau-control legs."
+            "Compute the tau background using a single-muon-triggered tau "
+            "control sample and combined Muon/EGamma P_veto legs."
         ),
     )
     tau_background.add_argument(
@@ -1915,7 +1880,8 @@ def main():
         type=Path,
         required=True,
         help=(
-            "Muon-data tau_mu_pveto and tau_mu_pmiss_poffline outputs."
+            "Muon-data tau_mu_pveto and tau_mu_pmiss_poffline outputs; the "
+            "latter supplies N_ctrl, P_offline, and P_trigger."
         ),
     )
     tau_background.add_argument(
@@ -1924,7 +1890,7 @@ def main():
         type=Path,
         required=True,
         help=(
-            "EGamma-data tau_ele_pveto and tau_ele_pmiss_poffline outputs."
+            "EGamma-data tau_ele_pveto outputs used only for P_veto."
         ),
     )
     tau_background.add_argument(
@@ -1970,15 +1936,14 @@ def main():
         "--control-prescale",
         type=float,
         default=1.0,
-        help="Scale factor applied to the combined N_ctrl before computing N_tau.",
+        help="Scale factor applied to the single-muon tau N_ctrl.",
     )
     tau_background.add_argument(
         "--trigger-efficiency",
         type=float,
         required=True,
         help=(
-            "Effective trigger-efficiency divisor for the combined Muon and "
-            "EGamma tau-control legs."
+            "Effective trigger-efficiency divisor for the tau control sample."
         ),
     )
     tau_background.add_argument(
@@ -1992,7 +1957,7 @@ def main():
         type=float,
         help=(
             "Optional legacy/AN tau-trigger scale P(tau). This scales the "
-            "combined tau-leg N_ctrl and is stored in JSON."
+            "single-muon tau-control N_ctrl and is stored in JSON."
         ),
     )
     tau_background.add_argument(
