@@ -1114,8 +1114,8 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
 def _estimate_tau_background_command(args: argparse.Namespace) -> int:
     tau_mu_outputs = _load_outputs(args.tau_mu_files)
     tau_ele_outputs = _load_outputs(args.tau_ele_files)
-    tau_mu_background_outputs = _lepton_background_outputs(
-        tau_mu_outputs, prefix="TauMu"
+    tau_control_outputs = _lepton_background_outputs(
+        _load_outputs(args.tau_control_files), prefix="Tau"
     )
 
     tau_mu_pair_counts = _pair_counts_from_outputs(
@@ -1157,35 +1157,36 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
             for kind in ("control", "offline", "trigger")
         }
 
-    tau_mu_cutflow = _merged_cutflow(tau_mu_background_outputs)
-    tau_mu_counts = _leg_counts(
-        tau_mu_cutflow,
-        "tau_mu",
-        args.tau_mu_dataset or args.dataset,
-        args.tau_mu_sample,
+    tau_control_cutflow = _merged_cutflow(tau_control_outputs)
+    tau_control_counts = _leg_counts(
+        tau_control_cutflow,
+        "tau_control",
+        args.tau_control_dataset or args.dataset,
+        args.tau_control_sample,
     )
-    # Legacy TauTagPt55 uses one single-muon-triggered tau control sample.
+    # The AN tau control uses one Muon-dataset sample selected by the
+    # IsoMu20+tau cross-trigger.
     # The EGamma leg contributes only to the combined P_veto measurement.
-    control_counts = tau_mu_counts["control"]
-    offline_counts = tau_mu_counts["offline"]
-    trigger_counts = tau_mu_counts["trigger"]
-    tau_mu_met_components = legacy_met_probability_components_from_outputs(
-        tau_mu_background_outputs,
-        prefix="TauMu",
+    control_counts = tau_control_counts["control"]
+    offline_counts = tau_control_counts["offline"]
+    trigger_counts = tau_control_counts["trigger"]
+    tau_met_components = legacy_met_probability_components_from_outputs(
+        tau_control_outputs,
+        prefix="Tau",
         layers=args.layers,
-        control_counts=tau_mu_counts["control"],
-        dataset=args.tau_mu_dataset or args.dataset,
-        sample=args.tau_mu_sample,
+        control_counts=tau_control_counts["control"],
+        dataset=args.tau_control_dataset or args.dataset,
+        sample=args.tau_control_sample,
         met_cut=args.met_cut,
         phi_cut=args.phi_cut,
     )
-    met_probabilities = _met_probabilities_from_components(tau_mu_met_components)
+    met_probabilities = _met_probabilities_from_components(tau_met_components)
 
     trigger_efficiency = Count(
         args.trigger_efficiency,
         args.trigger_efficiency_error * args.trigger_efficiency_error,
     )
-    trigger_efficiency_method = "manual-tau-leg-controls"
+    trigger_efficiency_method = "manual-cross-trigger-control"
 
     tau_probability = (
         Count(args.tau_probability, args.tau_probability_error * args.tau_probability_error)
@@ -1870,8 +1871,18 @@ def main():
     tau_background = subparsers.add_parser(
         "estimate-tau-background",
         help=(
-            "Compute the tau background using a single-muon-triggered tau "
-            "control sample and combined Muon/EGamma P_veto legs."
+            "Compute the tau background using the Muon-dataset muon+tau "
+            "cross-trigger control and combined Muon/EGamma P_veto legs."
+        ),
+    )
+    tau_background.add_argument(
+        "--tau-control-files",
+        nargs="+",
+        type=Path,
+        required=True,
+        help=(
+            "Muon-data tau_pmiss_poffline outputs selected by the muon+tau "
+            "cross-trigger; supplies N_ctrl, P_offline, and P_trigger."
         ),
     )
     tau_background.add_argument(
@@ -1880,8 +1891,7 @@ def main():
         type=Path,
         required=True,
         help=(
-            "Muon-data tau_mu_pveto and tau_mu_pmiss_poffline outputs; the "
-            "latter supplies N_ctrl, P_offline, and P_trigger."
+            "Muon-data tau_mu_pveto outputs used for P_veto."
         ),
     )
     tau_background.add_argument(
@@ -1898,12 +1908,21 @@ def main():
         help="Default dataset-key restriction for all tau inputs.",
     )
     tau_background.add_argument(
+        "--tau-control-dataset",
+        help="Restrict the cross-trigger tau-control input to one dataset key.",
+    )
+    tau_background.add_argument(
         "--tau-mu-dataset",
         help="Restrict tau_mu inputs to one dataset key. Overrides --dataset.",
     )
     tau_background.add_argument(
         "--tau-ele-dataset",
         help="Restrict tau_ele inputs to one dataset key. Overrides --dataset.",
+    )
+    tau_background.add_argument(
+        "--tau-control-sample",
+        default="DATA_Muon",
+        help="Restrict the cross-trigger tau-control input to one sample key.",
     )
     tau_background.add_argument(
         "--tau-mu-sample",
@@ -1936,7 +1955,7 @@ def main():
         "--control-prescale",
         type=float,
         default=1.0,
-        help="Scale factor applied to the single-muon tau N_ctrl.",
+        help="Effective prescale/luminosity factor applied to tau N_ctrl.",
     )
     tau_background.add_argument(
         "--trigger-efficiency",
@@ -1957,7 +1976,7 @@ def main():
         type=float,
         help=(
             "Optional legacy/AN tau-trigger scale P(tau). This scales the "
-            "single-muon tau-control N_ctrl and is stored in JSON."
+            "cross-triggered tau-control N_ctrl and is stored in JSON."
         ),
     )
     tau_background.add_argument(

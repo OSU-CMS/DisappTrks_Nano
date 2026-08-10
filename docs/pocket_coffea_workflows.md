@@ -71,6 +71,7 @@ Supported modes are:
 | `electron_pmiss_poffline` | `DATA_EGamma` | Electron `Poffline` and `Pmiss` control categories only. No Pveto pair categories. |
 | `tau_mu_pmiss_poffline` | `DATA_Muon` | Legacy-equivalent single-muon-triggered tau control used for `Nctrl`, `Poffline`, and `Pmiss`; it does not require a low-`MT` muon. |
 | `tau_ele_pmiss_poffline` | `DATA_EGamma` | Compatibility/diagnostic tau control; it is not used by the final tau estimator. |
+| `tau_pmiss_poffline` | `DATA_Muon` | AN-style tau normalization selected exclusively by `HLT_IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1`; supplies `Nctrl`, `Poffline`, and the tau modified-MET spectrum. |
 | `tau_trigger_probability` | Muon data containing the cross-trigger path | Optional AN diagnostic for the muon+tau-trigger normalization factor. |
 | `fiducial_maps` | `DATA_Muon` or `DATA_EGamma` | Before/after eta-phi histograms used to make electron and muon fiducial-map JSON/NPZ files. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
@@ -407,8 +408,8 @@ disapptrks estimate-lepton-background \
 
 For the tau background, run the muon and electron legs on `DATA_Muon` and
 `DATA_EGamma`, respectively. In both `*_pmiss_poffline` modes the selected
-The normalization uses the single-muon trigger skim without requiring a
-low-`MT` muon. `Nctrl`, `Poffline`, and `Pmiss` are formed from a reconstructed
+The normalization uses the Muon-dataset muon+tau cross-trigger skim without
+requiring a low-`MT` offline muon. `Nctrl`, `Poffline`, and `Pmiss` are formed from a reconstructed
 hadronic tau matched to the isolated track. The tau is treated as invisible in
 the modified-MET calculation.
 
@@ -422,9 +423,12 @@ disapptrks estimate-tau-background \
   --output-tex tables/tau_background_2022CD.tex \
   --trigger-efficiency 0.90 \
   --trigger-efficiency-error 0.006 \
+  --tau-probability 1.46 \
+  --tau-probability-error 0.00239 \
+  --tau-control-files \
+    analysis_output/2022CD_tau_pmiss_poffline/output_*.coffea \
   --tau-mu-files \
     analysis_output/2022CD_tau_mu_pveto/output_*.coffea \
-    analysis_output/2022CD_tau_mu_pmiss_poffline/output_*.coffea \
   --tau-ele-files \
     analysis_output/2022CD_tau_ele_pveto/output_*.coffea
 ```
@@ -432,7 +436,7 @@ disapptrks estimate-tau-background \
 This command combines:
 
 - `Pveto` OS/SS pairs from both tag-and-probe legs;
-- `Nctrl`, `Poffline`, and `Pmiss` from the single Muon-data tau control;
+- `Nctrl`, `Poffline`, and `Pmiss` from the cross-triggered Muon-data tau control;
 - the explicitly supplied effective trigger efficiency.
 
 The defaults assume `DATA_Muon` and `DATA_EGamma` sample keys.

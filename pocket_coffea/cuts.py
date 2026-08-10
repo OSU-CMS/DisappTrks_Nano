@@ -703,6 +703,18 @@ def _single_muon_hlt(events, params, **kwargs):
     return _hlt_or(events, params["paths"])
 
 
+def _required_hlt(events, params, **kwargs):
+    paths = tuple(params["paths"])
+    available = set(events.HLT.fields) if "HLT" in events.fields else set()
+    missing = [path for path in paths if path not in available]
+    if missing:
+        branches = ", ".join(f"HLT_{path}" for path in missing)
+        raise RuntimeError(
+            "Required HLT branch is absent from this NanoAOD: " + branches
+        )
+    return _hlt_or(events, paths)
+
+
 def _single_electron_hlt(events, params, **kwargs):
     return _hlt_or(events, params["paths"])
 
@@ -739,6 +751,16 @@ single_muon_hlt = Cut(
     name="single_muon_hlt",
     params={"paths": ("IsoMu24",)},
     function=_single_muon_hlt,
+)
+
+muon_tau_hlt = Cut(
+    name="muon_tau_hlt",
+    params={
+        "paths": (
+            "IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1",
+        )
+    },
+    function=_required_hlt,
 )
 
 tau_trigger_probability_hlt = Cut(
@@ -1050,6 +1072,7 @@ for layer in (*PVETO_LAYERS, "combinedBins"):
     for category_prefix, field_prefix in (
         ("muon", "Muon"),
         ("electron", "Electron"),
+        ("tau_control", "Tau"),
         ("tau_mu", "TauMu"),
         ("tau_ele", "TauEle"),
     ):

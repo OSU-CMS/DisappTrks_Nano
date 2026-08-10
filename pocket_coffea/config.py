@@ -38,6 +38,7 @@ from cuts import (
     lepton_background_cuts,
     lepton_pveto_cuts,
     met_hlt,
+    muon_tau_hlt,
     muon_table16_cuts,
     muon_pveto_layer_cuts,
     EVENT_DIAGNOSTIC_FIELDS,
@@ -270,6 +271,8 @@ def _skim_cuts_for_mode(mode, sample):
         return [single_muon_hlt]
     if mode == "tau_trigger_probability":
         return [tau_trigger_probability_hlt]
+    if mode == "tau_pmiss_poffline":
+        return [muon_tau_hlt]
     if mode in (
         "electron_pveto",
         "tau_ele_pveto",
@@ -494,6 +497,12 @@ elif category_mode == "tau_trigger_probability":
     selected_categories = {
         "inclusive": common_categories["inclusive"],
     }
+elif category_mode == "tau_pmiss_poffline":
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        **_categories_with_prefix(lepton_background_categories, "tau_control_"),
+        **tau_background_diagnostic_categories,
+    }
 elif category_mode == "fake_tracks":
     if fake_track_control_mode == "zmumu":
         selected_categories = {
@@ -551,7 +560,7 @@ else:
         f"{category_mode!r}. Expected one of muon_pveto, electron_pveto, "
         "tau_mu_pveto, tau_ele_pveto, muon_pmiss_poffline, "
         "electron_pmiss_poffline, tau_mu_pmiss_poffline, "
-        "tau_ele_pmiss_poffline, tau_trigger_probability, "
+        "tau_ele_pmiss_poffline, tau_pmiss_poffline, tau_trigger_probability, "
         "fake_tracks, muon_backgrounds, "
         "egamma_backgrounds, fiducial_maps, all."
     )
@@ -625,6 +634,7 @@ def _variables_for_mode(mode, variables):
         "electron_pmiss_poffline": ("nElectronBackground",),
         "tau_mu_pmiss_poffline": ("nTauMuBackground",),
         "tau_ele_pmiss_poffline": ("nTauEleBackground",),
+        "tau_pmiss_poffline": ("nTauBackground",),
         "tau_trigger_probability": ("nTauTriggerProbability",),
         "fake_tracks": fake_track_prefixes,
         "muon_backgrounds": ("nMuon", "nTauMu", "fakeZMuMuFitTrack_"),
@@ -788,6 +798,7 @@ lepton_background_count_variables = {}
 for prefix, label in (
     ("Muon", "muon"),
     ("Electron", "electron"),
+    ("Tau", "tau"),
     ("TauMu", r"tau-muon"),
     ("TauEle", r"tau-electron"),
 ):

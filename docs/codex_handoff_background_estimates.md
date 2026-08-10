@@ -97,6 +97,7 @@ Important modes:
 | `electron_pmiss_poffline` | `DATA_EGamma` | Electron `Poffline` and `Pmiss` control categories only. |
 | `tau_mu_pmiss_poffline` | `DATA_Muon` | Legacy-equivalent single-muon-triggered tau control for `Nctrl`, `Poffline`, and `Pmiss`; no low-`MT` muon is required. |
 | `tau_ele_pmiss_poffline` | `DATA_EGamma` | Compatibility/diagnostic only; excluded from the final tau normalization. |
+| `tau_pmiss_poffline` | `DATA_Muon` | AN-style tau normalization using the muon+tau cross-trigger; no low-`MT` offline muon is required. |
 | `tau_trigger_probability` | `DATA_Tau` or tau-trigger dataset | Optional legacy/AN diagnostic counts for a muon+tau-trigger normalization. Not used by the current Nano tau_mu/tau_ele single-lepton-trigger control regions. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track estimate control regions. |
 
@@ -214,21 +215,20 @@ Definitions:
 
 `N_ctrl` can also be scaled with `--control-prescale`. This matches the legacy
 MET/lepton-dataset luminosity or prescale correction. The default is `1.0`.
-For the current Nano tau background, omit `--tau-probability`: the normalization
-uses the single-muon-trigger `tau_mu` control region. The AN-style `P(tau)` correction is only relevant for a
-legacy/AN comparison in which the tau control normalization uses the muon+tau
-HLT path. That optional diagnostic can be measured with
+For the AN-style Nano tau background, supply the era-specific `--tau-probability`
+correction because the normalization uses the muon+tau HLT path. The supporting
+trigger ratio can be measured with
 `DISAPPTRKS_CATEGORY_MODE=tau_trigger_probability`, then extracted with
 `disapptrks extract-tau-trigger-probability`.
 
 The final tau estimate combines the tau-muon and tau-electron legs for
-`P_veto`, while using only the single-muon-triggered `tau_mu` control for the
+`P_veto`, while using only the cross-triggered `tau_pmiss_poffline` control for the
 normalization and MET probabilities. Use `disapptrks estimate-tau-background`,
 not two separate `estimate-lepton-background --mode tau_*` final tables:
 
 - `Pveto` OS/SS tag-probe pair counts.
-- `N_ctrl` from `tau_mu_pmiss_poffline`.
-- `Poffline` and `Pmiss` components from `tau_mu_pmiss_poffline`.
+- `N_ctrl` from `tau_pmiss_poffline`.
+- `Poffline` and `Pmiss` components from `tau_pmiss_poffline`.
 - `epsilon_trig^tau` tag-probe trigger-efficiency numerator/denominator
   components.
 
@@ -241,9 +241,10 @@ disapptrks estimate-tau-background \
   --run-period 2022CD \
   --output-json tables/tau_background_2022CD.json \
   --output-tex tables/tau_background_2022CD.tex \
+  --tau-control-files \
+    analysis_output/2022CD_tau_pmiss_poffline/output_*.coffea \
   --tau-mu-files \
     analysis_output/2022CD_tau_mu_pveto/output_*.coffea \
-    analysis_output/2022CD_tau_mu_pmiss_poffline/output_*.coffea \
   --tau-ele-files \
     analysis_output/2022CD_tau_ele_pveto/output_*.coffea
 ```

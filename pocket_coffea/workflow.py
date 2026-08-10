@@ -1618,6 +1618,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             "tau_ele_pveto",
             "tau_mu_pmiss_poffline",
             "tau_ele_pmiss_poffline",
+            "tau_pmiss_poffline",
         ):
             self.events["TauControlTag"] = self._select_one_tau_control_tag()
 
@@ -1649,6 +1650,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             "electron_pmiss_poffline",
             "tau_mu_pmiss_poffline",
             "tau_ele_pmiss_poffline",
+            "tau_pmiss_poffline",
         ):
             event_quality = (
                 _golden_json_mask(
@@ -1669,6 +1671,17 @@ class DisappTrksProcessor(BaseProcessorABC):
                     is_mc=self._isMC,
                 )
             )
+            if (
+                self._mode_enabled("tau_pmiss_poffline")
+                and "TauControlTag" in self.events.fields
+            ):
+                self._store_lepton_background_controls(
+                    prefix="Tau",
+                    flavor="tau",
+                    tags=self.events.TauControlTag,
+                    event_quality=event_quality,
+                    fiducial_hot_spots=(),
+                )
             if (
                 (
                     self._mode_enabled("muon_pmiss_poffline")
@@ -2475,6 +2488,8 @@ class DisappTrksProcessor(BaseProcessorABC):
         elif mode == "tau_mu_pmiss_poffline":
             pass
         elif mode == "tau_ele_pmiss_poffline":
+            pass
+        elif mode == "tau_pmiss_poffline":
             pass
         elif mode == "tau_trigger_probability":
             self._store_tau_trigger_probability_counts()
