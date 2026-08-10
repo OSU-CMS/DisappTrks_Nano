@@ -73,6 +73,45 @@ FAKE_TRACK_DIAGNOSTIC_FIELDS = [
     "track_combinedBins",
 ]
 
+TAU_BACKGROUND_DIAGNOSTIC_FIELDS = [
+    "event_quality",
+    "low_mt_lepton",
+    "tau_pt50",
+    "tau_eta2p1",
+    "tau_decay_mode",
+    "tau_lepton_rejection",
+    "tau_tight_vsjet",
+    "event_jet_selection",
+    "track_pt55",
+    "track_eta2p1",
+    "track_noECALCrack",
+    "track_noDTWheelGap",
+    "track_noCSCTransition",
+    "track_noTOBCrack",
+    "track_fiducialECAL",
+    "track_pixelHits4",
+    "track_validHits4",
+    "track_noMissingInner",
+    "track_noMissingMiddle",
+    "track_chargedIso0p05",
+    "track_dxy0p02",
+    "track_dz0p5",
+    "track_dRJet0p5",
+    "track_tauMatch0p1",
+    "track_NLayers4",
+    "track_NLayers5",
+    "track_NLayers6plus",
+    "track_combinedBins",
+    "offline_NLayers4",
+    "offline_NLayers5",
+    "offline_NLayers6plus",
+    "offline_combinedBins",
+    "trigger_NLayers4",
+    "trigger_NLayers5",
+    "trigger_NLayers6plus",
+    "trigger_combinedBins",
+]
+
 FAKE_ZMUMU_DIAGNOSTIC_FIELDS = [
     "event_trigger",
     "muon_pt26",
@@ -646,6 +685,10 @@ def _tau_pveto_diagnostic(events, params, **kwargs):
     return events[params["collection"]][params["field"]]
 
 
+def _tau_background_diagnostic(events, params, **kwargs):
+    return events.TauBackgroundDiag[params["field"]]
+
+
 def _search_kinematics(events, params, **kwargs):
     event = events.AnalysisEvent
     return (
@@ -1077,6 +1120,15 @@ search_diagnostic_cuts = {
         function=_search_diagnostic,
     )
     for field in SEARCH_DIAGNOSTIC_FIELDS
+}
+
+tau_background_diagnostic_cuts = {
+    field: Cut(
+        name=f"tau_background_diag_{field}",
+        params={"field": field},
+        function=_tau_background_diagnostic,
+    )
+    for field in TAU_BACKGROUND_DIAGNOSTIC_FIELDS
 }
 
 fake_track_diagnostic_cuts = {

@@ -44,6 +44,7 @@ from cuts import (
     fake_track_diagnostic_cuts,
     fake_z_control_diagnostic_cuts,
     search_diagnostic_cuts,
+    tau_background_diagnostic_cuts,
     search_kinematics,
     single_electron_hlt,
     single_muon_hlt,
@@ -333,6 +334,10 @@ lepton_pveto_categories = {name: [cut] for name, cut in lepton_pveto_cuts.items(
 lepton_background_categories = {
     name: [cut] for name, cut in lepton_background_cuts.items()
 }
+tau_background_diagnostic_categories = {
+    f"tau_background_diag_{name}": [cut]
+    for name, cut in tau_background_diagnostic_cuts.items()
+}
 fake_track_categories = {name: [cut] for name, cut in fake_track_cuts.items()}
 include_pveto_diagnostics = enable_pveto_diagnostics or category_mode == "all"
 muon_table16_categories = (
@@ -477,11 +482,13 @@ elif category_mode == "tau_mu_pmiss_poffline":
     selected_categories = {
         "inclusive": common_categories["inclusive"],
         **_categories_with_prefix(lepton_background_categories, "tau_mu_"),
+        **tau_background_diagnostic_categories,
     }
 elif category_mode == "tau_ele_pmiss_poffline":
     selected_categories = {
         "inclusive": common_categories["inclusive"],
         **_categories_with_prefix(lepton_background_categories, "tau_ele_"),
+        **tau_background_diagnostic_categories,
     }
 elif category_mode == "tau_trigger_probability":
     selected_categories = {

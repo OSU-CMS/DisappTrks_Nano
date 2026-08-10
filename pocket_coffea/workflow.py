@@ -31,6 +31,7 @@ from disapptrks.selections import (
     hadronic_tau_control_object_mask,
     invariant_mass,
     isolated_track_selection_mask,
+    layer_mask,
     lepton_veto_probe_track_mask,
     low_mt_mask,
     mass10_muon_probe_pair_mask,
@@ -1121,6 +1122,7 @@ class DisappTrksProcessor(BaseProcessorABC):
         flavor,
         tags,
         event_quality,
+        required_event_mask=None,
         fiducial_hot_spots=(),
         met_cut=120.0,
         phi_cut=0.5,
@@ -1130,8 +1132,11 @@ class DisappTrksProcessor(BaseProcessorABC):
             tags,
             flavor=flavor,
         )
+        if required_event_mask is None:
+            required_event_mask = ak.ones_like(event_quality, dtype=bool)
         tag_event = (
             event_quality
+            & required_event_mask
             & (ak.num(tags) >= 1)
             & _lepton_background_tag_pt55_event_mask(self.events.AnalysisEvent)
         )
@@ -1194,6 +1199,109 @@ class DisappTrksProcessor(BaseProcessorABC):
                 dphi,
                 -1.0,
             )
+
+        if flavor == "tau":
+            self._store_tau_background_diagnostics(
+                tags=tags,
+                event_quality=event_quality,
+                required_lepton=required_event_mask,
+                met_pt=met_pt,
+                met_phi=met_phi,
+            )
+
+    def _store_tau_background_diagnostics(
+        self,
+        *,
+        tags,
+        event_quality,
+        required_lepton,
+        met_pt,
+        met_phi,
+    ):
+        """Store cumulative native-PocketCoffea stages for the tau control."""
+
+        taus = self.events.Tau
+        tau_pt = taus.pt > 50.0
+        tau_eta = tau_pt & (abs(taus.eta) < 2.1)
+        tau_dm = tau_eta & taus.idDecayModeNewDMs
+        if "idDeepTau2018v2p5VSjet" in taus.fields:
+            tau_lepton_id = (
+                tau_dm
+                & ((taus.idDeepTau2018v2p5VSe & 1) != 0)
+                & ((taus.idDeepTau2018v2p5VSmu & 1) != 0)
+            )
+            tau_tight = tau_lepton_id & ((taus.idDeepTau2018v2p5VSjet & 32) != 0)
+        else:
+            tau_lepton_id = (
+                tau_dm
+                & (taus.rawDeepTau2018v2p5VSe > 0.099)
+                & (taus.rawDeepTau2018v2p5VSmu > 0.2949)
+            )
+            tau_tight = tau_lepton_id & (taus.rawDeepTau2018v2p5VSjet > 0.8841)
+
+        cumulative = event_quality
+        diagnostics = {"event_quality": cumulative}
+        cumulative = cumulative & required_lepton
+        diagnostics["low_mt_lepton"] = cumulative
+        for name, tau_mask in (
+            ("tau_pt50", tau_pt),
+            ("tau_eta2p1", tau_eta),
+            ("tau_decay_mode", tau_dm),
+            ("tau_lepton_rejection", tau_lepton_id),
+            ("tau_tight_vsjet", tau_tight),
+        ):
+            diagnostics[name] = cumulative & (ak.num(taus[tau_mask]) >= 1)
+
+        cumulative = diagnostics["tau_tight_vsjet"] & (
+            ak.num(tags) >= 1
+        ) & _lepton_background_tag_pt55_event_mask(self.events.AnalysisEvent)
+        diagnostics["event_jet_selection"] = cumulative
+
+        track_masks = search_track_cutflow_masks(self.events.IsoTrack)
+        track_stage_names = (
+            "track_pt55",
+            "track_eta2p1",
+            "track_noECALCrack",
+            "track_noDTWheelGap",
+            "track_noCSCTransition",
+            "track_noTOBCrack",
+            "track_fiducialECAL",
+            "track_pixelHits4",
+            "track_validHits4",
+            "track_noMissingInner",
+            "track_noMissingMiddle",
+            "track_chargedIso0p05",
+            "track_dxy0p02",
+            "track_dz0p5",
+            "track_dRJet0p5",
+        )
+        for name in track_stage_names:
+            diagnostics[name] = cumulative & (
+                ak.num(self.events.IsoTrack[track_masks[name]]) >= 1
+            )
+
+        tau_match = (
+            (self.events.IsoTrack.dRMinTauHad >= 0.0)
+            & (self.events.IsoTrack.dRMinTauHad < 0.1)
+        )
+        matched_base = track_masks["track_dRJet0p5"] & tau_match
+        diagnostics["track_tauMatch0p1"] = cumulative & (
+            ak.num(self.events.IsoTrack[matched_base]) >= 1
+        )
+        offline_event = (
+            cumulative
+            & (met_pt >= 120.0)
+            & (_leading_jet_delta_phi(self.events, met_phi) >= 0.5)
+        )
+        trigger_event = offline_event & _met_trigger_mask(self.events)
+        for layer in (*PVETO_LAYERS, "combinedBins"):
+            layer_tracks = matched_base & layer_mask(self.events.IsoTrack, layer)
+            has_track = ak.num(self.events.IsoTrack[layer_tracks]) >= 1
+            diagnostics[f"track_{layer}"] = cumulative & has_track
+            diagnostics[f"offline_{layer}"] = offline_event & has_track
+            diagnostics[f"trigger_{layer}"] = trigger_event & has_track
+
+        self.events["TauBackgroundDiag"] = ak.zip(diagnostics)
 
     def _store_fiducial_map_pairs(self):
         """Store before/after probe pairs for electron and muon fiducial maps.
@@ -1593,9 +1701,8 @@ class DisappTrksProcessor(BaseProcessorABC):
                     prefix="TauMu",
                     flavor="tau",
                     tags=self.events.TauControlTag,
-                    event_quality=(
-                        event_quality & (ak.num(self.events.MuonLowMTTag) >= 1)
-                    ),
+                    event_quality=event_quality,
+                    required_event_mask=(ak.num(self.events.MuonLowMTTag) >= 1),
                     fiducial_hot_spots=(),
                 )
             if (
@@ -1613,9 +1720,8 @@ class DisappTrksProcessor(BaseProcessorABC):
                     prefix="TauEle",
                     flavor="tau",
                     tags=self.events.TauControlTag,
-                    event_quality=(
-                        event_quality & (ak.num(self.events.ElectronLowMTTag) >= 1)
-                    ),
+                    event_quality=event_quality,
+                    required_event_mask=(ak.num(self.events.ElectronLowMTTag) >= 1),
                     fiducial_hot_spots=(),
                 )
 
