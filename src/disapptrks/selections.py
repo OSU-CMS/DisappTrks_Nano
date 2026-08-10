@@ -390,11 +390,12 @@ def hadronic_tau_control_object_mask(
 
     decay_mode = taus.idDecayModeNewDMs
     if "idDeepTau2018v2p5VSjet" in taus.fields:
-        # NanoAOD DeepTau IDs are bitmaps: Tight VSjet is bit 5, while the
-        # first VSe and VSmu bits represent VVVLoose and VLoose respectively.
-        pass_vsjet = (taus.idDeepTau2018v2p5VSjet & 32) != 0
-        pass_vse = (taus.idDeepTau2018v2p5VSe & 1) != 0
-        pass_vsmu = (taus.idDeepTau2018v2p5VSmu & 1) != 0
+        # OSUNano stores the highest passed working-point ordinal, not a
+        # bitmap.  For VSjet/VSe: 1=VVVLoose, ..., 6=Tight; for VSmu:
+        # 1=VLoose, ..., 4=Tight.
+        pass_vsjet = taus.idDeepTau2018v2p5VSjet >= 6
+        pass_vse = taus.idDeepTau2018v2p5VSe >= 1
+        pass_vsmu = taus.idDeepTau2018v2p5VSmu >= 1
     else:
         required = {
             "rawDeepTau2018v2p5VSjet",

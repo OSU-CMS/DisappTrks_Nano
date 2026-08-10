@@ -77,14 +77,14 @@ def test_table27_tau_control_mask_uses_pt_eta_and_deeptau_raw_working_points():
     ]
 
 
-def test_table27_tau_control_mask_accepts_nanoaod_id_bitmaps():
+def test_table27_tau_control_mask_accepts_osunano_wp_ordinals():
     taus = ak.Array(
         [[
             {
                 "pt": 60.0,
                 "eta": 1.0,
                 "idDecayModeNewDMs": True,
-                "idDeepTau2018v2p5VSjet": 32,
+                "idDeepTau2018v2p5VSjet": 6,
                 "idDeepTau2018v2p5VSe": 1,
                 "idDeepTau2018v2p5VSmu": 1,
             },
@@ -92,7 +92,7 @@ def test_table27_tau_control_mask_accepts_nanoaod_id_bitmaps():
                 "pt": 60.0,
                 "eta": 1.0,
                 "idDecayModeNewDMs": True,
-                "idDeepTau2018v2p5VSjet": 16,
+                "idDeepTau2018v2p5VSjet": 5,
                 "idDeepTau2018v2p5VSe": 1,
                 "idDeepTau2018v2p5VSmu": 1,
             },

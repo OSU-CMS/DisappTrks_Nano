@@ -1246,10 +1246,10 @@ class DisappTrksProcessor(BaseProcessorABC):
         if "idDeepTau2018v2p5VSjet" in taus.fields:
             tau_lepton_id = (
                 tau_dm
-                & ((taus.idDeepTau2018v2p5VSe & 1) != 0)
-                & ((taus.idDeepTau2018v2p5VSmu & 1) != 0)
+                & (taus.idDeepTau2018v2p5VSe >= 1)
+                & (taus.idDeepTau2018v2p5VSmu >= 1)
             )
-            tau_tight = tau_lepton_id & ((taus.idDeepTau2018v2p5VSjet & 32) != 0)
+            tau_tight = tau_lepton_id & (taus.idDeepTau2018v2p5VSjet >= 6)
         else:
             tau_lepton_id = (
                 tau_dm
