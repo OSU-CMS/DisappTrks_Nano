@@ -368,6 +368,59 @@ def hadronic_tau_veto_object_mask(
     )
 
 
+def hadronic_tau_control_object_mask(
+    taus,
+    *,
+    vsjet_tight: float = 0.8841,
+    vse_vvvloose: float = 0.099,
+    vsmu_vloose: float = 0.2949,
+):
+    """Hadronic taus for the AN Table-27 single-tau control sample.
+
+    Table 14 requests decay-mode finding, tight isolation, VVVLoose rejection
+    against electrons, and VLoose rejection against muons.  Run-3 NanoAOD
+    stores the DeepTau 2018v2p5 discriminators rather than the legacy
+    ``byTightCombinedIsolationDeltaBetaCorr3Hits`` flag, so Tight VSjet is the
+    NanoAOD representation of the isolation/light-jet-rejection requirement.
+
+    Prefer the integer working-point fields when present.  Custom NanoAOD
+    productions that only retain raw scores use the corresponding Run-3
+    working-point thresholds.
+    """
+
+    decay_mode = taus.idDecayModeNewDMs
+    if "idDeepTau2018v2p5VSjet" in taus.fields:
+        # NanoAOD DeepTau IDs are bitmaps: Tight VSjet is bit 5, while the
+        # first VSe and VSmu bits represent VVVLoose and VLoose respectively.
+        pass_vsjet = (taus.idDeepTau2018v2p5VSjet & 32) != 0
+        pass_vse = (taus.idDeepTau2018v2p5VSe & 1) != 0
+        pass_vsmu = (taus.idDeepTau2018v2p5VSmu & 1) != 0
+    else:
+        required = {
+            "rawDeepTau2018v2p5VSjet",
+            "rawDeepTau2018v2p5VSe",
+            "rawDeepTau2018v2p5VSmu",
+        }
+        missing = required.difference(taus.fields)
+        if missing:
+            raise AttributeError(
+                "Table-27 tau ID requires DeepTau 2018v2p5 fields; missing "
+                + ", ".join(sorted(missing))
+            )
+        pass_vsjet = taus.rawDeepTau2018v2p5VSjet > vsjet_tight
+        pass_vse = taus.rawDeepTau2018v2p5VSe > vse_vvvloose
+        pass_vsmu = taus.rawDeepTau2018v2p5VSmu > vsmu_vloose
+
+    return (
+        (taus.pt > 50.0)
+        & (abs(taus.eta) < 2.1)
+        & decay_mode
+        & pass_vsjet
+        & pass_vse
+        & pass_vsmu
+    )
+
+
 def layer_mask(tracks, layer: str):
     layers = tracks.hp_nValidTrackerHits
     # Prefer the explicit layer count when supplied by the custom extension.

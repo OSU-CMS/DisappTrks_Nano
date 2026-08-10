@@ -47,6 +47,7 @@ from cuts import (
     search_kinematics,
     single_electron_hlt,
     single_muon_hlt,
+    single_tau_hlt,
     tau_trigger_probability_hlt,
     tau_pveto_diagnostic_cuts,
 )
@@ -269,6 +270,8 @@ def _skim_cuts_for_mode(mode, sample):
         return [single_muon_hlt]
     if mode == "tau_trigger_probability":
         return [tau_trigger_probability_hlt]
+    if mode == "tau_pmiss_poffline":
+        return [single_tau_hlt]
     if mode in (
         "electron_pveto",
         "tau_ele_pveto",
@@ -483,6 +486,11 @@ elif category_mode == "tau_ele_pmiss_poffline":
         "inclusive": common_categories["inclusive"],
         **_categories_with_prefix(lepton_background_categories, "tau_ele_"),
     }
+elif category_mode == "tau_pmiss_poffline":
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        **_categories_with_prefix(lepton_background_categories, "tau_background_"),
+    }
 elif category_mode == "tau_trigger_probability":
     selected_categories = {
         "inclusive": common_categories["inclusive"],
@@ -544,7 +552,8 @@ else:
         f"{category_mode!r}. Expected one of muon_pveto, electron_pveto, "
         "tau_mu_pveto, tau_ele_pveto, muon_pmiss_poffline, "
         "electron_pmiss_poffline, tau_mu_pmiss_poffline, "
-        "tau_ele_pmiss_poffline, tau_trigger_probability, fake_tracks, muon_backgrounds, "
+        "tau_ele_pmiss_poffline, tau_pmiss_poffline, tau_trigger_probability, "
+        "fake_tracks, muon_backgrounds, "
         "egamma_backgrounds, fiducial_maps, all."
     )
 
@@ -617,6 +626,7 @@ def _variables_for_mode(mode, variables):
         "electron_pmiss_poffline": ("nElectronBackground",),
         "tau_mu_pmiss_poffline": ("nTauMuBackground",),
         "tau_ele_pmiss_poffline": ("nTauEleBackground",),
+        "tau_pmiss_poffline": ("nTauBackground",),
         "tau_trigger_probability": ("nTauTriggerProbability",),
         "fake_tracks": fake_track_prefixes,
         "muon_backgrounds": ("nMuon", "nTauMu", "fakeZMuMuFitTrack_"),
@@ -782,6 +792,7 @@ for prefix, label in (
     ("Electron", "electron"),
     ("TauMu", r"tau-muon"),
     ("TauEle", r"tau-electron"),
+    ("Tau", r"single-tau"),
 ):
     for layer in (*pveto_layers, "combinedBins"):
         lepton_background_count_variables.update(

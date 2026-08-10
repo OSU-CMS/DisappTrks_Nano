@@ -712,6 +712,16 @@ tau_trigger_probability_hlt = Cut(
     function=_single_muon_hlt,
 )
 
+single_tau_hlt = Cut(
+    name="single_tau_hlt",
+    params={
+        "paths": (
+            "IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1",
+        )
+    },
+    function=_single_muon_hlt,
+)
+
 single_electron_hlt = Cut(
     name="single_electron_hlt",
     params={
@@ -1011,6 +1021,7 @@ for layer in (*PVETO_LAYERS, "combinedBins"):
         ("electron", "Electron"),
         ("tau_mu", "TauMu"),
         ("tau_ele", "TauEle"),
+        ("tau", "Tau"),
     ):
         lepton_background_cuts[f"{category_prefix}_background_control_{layer}"] = (
             _make_count_cut(

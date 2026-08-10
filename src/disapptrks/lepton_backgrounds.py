@@ -156,6 +156,26 @@ def trigger_efficiency_from_counts(
     return probability_from_counts(passes, total)
 
 
+def _multiply_counts_at_physical_boundary(*factors: Count) -> Count:
+    """Multiply lepton factors without losing an uncertainty at value zero.
+
+    The shared ``Count`` arithmetic is intentionally left unchanged because it
+    is also used by the established fake-track estimate.  Lepton ``Pveto`` can
+    instead sit at the physical boundary with a nonzero upper uncertainty, so
+    propagate absolute derivatives locally for this product.
+    """
+
+    result = Count(1.0, 0.0)
+    for factor in factors:
+        value = result.value * factor.value
+        variance = (
+            factor.value * factor.value * float(result.variance)
+            + result.value * result.value * float(factor.variance)
+        )
+        result = Count(value, variance)
+    return result
+
+
 def _walk_hists(value: Any):
     if hasattr(value, "axes") and hasattr(value, "values"):
         yield value
@@ -566,6 +586,21 @@ def estimate_lepton_background(
             if isinstance(trigger_efficiency, Mapping)
             else trigger_efficiency
         )
+        if layer_trigger_efficiency.value <= 0.0:
+            raise ValueError(
+                f"trigger efficiency must be positive for layer {layer}; "
+                f"got {layer_trigger_efficiency.value}"
+            )
+        estimate_numerator = (
+            _multiply_counts_at_physical_boundary(
+                control,
+                p_veto,
+                poffline,
+                pmiss,
+            )
+            if "tau" in flavor.lower()
+            else control * p_veto * poffline * pmiss
+        )
         estimates.append(
             LeptonBackgroundEstimate(
                 flavor=flavor,
@@ -577,11 +612,7 @@ def estimate_lepton_background(
                 p_miss=pmiss,
                 trigger_efficiency=layer_trigger_efficiency,
                 tau_probability=tau_probability,
-                estimate=control
-                * p_veto
-                * poffline
-                * pmiss
-                / layer_trigger_efficiency,
+                estimate=estimate_numerator / layer_trigger_efficiency,
                 control_category=control_name,
                 poffline_numerator_category=poffline_num_name,
                 poffline_denominator_category=poffline_den_name,

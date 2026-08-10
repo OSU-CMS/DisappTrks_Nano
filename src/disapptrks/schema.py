@@ -78,6 +78,7 @@ TAG_AND_PROBE_BRANCHES = frozenset(
         "Muon_tightId",
         "Muon_pfRelIso04_all",
         "HLT_IsoMu24",
+        "HLT_IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1",
         "Tau_pt",
         "Tau_eta",
         "Tau_phi",

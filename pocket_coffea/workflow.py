@@ -28,6 +28,7 @@ from disapptrks.selections import (
     fake_track_no_d0_mask,
     fiducial_map_probe_track_mask,
     generic_probe_pair_layer_mask,
+    hadronic_tau_control_object_mask,
     invariant_mass,
     isolated_track_selection_mask,
     lepton_veto_probe_track_mask,
@@ -1487,6 +1488,9 @@ class DisappTrksProcessor(BaseProcessorABC):
                 low_mt_mask(self.events.Electron[tau_ele_tag_mask], tag_met)
             ]
 
+        if self._mode_enabled("tau_pmiss_poffline"):
+            self.events["TauControlTag"] = self._select_one_tau_control_tag()
+
         if self._mode_enabled("tau_ele_pveto"):
             self._store_lepton_pveto_pairs(
                 prefix="TauEle",
@@ -1515,6 +1519,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             "electron_pmiss_poffline",
             "tau_mu_pmiss_poffline",
             "tau_ele_pmiss_poffline",
+            "tau_pmiss_poffline",
         ):
             event_quality = (
                 _golden_json_mask(
@@ -1606,6 +1611,21 @@ class DisappTrksProcessor(BaseProcessorABC):
                     fiducial_hot_spots=self._lepton_fiducial_hot_spots("electron"),
                 )
 
+            if (
+                self._mode_enabled("tau_pmiss_poffline")
+                and "TauControlTag" in self.events.fields
+            ):
+                self._store_lepton_background_controls(
+                    prefix="Tau",
+                    flavor="tau",
+                    tags=self.events.TauControlTag,
+                    event_quality=event_quality,
+                    # A reconstructed tau matched to the control track is
+                    # required by Table 27; no electron/muon fiducial map is
+                    # part of this control-object definition.
+                    fiducial_hot_spots=(),
+                )
+
         if self._mode_enabled("fiducial_maps"):
             self._store_fiducial_map_pairs()
 
@@ -1693,6 +1713,21 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["nTauTriggerProbabilityNumerator"] = ak.values_astype(
             numerator, np.int64
         )
+
+    def _select_one_tau_control_tag(self):
+        """Choose one Table-27 tau reproducibly when an event has several."""
+
+        selected = self.events.Tau[
+            hadronic_tau_control_object_mask(self.events.Tau)
+        ]
+        counts = ak.num(selected)
+        safe_counts = ak.where(counts > 0, counts, 1)
+        # The AN chooses a passing tau randomly.  Event-number modulo gives a
+        # deterministic, reproducible pseudo-random choice with no pT ordering
+        # preference.
+        chosen_index = self.events.event % safe_counts
+        local_index = ak.local_index(selected, axis=1)
+        return selected[local_index == chosen_index]
 
     def _count_muon_pveto_fields(self):
         self.events["nMuonTag"] = ak.num(self.events.MuonTag)
@@ -2319,6 +2354,8 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events["nMuonLowMTTag"] = ak.num(self.events.MuonLowMTTag)
         elif mode == "tau_ele_pmiss_poffline":
             self.events["nElectronLowMTTag"] = ak.num(self.events.ElectronLowMTTag)
+        elif mode == "tau_pmiss_poffline":
+            self.events["nTauControlTag"] = ak.num(self.events.TauControlTag)
         elif mode == "tau_trigger_probability":
             self._store_tau_trigger_probability_counts()
         elif mode == "fake_tracks":

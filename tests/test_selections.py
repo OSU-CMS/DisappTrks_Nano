@@ -6,6 +6,7 @@ from disapptrks.selections import (
     build_lepton_veto_tag_probe_pairs,
     build_muon_veto_tag_probe_pairs,
     fiducial_map_probe_track_mask,
+    hadronic_tau_control_object_mask,
     met_no_mu_minus_lepton,
     muon_veto_probe_track_mask,
 )
@@ -29,6 +30,76 @@ def test_met_no_mu_minus_electron_adds_visible_tag():
 
     assert ak.to_list(pt) == pytest.approx([140.0])
     assert ak.to_list(phi) == pytest.approx([0.0])
+
+
+def test_met_no_mu_minus_tau_adds_visible_tau():
+    events = ak.Array([{"MetNoMu": {"pt": 100.0, "phi": 0.0}}])
+    taus = ak.Array([[{"pt": 50.0, "phi": 0.0}]])
+
+    pt, phi = met_no_mu_minus_lepton(events, taus, flavor="tau")
+
+    assert ak.to_list(pt) == pytest.approx([150.0])
+    assert ak.to_list(phi) == pytest.approx([0.0])
+
+
+def test_table27_tau_control_mask_uses_pt_eta_and_deeptau_raw_working_points():
+    taus = ak.Array(
+        [[
+            {
+                "pt": 60.0,
+                "eta": 1.0,
+                "idDecayModeNewDMs": True,
+                "rawDeepTau2018v2p5VSjet": 0.90,
+                "rawDeepTau2018v2p5VSe": 0.20,
+                "rawDeepTau2018v2p5VSmu": 0.40,
+            },
+            {
+                "pt": 49.0,
+                "eta": 1.0,
+                "idDecayModeNewDMs": True,
+                "rawDeepTau2018v2p5VSjet": 0.90,
+                "rawDeepTau2018v2p5VSe": 0.20,
+                "rawDeepTau2018v2p5VSmu": 0.40,
+            },
+            {
+                "pt": 60.0,
+                "eta": 1.0,
+                "idDecayModeNewDMs": True,
+                "rawDeepTau2018v2p5VSjet": 0.80,
+                "rawDeepTau2018v2p5VSe": 0.20,
+                "rawDeepTau2018v2p5VSmu": 0.40,
+            },
+        ]]
+    )
+
+    assert ak.to_list(hadronic_tau_control_object_mask(taus)) == [
+        [True, False, False]
+    ]
+
+
+def test_table27_tau_control_mask_accepts_nanoaod_id_bitmaps():
+    taus = ak.Array(
+        [[
+            {
+                "pt": 60.0,
+                "eta": 1.0,
+                "idDecayModeNewDMs": True,
+                "idDeepTau2018v2p5VSjet": 32,
+                "idDeepTau2018v2p5VSe": 1,
+                "idDeepTau2018v2p5VSmu": 1,
+            },
+            {
+                "pt": 60.0,
+                "eta": 1.0,
+                "idDecayModeNewDMs": True,
+                "idDeepTau2018v2p5VSjet": 16,
+                "idDeepTau2018v2p5VSe": 1,
+                "idDeepTau2018v2p5VSmu": 1,
+            },
+        ]]
+    )
+
+    assert ak.to_list(hadronic_tau_control_object_mask(taus)) == [[True, False]]
 
 
 def test_lepton_pairs_keep_probe_coordinates_for_fiducial_maps():
