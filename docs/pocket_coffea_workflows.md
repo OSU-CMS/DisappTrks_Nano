@@ -69,10 +69,9 @@ Supported modes are:
 | `tau_ele_pveto` | `DATA_EGamma` | Tau-veto measurement with electron tags and low-`MT` tags. |
 | `muon_pmiss_poffline` | `DATA_Muon` | Muon `Poffline` and `Pmiss` control categories only. No Pveto pair categories. |
 | `electron_pmiss_poffline` | `DATA_EGamma` | Electron `Poffline` and `Pmiss` control categories only. No Pveto pair categories. |
-| `tau_pmiss_poffline` | `DATA_Tau` | AN Table-27 reconstructed-hadronic-tau control sample for tau `Nctrl`, `Poffline`, and `Pmiss`. |
-| `tau_mu_pmiss_poffline` | `DATA_Muon` | Deprecated diagnostic; this low-`MT` muon sample is not the AN tau control region. |
-| `tau_ele_pmiss_poffline` | `DATA_EGamma` | Deprecated diagnostic; this low-`MT` electron sample is not the AN tau control region. |
-| `tau_trigger_probability` | `DATA_Tau` or the tau-trigger dataset | Optional AN diagnostic for the additional muon+tau-trigger normalization factor applied to the Table-27 control yield. |
+| `tau_mu_pmiss_poffline` | `DATA_Muon` | Muon-triggered tau leg: reconstructed tau matched to the isolated track, used for `Nctrl`, `Poffline`, and `Pmiss`. |
+| `tau_ele_pmiss_poffline` | `DATA_EGamma` | Electron-triggered tau leg: reconstructed tau matched to the isolated track, used for `Nctrl`, `Poffline`, and `Pmiss`. |
+| `tau_trigger_probability` | Muon data containing the cross-trigger path | Optional AN diagnostic for the muon+tau-trigger normalization factor. |
 | `fiducial_maps` | `DATA_Muon` or `DATA_EGamma` | Before/after eta-phi histograms used to make electron and muon fiducial-map JSON/NPZ files. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
 | `muon_backgrounds` | `DATA_Muon` | Combined muon plus tau-mu categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
@@ -303,8 +302,8 @@ comparison, measure it with the dedicated trigger-probability mode:
 
 ```bash
 DISAPPTRKS_CATEGORY_MODE=tau_trigger_probability \
-DISAPPTRKS_DATASET_JSON=datasets/<tau_trigger_dataset>.json \
-DISAPPTRKS_DATASET_SAMPLE=DATA_Tau \
+DISAPPTRKS_DATASET_JSON=datasets/eos_2022CD_Muon.json \
+DISAPPTRKS_DATASET_SAMPLE=DATA_Muon \
 DISAPPTRKS_DATASET_YEAR=2022_preEE \
 python -m pocket_coffea.scripts.runner run \
   --cfg config.py \
@@ -319,7 +318,7 @@ Then extract the factor:
 
 ```bash
 disapptrks extract-tau-trigger-probability \
-  --sample DATA_Tau \
+  --sample DATA_Muon \
   --output-json tables/tau_trigger_probability_2022CD.json \
   analysis_output/2022CD_tau_trigger_probability_dask/output_*.coffea
 ```
@@ -406,32 +405,15 @@ disapptrks estimate-lepton-background \
   analysis_output/2022CD_muon_pmiss_poffline/output_*.coffea
 ```
 
-For the tau background, the electron/muon tag-and-probe modes provide only
-`Pveto`. Produce `Nctrl`, `Poffline`, and `Pmiss` from the AN Table-27
-single-tau control sample:
+For the tau background, run the muon and electron legs on `DATA_Muon` and
+`DATA_EGamma`, respectively. In both `*_pmiss_poffline` modes the selected
+low-`MT` lepton establishes the triggered event leg, while `Nctrl`, `Poffline`,
+and `Pmiss` are formed from a reconstructed hadronic tau matched to the
+isolated track. The tau—not the tag lepton—is treated as invisible in the
+modified-MET calculation.
 
-```bash
-DISAPPTRKS_CATEGORY_MODE=tau_pmiss_poffline \
-DISAPPTRKS_DATASET_JSON=datasets/<2022CD_tau_dataset>.json \
-DISAPPTRKS_DATASET_SAMPLE=DATA_Tau \
-DISAPPTRKS_DATASET_YEAR=2022_preEE \
-python -m pocket_coffea.scripts.runner run \
-  --cfg config.py \
-  --outputdir analysis_output/2022CD_tau_pmiss_poffline \
-  --executor dask@lpc \
-  --executor-custom-setup executors_lpc.py \
-  --scaleout 200 \
-  --skip-bad-files
-```
-
-The mode requires the muon+tau cross trigger
-`HLT_IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1`, a reconstructed
-tau with `pt > 50 GeV`, `|eta| < 2.1`, the Table-14-equivalent DeepTau ID, and
-an isolated track matched to the tau within `deltaR < 0.1`.
-
-Combine the two `Pveto` legs with this single-tau control output in
-postprocessing. The single-tau trigger efficiency is an external input and is
-required explicitly:
+Combine both legs in postprocessing. The effective trigger efficiency is
+required explicitly until its per-leg treatment is finalized:
 
 ```bash
 disapptrks estimate-tau-background \
@@ -442,20 +424,19 @@ disapptrks estimate-tau-background \
   --trigger-efficiency-error 0.006 \
   --tau-mu-files \
     analysis_output/2022CD_tau_mu_pveto/output_*.coffea \
+    analysis_output/2022CD_tau_mu_pmiss_poffline/output_*.coffea \
   --tau-ele-files \
     analysis_output/2022CD_tau_ele_pveto/output_*.coffea \
-  --tau-control-files \
-    analysis_output/2022CD_tau_pmiss_poffline/output_*.coffea
+    analysis_output/2022CD_tau_ele_pmiss_poffline/output_*.coffea
 ```
 
 This command combines:
 
-- `Pveto` OS/SS pairs summed across the tau-muon and tau-electron tag-probe samples;
-- `N_ctrl`, `Poffline`, and `Pmiss` exclusively from the reconstructed-tau control sample;
-- the explicitly supplied single-tau control-trigger efficiency.
+- `Pveto` OS/SS pairs from both tag-and-probe legs;
+- `Nctrl`, `Poffline`, and `Pmiss` from the reconstructed-tau controls in both datasets;
+- the explicitly supplied effective trigger efficiency.
 
-The defaults assume `DATA_Muon`, `DATA_EGamma`, and `DATA_Tau` sample keys;
-override them if the dataset JSON metadata uses different names.
+The defaults assume `DATA_Muon` and `DATA_EGamma` sample keys.
 
 ### Example Dask@LPC Command
 

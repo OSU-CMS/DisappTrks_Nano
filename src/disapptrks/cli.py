@@ -1114,10 +1114,11 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
 def _estimate_tau_background_command(args: argparse.Namespace) -> int:
     tau_mu_outputs = _load_outputs(args.tau_mu_files)
     tau_ele_outputs = _load_outputs(args.tau_ele_files)
-    tau_control_outputs = _load_outputs(args.tau_control_files)
-    tau_background_outputs = _lepton_background_outputs(
-        tau_control_outputs,
-        prefix="Tau",
+    tau_mu_background_outputs = _lepton_background_outputs(
+        tau_mu_outputs, prefix="TauMu"
+    )
+    tau_ele_background_outputs = _lepton_background_outputs(
+        tau_ele_outputs, prefix="TauEle"
     )
 
     tau_mu_pair_counts = _pair_counts_from_outputs(
@@ -1142,60 +1143,84 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
             merged = _sum_nested_numeric(merged, output["cutflow"])
         return merged
 
-    tau_cutflow = _merged_cutflow(tau_background_outputs)
+    def _leg_counts(cutflow, category_prefix, dataset, sample):
+        return {
+            kind: {
+                layer: Count(
+                    cutflow_count(
+                        cutflow,
+                        f"{category_prefix}_background_{kind}_{layer}",
+                        dataset=dataset,
+                        sample=sample,
+                        variation=args.variation,
+                    )
+                )
+                for layer in args.layers
+            }
+            for kind in ("control", "offline", "trigger")
+        }
+
+    tau_mu_cutflow = _merged_cutflow(tau_mu_background_outputs)
+    tau_ele_cutflow = _merged_cutflow(tau_ele_background_outputs)
+    tau_mu_counts = _leg_counts(
+        tau_mu_cutflow,
+        "tau_mu",
+        args.tau_mu_dataset or args.dataset,
+        args.tau_mu_sample,
+    )
+    tau_ele_counts = _leg_counts(
+        tau_ele_cutflow,
+        "tau_ele",
+        args.tau_ele_dataset or args.dataset,
+        args.tau_ele_sample,
+    )
     control_counts = {
-        layer: Count(
-            cutflow_count(
-                tau_cutflow,
-                f"tau_background_control_{layer}",
-                dataset=args.tau_control_dataset or args.dataset,
-                sample=args.tau_control_sample,
-                variation=args.variation,
-            )
+        layer: _add_counts(
+            tau_mu_counts["control"][layer], tau_ele_counts["control"][layer]
         )
         for layer in args.layers
     }
     offline_counts = {
-        layer: Count(
-            cutflow_count(
-                tau_cutflow,
-                f"tau_background_offline_{layer}",
-                dataset=args.tau_control_dataset or args.dataset,
-                sample=args.tau_control_sample,
-                variation=args.variation,
-            )
+        layer: _add_counts(
+            tau_mu_counts["offline"][layer], tau_ele_counts["offline"][layer]
         )
         for layer in args.layers
     }
     trigger_counts = {
-        layer: Count(
-            cutflow_count(
-                tau_cutflow,
-                f"tau_background_trigger_{layer}",
-                dataset=args.tau_control_dataset or args.dataset,
-                sample=args.tau_control_sample,
-                variation=args.variation,
-            )
+        layer: _add_counts(
+            tau_mu_counts["trigger"][layer], tau_ele_counts["trigger"][layer]
         )
         for layer in args.layers
     }
-    met_components = legacy_met_probability_components_from_outputs(
-        tau_background_outputs,
-        prefix="Tau",
+    tau_mu_met_components = legacy_met_probability_components_from_outputs(
+        tau_mu_background_outputs,
+        prefix="TauMu",
         layers=args.layers,
-        control_counts=control_counts,
-        dataset=args.tau_control_dataset or args.dataset,
-        sample=args.tau_control_sample,
+        control_counts=tau_mu_counts["control"],
+        dataset=args.tau_mu_dataset or args.dataset,
+        sample=args.tau_mu_sample,
         met_cut=args.met_cut,
         phi_cut=args.phi_cut,
     )
-    met_probabilities = _met_probabilities_from_components(met_components)
+    tau_ele_met_components = legacy_met_probability_components_from_outputs(
+        tau_ele_background_outputs,
+        prefix="TauEle",
+        layers=args.layers,
+        control_counts=tau_ele_counts["control"],
+        dataset=args.tau_ele_dataset or args.dataset,
+        sample=args.tau_ele_sample,
+        met_cut=args.met_cut,
+        phi_cut=args.phi_cut,
+    )
+    met_probabilities = _met_probabilities_from_components(
+        _sum_named_count_maps(tau_mu_met_components, tau_ele_met_components)
+    )
 
     trigger_efficiency = Count(
         args.trigger_efficiency,
         args.trigger_efficiency_error * args.trigger_efficiency_error,
     )
-    trigger_efficiency_method = "manual-single-tau-control"
+    trigger_efficiency_method = "manual-tau-leg-controls"
 
     tau_probability = (
         Count(args.tau_probability, args.tau_probability_error * args.tau_probability_error)
@@ -1880,8 +1905,8 @@ def main():
     tau_background = subparsers.add_parser(
         "estimate-tau-background",
         help=(
-            "Compute the tau background using tau_mu/tau_ele Pveto inputs "
-            "and the AN Table-27 reconstructed-tau control sample."
+            "Compute the tau background by combining the Muon and EGamma "
+            "tau-control legs."
         ),
     )
     tau_background.add_argument(
@@ -1890,8 +1915,7 @@ def main():
         type=Path,
         required=True,
         help=(
-            "tau_mu_pveto PocketCoffea outputs used for the muon-tagged "
-            "component of the tau Pveto measurement."
+            "Muon-data tau_mu_pveto and tau_mu_pmiss_poffline outputs."
         ),
     )
     tau_background.add_argument(
@@ -1900,18 +1924,7 @@ def main():
         type=Path,
         required=True,
         help=(
-            "tau_ele_pveto PocketCoffea outputs used for the electron-tagged "
-            "component of the tau Pveto measurement."
-        ),
-    )
-    tau_background.add_argument(
-        "--tau-control-files",
-        nargs="+",
-        type=Path,
-        required=True,
-        help=(
-            "Table-27 single-tau control outputs produced with "
-            "DISAPPTRKS_CATEGORY_MODE=tau_pmiss_poffline on DATA_Tau."
+            "EGamma-data tau_ele_pveto and tau_ele_pmiss_poffline outputs."
         ),
     )
     tau_background.add_argument(
@@ -1935,15 +1948,6 @@ def main():
         "--tau-ele-sample",
         default="DATA_EGamma",
         help="Restrict tau_ele inputs to one sample key.",
-    )
-    tau_background.add_argument(
-        "--tau-control-dataset",
-        help="Restrict the Table-27 single-tau control input to one dataset key.",
-    )
-    tau_background.add_argument(
-        "--tau-control-sample",
-        default="DATA_Tau",
-        help="Sample key for the Table-27 single-tau control input.",
     )
     tau_background.add_argument("--variation", default="nominal")
     tau_background.add_argument(
@@ -1973,9 +1977,8 @@ def main():
         type=float,
         required=True,
         help=(
-            "Efficiency of the trigger collecting the Table-27 single-tau "
-            "sample. It cannot be obtained by matching the hadronic probe "
-            "to the electron/muon Pveto tag."
+            "Effective trigger-efficiency divisor for the combined Muon and "
+            "EGamma tau-control legs."
         ),
     )
     tau_background.add_argument(
@@ -1989,7 +1992,7 @@ def main():
         type=float,
         help=(
             "Optional legacy/AN tau-trigger scale P(tau). This scales the "
-            "Table-27 N_ctrl and is stored in JSON."
+            "combined tau-leg N_ctrl and is stored in JSON."
         ),
     )
     tau_background.add_argument(

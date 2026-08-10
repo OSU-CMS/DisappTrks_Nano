@@ -1488,7 +1488,12 @@ class DisappTrksProcessor(BaseProcessorABC):
                 low_mt_mask(self.events.Electron[tau_ele_tag_mask], tag_met)
             ]
 
-        if self._mode_enabled("tau_pmiss_poffline"):
+        if self._mode_enabled(
+            "tau_mu_pveto",
+            "tau_ele_pveto",
+            "tau_mu_pmiss_poffline",
+            "tau_ele_pmiss_poffline",
+        ):
             self.events["TauControlTag"] = self._select_one_tau_control_tag()
 
         if self._mode_enabled("tau_ele_pveto"):
@@ -1519,7 +1524,6 @@ class DisappTrksProcessor(BaseProcessorABC):
             "electron_pmiss_poffline",
             "tau_mu_pmiss_poffline",
             "tau_ele_pmiss_poffline",
-            "tau_pmiss_poffline",
         ):
             event_quality = (
                 _golden_json_mask(
@@ -1574,8 +1578,6 @@ class DisappTrksProcessor(BaseProcessorABC):
                     event_quality=event_quality,
                     fiducial_hot_spots=self._fiducial_hot_spots("electron"),
                 )
-            # The Run-3 tau estimate is measured with muon/electron tau-control
-            # legs in this Nano workflow, matching the existing tau Pveto split.
             if (
                 (
                     self._mode_enabled("tau_mu_pmiss_poffline")
@@ -1585,13 +1587,16 @@ class DisappTrksProcessor(BaseProcessorABC):
                     )
                 )
                 and "MuonLowMTTag" in self.events.fields
+                and "TauControlTag" in self.events.fields
             ):
                 self._store_lepton_background_controls(
                     prefix="TauMu",
-                    flavor="muon",
-                    tags=self.events.MuonLowMTTag,
-                    event_quality=event_quality,
-                    fiducial_hot_spots=self._lepton_fiducial_hot_spots("muon"),
+                    flavor="tau",
+                    tags=self.events.TauControlTag,
+                    event_quality=(
+                        event_quality & (ak.num(self.events.MuonLowMTTag) >= 1)
+                    ),
+                    fiducial_hot_spots=(),
                 )
             if (
                 (
@@ -1602,27 +1607,15 @@ class DisappTrksProcessor(BaseProcessorABC):
                     )
                 )
                 and "ElectronLowMTTag" in self.events.fields
-            ):
-                self._store_lepton_background_controls(
-                    prefix="TauEle",
-                    flavor="electron",
-                    tags=self.events.ElectronLowMTTag,
-                    event_quality=event_quality,
-                    fiducial_hot_spots=self._lepton_fiducial_hot_spots("electron"),
-                )
-
-            if (
-                self._mode_enabled("tau_pmiss_poffline")
                 and "TauControlTag" in self.events.fields
             ):
                 self._store_lepton_background_controls(
-                    prefix="Tau",
+                    prefix="TauEle",
                     flavor="tau",
                     tags=self.events.TauControlTag,
-                    event_quality=event_quality,
-                    # A reconstructed tau matched to the control track is
-                    # required by Table 27; no electron/muon fiducial map is
-                    # part of this control-object definition.
+                    event_quality=(
+                        event_quality & (ak.num(self.events.ElectronLowMTTag) >= 1)
+                    ),
                     fiducial_hot_spots=(),
                 )
 
@@ -2354,8 +2347,6 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events["nMuonLowMTTag"] = ak.num(self.events.MuonLowMTTag)
         elif mode == "tau_ele_pmiss_poffline":
             self.events["nElectronLowMTTag"] = ak.num(self.events.ElectronLowMTTag)
-        elif mode == "tau_pmiss_poffline":
-            self.events["nTauControlTag"] = ak.num(self.events.TauControlTag)
         elif mode == "tau_trigger_probability":
             self._store_tau_trigger_probability_counts()
         elif mode == "fake_tracks":
