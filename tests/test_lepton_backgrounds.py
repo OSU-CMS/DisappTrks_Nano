@@ -539,7 +539,9 @@ def test_write_lepton_background_outputs(tmp_path: Path):
     scaled_roundtrip = read_lepton_background_json(scaled_json_path)
     assert scaled_roundtrip[0].tau_probability.value == 1.46
     write_lepton_background_latex(scaled_roundtrip, scaled_tex_path, run_period="2023D")
-    assert "P(\\tau)" not in scaled_tex_path.read_text()
+    scaled_text = scaled_tex_path.read_text()
+    assert "P(\\tau)" in scaled_text
+    assert "1.4600 $\\pm$ 0.0024" in scaled_text
 
 
 def test_write_combined_lepton_background_latex(tmp_path: Path):

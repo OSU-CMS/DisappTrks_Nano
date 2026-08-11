@@ -710,33 +710,46 @@ def _write_lepton_background_latex_body(
 ) -> None:
     first_estimates = period_estimates[0][1] if period_estimates else []
     title = _an_background_title(first_estimates[0].flavor) if first_estimates else "lepton background"
-    n_columns = 8
+    is_tau = bool(first_estimates and "tau" in first_estimates[0].flavor.lower())
+    n_columns = 9 if is_tau else 8
     column_spec = "ll" + ("c" * (n_columns - 2))
     out.write(r"\begin{tiny}" + "\n")
     out.write(r"\begin{tabular}{" + column_spec + r"}" + "\n")
     out.write(r"\hline" + "\n")
     out.write(r"\multicolumn{" + str(n_columns) + r"}{c}{" + title + r"} \\" + "\n")
-    out.write(
+    header = (
         r"run period & $n_{\mathrm{layers}}$ & "
         r"$\epsilon_{\mathrm{trigger}}^{\ell}$ & "
-        r"$N_{\mathrm{ctrl}}^{\ell}$ & $P_{\mathrm{veto}}$ & "
-        r"$P_{\mathrm{offline}}$ & $P_{\mathrm{trigger}}$ & estimate \\" + "\n"
     )
+    if is_tau:
+        header += r"$P(\tau)$ & "
+    header += (
+        r"$N_{\mathrm{ctrl}}^{\ell}$ & $P_{\mathrm{veto}}$ & "
+        r"$P_{\mathrm{offline}}$ & $P_{\mathrm{trigger}}$ & estimate \\"
+    )
+    out.write(header + "\n")
     out.write(r"\hline" + "\n")
     for run_period, estimates in period_estimates:
         n_rows = len(estimates)
         for index, estimate in enumerate(estimates):
             run_period_cell = rf"\multirow{{{n_rows}}}{{*}}{{{run_period}}}" if index == 0 else ""
-            out.write(
+            row = (
                 f"{run_period_cell} & {_an_layer_label(estimate.layer)} & "
                 f"{format_pm_latex(estimate.trigger_efficiency.value, estimate.trigger_efficiency.error)} & "
-                f"{format_pm_latex(estimate.control.value, estimate.control.error)} & "
+            )
+            if is_tau:
+                row += (
+                    f"{format_pm_latex(estimate.tau_probability.value, estimate.tau_probability.error)} & "
+                )
+            row += (
+                f"{format_pm_latex(estimate.control_raw.value, estimate.control_raw.error)} & "
                 f"{_format_an_pm(estimate.p_veto.value, estimate.p_veto.error)} & "
                 f"{format_pm_latex(estimate.p_offline.value, estimate.p_offline.error)} & "
                 f"{format_pm_latex(estimate.p_miss.value, estimate.p_miss.error)} & "
                 f"{_format_an_pm(estimate.estimate.value, estimate.estimate.error)} "
                 r"\\" + "\n"
             )
+            out.write(row)
     out.write(r"\hline" + "\n")
     out.write(r"\end{tabular}" + "\n")
     out.write(r"\end{tiny}" + "\n")
