@@ -2,6 +2,7 @@ from pathlib import Path
 
 from disapptrks.tables import (
     CountWithVariance,
+    POISSON_ZERO_UPPER_68,
     pveto_with_asymmetric_uncertainty,
     write_lepton_pveto_cutflow_latex,
     write_fake_track_basic_cutflow_latex,
@@ -36,7 +37,20 @@ def test_pveto_with_negative_subtracted_numerator_quotes_upward_only():
     assert summary.numerator == -1.0
     assert summary.central == 0.0
     assert summary.err_down == 0.0
-    assert summary.err_up > 0.0
+    assert summary.err_up == POISSON_ZERO_UPPER_68 / 80.0
+
+
+def test_negative_pveto_boundary_does_not_use_os_ss_quadrature_error():
+    summary = pveto_with_asymmetric_uncertainty(
+        den_os=CountWithVariance(100.0, 100.0),
+        num_os=CountWithVariance(40.0, 40.0),
+        den_ss=CountWithVariance(20.0, 20.0),
+        num_ss=CountWithVariance(41.0, 41.0),
+    )
+
+    assert summary.central == 0.0
+    assert summary.err_down == 0.0
+    assert summary.err_up == POISSON_ZERO_UPPER_68 / 80.0
 
 
 def test_pveto_with_zero_subtracted_numerator_quotes_poisson_upper():

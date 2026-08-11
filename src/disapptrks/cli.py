@@ -1092,6 +1092,7 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         print(f"Wrote {args.output_tex}")
 
     for estimate in estimates:
+        pveto_counts = pair_counts.get(estimate.layer, {})
         met_method = (
             "hist-integrated"
             if estimate.layer in met_probabilities
@@ -1101,6 +1102,10 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
             f"{estimate.layer}: N_lepton = "
             f"{estimate.estimate.value:.6g} ± {estimate.estimate.error:.6g} "
             f"(P_veto={estimate.p_veto.value:.6g}, "
+            f"P_veto_counts=[den_os={pveto_counts.get('den_os', 0):g}, "
+            f"num_os={pveto_counts.get('num_os', 0):g}, "
+            f"den_ss={pveto_counts.get('den_ss', 0):g}, "
+            f"num_ss={pveto_counts.get('num_ss', 0):g}], "
             f"P_offline={estimate.p_offline.value:.6g}, "
             f"P_miss={estimate.p_miss.value:.6g}, "
             f"trigger_efficiency={estimate.trigger_efficiency.value:.6g}, "
