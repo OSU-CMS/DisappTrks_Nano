@@ -768,7 +768,6 @@ tau_trigger_probability_hlt = Cut(
     params={
         "paths": (
             "IsoMu20",
-            "IsoMu24",
             "IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1",
         )
     },

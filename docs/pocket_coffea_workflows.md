@@ -292,27 +292,16 @@ These feed the postprocessing estimate:
 - `N_lepton = N_ctrl * Pveto * Poffline * Pmiss / epsilon_trig^lepton`.
   `epsilon_trig^lepton` is the separate legacy trigger-efficiency divisor, not
   the same quantity as `Pmiss`.
-- For the current Nano tau background, do not pass `--tau-probability`: the
-  `tau_mu` leg is selected with the single-muon trigger and the `tau_ele` leg is
-  selected with the single-electron trigger. The AN-style `P(tau)` correction is
-  only relevant for a legacy control-region definition normalized through a
-  muon+tau HLT path.
-
-If you explicitly need that legacy/AN muon+tau-trigger normalization for a
-comparison, measure it with the dedicated trigger-probability mode:
+- The current Nano single-tau control is selected with the muon+tau cross
+  trigger, so derive and pass the dissertation `P(tau)` correction using the
+  dedicated trigger-probability mode:
 
 ```bash
 DISAPPTRKS_CATEGORY_MODE=tau_trigger_probability \
 DISAPPTRKS_DATASET_JSON=datasets/eos_2022CD_Muon.json \
 DISAPPTRKS_DATASET_SAMPLE=DATA_Muon \
 DISAPPTRKS_DATASET_YEAR=2022_preEE \
-python -m pocket_coffea.scripts.runner run \
-  --cfg config.py \
-  --outputdir analysis_output/2022CD_tau_trigger_probability_dask \
-  --executor dask@lpc \
-  --executor-custom-setup executors_lpc.py \
-  --scaleout 200 \
-  --skip-bad-files
+scripts/run_lpc_dask.sh --scaleout 200 --skip-bad-files
 ```
 
 Then extract the factor:
@@ -320,13 +309,18 @@ Then extract the factor:
 ```bash
 disapptrks extract-tau-trigger-probability \
   --sample DATA_Muon \
+  --single-muon-prescale 210 \
   --output-json tables/tau_trigger_probability_2022CD.json \
   analysis_output/2022CD_tau_trigger_probability_dask/output_*.coffea
 ```
 
-The extractor prints the `--tau-probability` and `--tau-probability-error`
-arguments, but those should be omitted for the current Nano tau_mu/tau_ele
-single-lepton-trigger control-region workflow.
+The extractor calculates
+`P(tau) = N(mu+tau)/(prescale * N(mu))`, prints the resulting
+`--tau-probability` and `--tau-probability-error` arguments, and stores the
+underlying counts in JSON.  The legacy Run-3 scripts used an effective IsoMu20
+prescale of 210; pass a different value if the trigger configuration for the
+period requires it.  This correction is required when the tau control region
+is selected by the muon+tau cross trigger.
 
 You can still add these categories to a full Pveto job with
 `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier and can

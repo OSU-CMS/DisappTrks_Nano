@@ -305,7 +305,7 @@ def _single_muon_trigger_mask(events):
 
 
 def _tau_probability_single_muon_trigger_mask(events):
-    return _hlt_or_mask(events, ("IsoMu20", "IsoMu24"))
+    return _hlt_or_mask(events, ("IsoMu20",))
 
 
 def _muon_tau_trigger_mask(events):

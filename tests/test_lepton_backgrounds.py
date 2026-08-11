@@ -373,6 +373,31 @@ def test_tau_trigger_probability_from_outputs_uses_mode_counters():
     assert probability.value == 1.46
 
 
+def test_tau_trigger_probability_applies_single_muon_prescale():
+    output = {
+        "variables": {
+            "nTauTriggerProbabilityNumerator": {
+                "sample": {"dataset": FakeHist([0.0, 3066.0], [FakeAxis("n", [0.0, 1.0, 2.0])])}
+            },
+            "nTauTriggerProbabilityDenominator": {
+                "sample": {"dataset": FakeHist([0.0, 10.0], [FakeAxis("n", [0.0, 1.0, 2.0])])}
+            },
+        }
+    }
+
+    numerator, denominator, probability = _tau_trigger_probability_from_outputs(
+        [output],
+        dataset="dataset",
+        sample="sample",
+        single_muon_prescale=210.0,
+    )
+
+    assert numerator.value == 3066.0
+    assert denominator.value == 2100.0
+    assert probability.value == 1.46
+    assert denominator.error == 210.0 * np.sqrt(10.0)
+
+
 def test_legacy_met_probabilities_integrate_trigger_turn_on():
     met_edges = [0.0, 120.0, 240.0]
     phi_edges = [0.0, 0.5, 1.0]

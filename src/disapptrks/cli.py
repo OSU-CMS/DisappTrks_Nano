@@ -360,6 +360,7 @@ def _tau_trigger_probability_from_outputs(
     *,
     dataset: str | None = None,
     sample: str | None = None,
+    single_muon_prescale: float = 1.0,
 ) -> tuple[Count, Count, Count]:
     numerator = 0.0
     denominator = 0.0
@@ -378,7 +379,12 @@ def _tau_trigger_probability_from_outputs(
             sample=sample,
         )
     numerator_count = Count(numerator, numerator)
-    denominator_count = Count(denominator, denominator)
+    if single_muon_prescale <= 0.0:
+        raise ValueError("single-muon prescale must be positive")
+    denominator_count = Count(
+        single_muon_prescale * denominator,
+        single_muon_prescale * single_muon_prescale * denominator,
+    )
     return numerator_count, denominator_count, numerator_count / denominator_count
 
 
@@ -1325,6 +1331,7 @@ def _extract_tau_trigger_probability_command(args: argparse.Namespace) -> int:
         outputs,
         dataset=args.dataset,
         sample=args.sample,
+        single_muon_prescale=args.single_muon_prescale,
     )
     if denominator.value <= 0.0:
         raise ValueError(
@@ -1356,7 +1363,9 @@ def _extract_tau_trigger_probability_command(args: argparse.Namespace) -> int:
     print(
         "tau_probability="
         f"{probability.value:.6g} ± {probability.error:.6g} "
-        f"(numerator={numerator.value:.6g}, denominator={denominator.value:.6g})"
+        f"(N_mu+tau={numerator.value:.6g}, "
+        f"prescale*N_mu={denominator.value:.6g}, "
+        f"single_muon_prescale={args.single_muon_prescale:g})"
     )
     print(
         "Use with estimate-lepton-background: "
@@ -1746,6 +1755,15 @@ def main():
         "--output-json",
         type=Path,
         help="Write numerator, denominator, and tau_probability to JSON.",
+    )
+    tau_trigger_probability.add_argument(
+        "--single-muon-prescale",
+        type=float,
+        default=210.0,
+        help=(
+            "Effective IsoMu20 prescale used in the denominator of P(tau) "
+            "(legacy Run-3 value: 210; default: %(default)s)."
+        ),
     )
     tau_trigger_probability.set_defaults(
         func=_extract_tau_trigger_probability_command
