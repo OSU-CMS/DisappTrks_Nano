@@ -1369,8 +1369,7 @@ def _extract_tau_trigger_probability_command(args: argparse.Namespace) -> int:
     print(
         "tau_probability="
         f"{probability.value:.6g} ± {probability.error:.6g} "
-        f"(N_mu+tau={numerator.value:.6g}, "
-        f"N_mu+tau_and_IsoMu24={denominator.value:.6g})"
+        f"(N_total={numerator.value:.6g}, N_IsoMu24={denominator.value:.6g})"
     )
     print(
         "Use with estimate-lepton-background: "

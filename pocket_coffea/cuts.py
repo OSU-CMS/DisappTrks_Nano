@@ -725,15 +725,15 @@ def _tau_cross_hlt(events, params, year, **kwargs):
 
 
 def _tau_trigger_probability_hlt(events, params, year, **kwargs):
-    return _required_hlt(
-        events,
-        {
-            "paths": (
-                ISO_MUON_REFERENCE_TRIGGER,
-                tau_cross_trigger_for_year(year),
-            )
-        },
-    )
+    # Equation 7.8 needs N_total before any HLT selection.  Check that the
+    # reference decision is available, but do not use it to skim the sample.
+    available = set(events.HLT.fields) if "HLT" in events.fields else set()
+    if ISO_MUON_REFERENCE_TRIGGER not in available:
+        raise RuntimeError(
+            "Required HLT branch is absent from this NanoAOD: "
+            f"HLT_{ISO_MUON_REFERENCE_TRIGGER}"
+        )
+    return ak.ones_like(events.event, dtype=bool)
 
 
 def _single_electron_hlt(events, params, **kwargs):

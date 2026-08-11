@@ -313,9 +313,10 @@ disapptrks extract-tau-trigger-probability \
   analysis_output/2022CD_tau_trigger_probability_dask/output_*.coffea
 ```
 
-The extractor calculates the unprescaled cross-trigger correction
-`P(tau) = N(cross)/N(cross AND IsoMu24)`, i.e. the inverse probability for a
-cross-triggered event to also pass IsoMu24. It prints the resulting
+Following dissertation Equation 7.8, the extractor calculates the unprescaled
+correction `P(tau) = N(total)/N(IsoMu24) = 1/P(IsoMu24)` after the common
+muon/tau eta legs. The cross-trigger probability is already present in
+`N_ctrl` and cancels algebraically. The extractor prints the resulting
 `--tau-probability` and `--tau-probability-error` arguments, and stores the
 underlying counts in JSON. This correction is required when the tau control
 region is selected by the muon+tau cross trigger. The cross-trigger is

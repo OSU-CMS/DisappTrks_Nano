@@ -928,12 +928,12 @@ for prefix, label in (
 tau_trigger_probability_variables = {
     "nTauTriggerProbabilityDenominator": _event_count_hist(
         "nTauTriggerProbabilityDenominator",
-        "N(events passing tau-trigger eta legs, cross HLT, and IsoMu24)",
+        "N(events passing tau-trigger eta legs and IsoMu24)",
         bins=2,
     ),
     "nTauTriggerProbabilityNumerator": _event_count_hist(
         "nTauTriggerProbabilityNumerator",
-        "N(events passing tau-trigger eta legs and muon+tau cross HLT)",
+        "N(events passing tau-trigger eta legs before an HLT requirement)",
         bins=2,
     ),
     "nTauTriggerProbabilityMuonEtaLeg": _event_count_hist(
