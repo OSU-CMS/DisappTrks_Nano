@@ -66,6 +66,7 @@ from disapptrks.selections import (
     tau_veto_probe_track_mask,
     z_window_muon_probe_pair_mask,
 )
+from disapptrks.triggers import ISO_MUON_REFERENCE_TRIGGER, tau_cross_trigger_for_year
 
 try:
     from disapptrks.selections import fake_track_sideband_cutflow_masks
@@ -305,16 +306,11 @@ def _single_muon_trigger_mask(events):
 
 
 def _tau_probability_single_muon_trigger_mask(events):
-    return _hlt_or_mask(events, ("IsoMu20",))
+    return _hlt_or_mask(events, (ISO_MUON_REFERENCE_TRIGGER,))
 
 
-def _muon_tau_trigger_mask(events):
-    return _hlt_or_mask(
-        events,
-        (
-            "IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1",
-        ),
-    )
+def _muon_tau_trigger_mask(events, year):
+    return _hlt_or_mask(events, (tau_cross_trigger_for_year(year),))
 
 
 def _met_trigger_mask(events):
@@ -1834,7 +1830,7 @@ class DisappTrksProcessor(BaseProcessorABC):
         tau_eta_leg = self._has_eta_leg("Tau", eta_max=2.1)
         eta_legs = muon_eta_leg & tau_eta_leg
         denominator = eta_legs & _tau_probability_single_muon_trigger_mask(self.events)
-        numerator = eta_legs & _muon_tau_trigger_mask(self.events)
+        numerator = eta_legs & _muon_tau_trigger_mask(self.events, self._year)
 
         self.events["nTauTriggerProbabilityMuonEtaLeg"] = ak.values_astype(
             muon_eta_leg, np.int64

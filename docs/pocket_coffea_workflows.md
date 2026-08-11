@@ -71,7 +71,7 @@ Supported modes are:
 | `electron_pmiss_poffline` | `DATA_EGamma` | Electron `Poffline` and `Pmiss` control categories only. No Pveto pair categories. |
 | `tau_mu_pmiss_poffline` | `DATA_Muon` | Legacy-equivalent single-muon-triggered tau control used for `Nctrl`, `Poffline`, and `Pmiss`; it does not require a low-`MT` muon. |
 | `tau_ele_pmiss_poffline` | `DATA_EGamma` | Compatibility/diagnostic tau control; it is not used by the final tau estimator. |
-| `tau_pmiss_poffline` | `DATA_Muon` | AN-style tau normalization selected exclusively by `HLT_IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1`; supplies `Nctrl`, `Poffline`, and the tau modified-MET spectrum. |
+| `tau_pmiss_poffline` | `DATA_Muon` | Tau normalization selected by the year-dependent IsoMu24+tau cross-trigger; supplies `Nctrl`, `Poffline`, and the tau modified-MET spectrum. |
 | `tau_trigger_probability` | Muon data containing the cross-trigger path | Optional AN diagnostic for the muon+tau-trigger normalization factor. |
 | `fiducial_maps` | `DATA_Muon` or `DATA_EGamma` | Before/after eta-phi histograms used to make electron and muon fiducial-map JSON/NPZ files. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
@@ -309,18 +309,17 @@ Then extract the factor:
 ```bash
 disapptrks extract-tau-trigger-probability \
   --sample DATA_Muon \
-  --single-muon-prescale 210 \
   --output-json tables/tau_trigger_probability_2022CD.json \
   analysis_output/2022CD_tau_trigger_probability_dask/output_*.coffea
 ```
 
-The extractor calculates
-`P(tau) = N(mu+tau)/(prescale * N(mu))`, prints the resulting
+The extractor calculates the unprescaled ratio
+`P(tau) = N(IsoMu24+tau)/N(IsoMu24)`, prints the resulting
 `--tau-probability` and `--tau-probability-error` arguments, and stores the
-underlying counts in JSON.  The legacy Run-3 scripts used an effective IsoMu20
-prescale of 210; pass a different value if the trigger configuration for the
-period requires it.  This correction is required when the tau control region
-is selected by the muon+tau cross trigger.
+underlying counts in JSON. This correction is required when the tau control
+region is selected by the muon+tau cross trigger. The cross-trigger is
+`IsoMu24+LooseDeepTau30` for 2022--2024 and `IsoMu24+PNetTau26+L2NN` for
+2025--2026.
 
 You can still add these categories to a full Pveto job with
 `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier and can

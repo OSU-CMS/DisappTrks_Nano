@@ -360,7 +360,6 @@ def _tau_trigger_probability_from_outputs(
     *,
     dataset: str | None = None,
     sample: str | None = None,
-    single_muon_prescale: float = 1.0,
 ) -> tuple[Count, Count, Count]:
     numerator = 0.0
     denominator = 0.0
@@ -379,12 +378,7 @@ def _tau_trigger_probability_from_outputs(
             sample=sample,
         )
     numerator_count = Count(numerator, numerator)
-    if single_muon_prescale <= 0.0:
-        raise ValueError("single-muon prescale must be positive")
-    denominator_count = Count(
-        single_muon_prescale * denominator,
-        single_muon_prescale * single_muon_prescale * denominator,
-    )
+    denominator_count = Count(denominator, denominator)
     return numerator_count, denominator_count, numerator_count / denominator_count
 
 
@@ -1331,7 +1325,6 @@ def _extract_tau_trigger_probability_command(args: argparse.Namespace) -> int:
         outputs,
         dataset=args.dataset,
         sample=args.sample,
-        single_muon_prescale=args.single_muon_prescale,
     )
     if denominator.value <= 0.0:
         raise ValueError(
@@ -1363,19 +1356,12 @@ def _extract_tau_trigger_probability_command(args: argparse.Namespace) -> int:
     print(
         "tau_probability="
         f"{probability.value:.6g} ± {probability.error:.6g} "
-        f"(N_mu+tau={numerator.value:.6g}, "
-        f"prescale*N_mu={denominator.value:.6g}, "
-        f"single_muon_prescale={args.single_muon_prescale:g})"
+        f"(N_mu+tau={numerator.value:.6g}, N_IsoMu24={denominator.value:.6g})"
     )
     print(
         "Use with estimate-lepton-background: "
         f"--tau-probability {probability.value:.8g} "
         f"--tau-probability-error {probability.error:.8g}"
-    )
-    print(
-        "Only use that option for a legacy/AN-style tau estimate whose control "
-        "region is normalized through the muon+tau trigger. Omit it for the "
-        "current Nano tau_mu/tau_ele single-lepton-trigger control regions."
     )
     return 0
 
@@ -1756,15 +1742,6 @@ def main():
         type=Path,
         help="Write numerator, denominator, and tau_probability to JSON.",
     )
-    tau_trigger_probability.add_argument(
-        "--single-muon-prescale",
-        type=float,
-        default=210.0,
-        help=(
-            "Effective IsoMu20 prescale used in the denominator of P(tau) "
-            "(legacy Run-3 value: 210; default: %(default)s)."
-        ),
-    )
     tau_trigger_probability.set_defaults(
         func=_extract_tau_trigger_probability_command
     )
@@ -1876,9 +1853,8 @@ def main():
         "--tau-probability",
         type=float,
         help=(
-            "Optional legacy/AN tau-trigger scale P(tau). This scales N_ctrl "
-            "and is stored in JSON. Omit it for the current Nano tau_mu/tau_ele "
-            "single-lepton-trigger control regions."
+            "Optional data-derived IsoMu24+tau/IsoMu24 trigger scale P(tau). "
+            "This scales N_ctrl and is stored in JSON."
         ),
     )
     lepton_background.add_argument(
@@ -2023,8 +1999,8 @@ def main():
         "--tau-probability",
         type=float,
         help=(
-            "Optional legacy/AN tau-trigger scale P(tau). This scales the "
-            "cross-triggered tau-control N_ctrl and is stored in JSON."
+            "Data-derived IsoMu24+tau/IsoMu24 trigger scale P(tau). This "
+            "scales the cross-triggered tau-control N_ctrl and is stored in JSON."
         ),
     )
     tau_background.add_argument(

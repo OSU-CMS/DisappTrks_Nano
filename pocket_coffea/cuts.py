@@ -12,6 +12,8 @@ from coffea.lumi_tools import LumiMask
 from pocket_coffea.lib.cut_definition import Cut
 from pocket_coffea.lib.cut_functions import apply_golden_json, get_JetVetoMap_Mask
 
+from disapptrks.triggers import ISO_MUON_REFERENCE_TRIGGER, tau_cross_trigger_for_year
+
 
 EVENT_DIAGNOSTIC_FIELDS = [
     "event_metNoMu120",
@@ -715,6 +717,25 @@ def _required_hlt(events, params, **kwargs):
     return _hlt_or(events, paths)
 
 
+def _tau_cross_hlt(events, params, year, **kwargs):
+    return _required_hlt(
+        events,
+        {"paths": (tau_cross_trigger_for_year(year),)},
+    )
+
+
+def _tau_trigger_probability_hlt(events, params, year, **kwargs):
+    return _required_hlt(
+        events,
+        {
+            "paths": (
+                ISO_MUON_REFERENCE_TRIGGER,
+                tau_cross_trigger_for_year(year),
+            )
+        },
+    )
+
+
 def _single_electron_hlt(events, params, **kwargs):
     return _hlt_or(events, params["paths"])
 
@@ -755,23 +776,14 @@ single_muon_hlt = Cut(
 
 muon_tau_hlt = Cut(
     name="muon_tau_hlt",
-    params={
-        "paths": (
-            "IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1",
-        )
-    },
-    function=_required_hlt,
+    params={},
+    function=_tau_cross_hlt,
 )
 
 tau_trigger_probability_hlt = Cut(
     name="tau_trigger_probability_hlt",
-    params={
-        "paths": (
-            "IsoMu20",
-            "IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1",
-        )
-    },
-    function=_single_muon_hlt,
+    params={},
+    function=_tau_trigger_probability_hlt,
 )
 
 single_electron_hlt = Cut(
