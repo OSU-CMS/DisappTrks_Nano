@@ -15,6 +15,7 @@ from .summaries import cutflow_count
 from .tables import (
     CountWithVariance,
     POISSON_ZERO_UPPER_68,
+    format_asymmetric_latex,
     format_pm_latex,
     format_value_with_uncertainty,
     pveto_with_asymmetric_uncertainty,
@@ -729,6 +730,12 @@ def _format_an_pm(value: float, error: float, *, scientific_threshold: float = 1
     return format_pm_latex(value, error)
 
 
+def _format_tau_boundary(value: float, error: float) -> str:
+    if value == 0.0 and error > 0.0:
+        return format_asymmetric_latex(0.0, error, 0.0)
+    return _format_an_pm(value, error)
+
+
 def _write_lepton_background_latex_body(
     out,
     period_estimates: Sequence[tuple[str, Sequence[LeptonBackgroundEstimate]]],
@@ -770,10 +777,10 @@ def _write_lepton_background_latex_body(
                 )
             row += (
                 f"{format_pm_latex(estimate.control_raw.value, estimate.control_raw.error)} & "
-                f"{_format_an_pm(estimate.p_veto.value, estimate.p_veto.error)} & "
+                f"{(_format_tau_boundary if is_tau else _format_an_pm)(estimate.p_veto.value, estimate.p_veto.error)} & "
                 f"{format_pm_latex(estimate.p_offline.value, estimate.p_offline.error)} & "
                 f"{format_pm_latex(estimate.p_miss.value, estimate.p_miss.error)} & "
-                f"{_format_an_pm(estimate.estimate.value, estimate.estimate.error)} "
+                f"{(_format_tau_boundary if is_tau else _format_an_pm)(estimate.estimate.value, estimate.estimate.error)} "
                 r"\\" + "\n"
             )
             out.write(row)

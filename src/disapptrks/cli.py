@@ -271,6 +271,29 @@ def _met_probabilities_from_components(
     return probabilities
 
 
+def _apply_sparse_tau_met_probability_fallback(
+    probabilities: dict[str, tuple[Count, Count]],
+    *,
+    sparse_layers: tuple[str, ...] = ("NLayers4", "NLayers5"),
+    combined_layer: str = "combinedBins",
+) -> dict[str, tuple[Count, Count]]:
+    """Use the combined tau MET probabilities in sparse layer bins.
+
+    This reproduces the prescription stated in dissertation Table 7.25.
+    """
+
+    if combined_layer not in probabilities:
+        raise KeyError(
+            f"combined tau MET probabilities {combined_layer!r} are required "
+            "for the sparse-layer fallback"
+        )
+    result = dict(probabilities)
+    for layer in sparse_layers:
+        if layer in result:
+            result[layer] = result[combined_layer]
+    return result
+
+
 def _trigger_efficiency_count_components_from_outputs(
     outputs: list[dict],
     *,
@@ -1185,7 +1208,9 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
         met_cut=args.met_cut,
         phi_cut=args.phi_cut,
     )
-    met_probabilities = _met_probabilities_from_components(tau_met_components)
+    met_probabilities = _apply_sparse_tau_met_probability_fallback(
+        _met_probabilities_from_components(tau_met_components)
+    )
 
     trigger_efficiency = Count(
         args.trigger_efficiency,

@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 
 from disapptrks.cli import (
+    _apply_sparse_tau_met_probability_fallback,
     _lepton_background_outputs,
     _met_probabilities_from_components,
     _sum_named_count_maps,
@@ -275,6 +276,21 @@ def test_count_component_helpers_sum_raw_tau_legs_before_ratios():
     poffline, pmiss = probabilities["NLayers4"]
     assert poffline.value == (20.0 + 180.0) / (100.0 + 300.0)
     assert pmiss.value == (10.0 + 30.0) / (25.0 + 75.0)
+
+
+def test_sparse_tau_bins_use_combined_met_probabilities():
+    probabilities = {
+        "NLayers4": (Count(0.6, 0.01), Count(0.0, 0.0)),
+        "NLayers5": (Count(1.0, 0.0), Count(0.0, 0.0)),
+        "NLayers6plus": (Count(0.25, 0.01), Count(0.55, 0.01)),
+        "combinedBins": (Count(0.273, 0.0009), Count(0.570, 0.0041)),
+    }
+
+    result = _apply_sparse_tau_met_probability_fallback(probabilities)
+
+    assert result["NLayers4"] == result["combinedBins"]
+    assert result["NLayers5"] == result["combinedBins"]
+    assert result["NLayers6plus"] == probabilities["NLayers6plus"]
 
 
 def test_trigger_efficiency_components_can_be_combined_before_ratio():
