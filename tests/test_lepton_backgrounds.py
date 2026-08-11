@@ -12,6 +12,7 @@ from disapptrks.cli import (
 )
 from disapptrks.fake_tracks import Count
 from disapptrks.lepton_backgrounds import (
+    _divide_counts_at_physical_boundary,
     _format_an_pm,
     _multiply_counts_at_physical_boundary,
     estimate_lepton_background,
@@ -34,6 +35,16 @@ def test_tau_product_preserves_uncertainty_at_zero_pveto_boundary():
 
     assert result.value == 0.0
     assert np.isclose(result.error, 6.8)
+
+
+def test_tau_division_preserves_uncertainty_at_zero_boundary():
+    result = _divide_counts_at_physical_boundary(
+        Count(0.0, 6.8**2),
+        Count(0.9, 0.006**2),
+    )
+
+    assert result.value == 0.0
+    assert np.isclose(result.error, 6.8 / 0.9)
 
 
 class FakeAxis:

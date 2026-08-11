@@ -176,6 +176,25 @@ def _multiply_counts_at_physical_boundary(*factors: Count) -> Count:
     return result
 
 
+def _divide_counts_at_physical_boundary(
+    numerator: Count,
+    denominator: Count,
+) -> Count:
+    """Divide while retaining numerator uncertainty at a zero boundary."""
+
+    if denominator.value <= 0.0:
+        raise ValueError("denominator must be positive")
+    value = numerator.value / denominator.value
+    variance = (
+        float(numerator.variance) / (denominator.value * denominator.value)
+        + numerator.value
+        * numerator.value
+        * float(denominator.variance)
+        / (denominator.value**4)
+    )
+    return Count(value, variance)
+
+
 def _walk_hists(value: Any):
     if hasattr(value, "axes") and hasattr(value, "values"):
         yield value
@@ -601,6 +620,14 @@ def estimate_lepton_background(
             if "tau" in flavor.lower()
             else control * p_veto * poffline * pmiss
         )
+        estimate = (
+            _divide_counts_at_physical_boundary(
+                estimate_numerator,
+                layer_trigger_efficiency,
+            )
+            if "tau" in flavor.lower()
+            else estimate_numerator / layer_trigger_efficiency
+        )
         estimates.append(
             LeptonBackgroundEstimate(
                 flavor=flavor,
@@ -612,7 +639,7 @@ def estimate_lepton_background(
                 p_miss=pmiss,
                 trigger_efficiency=layer_trigger_efficiency,
                 tau_probability=tau_probability,
-                estimate=estimate_numerator / layer_trigger_efficiency,
+                estimate=estimate,
                 control_category=control_name,
                 poffline_numerator_category=poffline_num_name,
                 poffline_denominator_category=poffline_den_name,
