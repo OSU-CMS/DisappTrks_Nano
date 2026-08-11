@@ -379,7 +379,20 @@ def _tau_trigger_probability_from_outputs(
         )
     numerator_count = Count(numerator, numerator)
     denominator_count = Count(denominator, denominator)
-    return numerator_count, denominator_count, numerator_count / denominator_count
+    if numerator <= 0.0 or denominator <= 0.0:
+        probability = Count(0.0, 0.0)
+    else:
+        if denominator > numerator:
+            raise ValueError(
+                "IsoMu24-and-cross overlap exceeds the cross-trigger count"
+            )
+        efficiency = denominator / numerator
+        correction = 1.0 / efficiency
+        correction_variance = (1.0 - efficiency) / (
+            numerator * efficiency**3
+        )
+        probability = Count(correction, correction_variance)
+    return numerator_count, denominator_count, probability
 
 
 LEPTON_PVETO_PAIR_VARIABLES = {
@@ -1356,7 +1369,8 @@ def _extract_tau_trigger_probability_command(args: argparse.Namespace) -> int:
     print(
         "tau_probability="
         f"{probability.value:.6g} ± {probability.error:.6g} "
-        f"(N_mu+tau={numerator.value:.6g}, N_IsoMu24={denominator.value:.6g})"
+        f"(N_mu+tau={numerator.value:.6g}, "
+        f"N_mu+tau_and_IsoMu24={denominator.value:.6g})"
     )
     print(
         "Use with estimate-lepton-background: "

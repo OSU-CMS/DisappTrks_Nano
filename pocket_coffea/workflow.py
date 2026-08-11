@@ -1829,8 +1829,13 @@ class DisappTrksProcessor(BaseProcessorABC):
         muon_eta_leg = self._has_eta_leg("Muon", eta_max=2.1)
         tau_eta_leg = self._has_eta_leg("Tau", eta_max=2.1)
         eta_legs = muon_eta_leg & tau_eta_leg
-        denominator = eta_legs & _tau_probability_single_muon_trigger_mask(self.events)
-        numerator = eta_legs & _muon_tau_trigger_mask(self.events, self._year)
+        cross_trigger = _muon_tau_trigger_mask(self.events, self._year)
+        single_muon_trigger = _tau_probability_single_muon_trigger_mask(self.events)
+        # N_ctrl is already selected by the cross-trigger.  The dissertation
+        # correction is therefore 1/P(IsoMu24 | cross), not the inclusive
+        # cross-trigger/single-muon rate ratio in the Muon primary dataset.
+        numerator = eta_legs & cross_trigger
+        denominator = eta_legs & cross_trigger & single_muon_trigger
 
         self.events["nTauTriggerProbabilityMuonEtaLeg"] = ak.values_astype(
             muon_eta_leg, np.int64

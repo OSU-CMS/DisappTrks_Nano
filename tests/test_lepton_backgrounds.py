@@ -371,6 +371,11 @@ def test_tau_trigger_probability_from_outputs_uses_mode_counters():
     assert numerator.value == 146.0
     assert denominator.value == 100.0
     assert probability.value == 1.46
+    efficiency = 100.0 / 146.0
+    assert np.isclose(
+        probability.variance,
+        (1.0 - efficiency) / (146.0 * efficiency**3),
+    )
 
 
 def test_legacy_met_probabilities_integrate_trigger_turn_on():
