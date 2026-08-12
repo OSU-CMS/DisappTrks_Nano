@@ -2658,7 +2658,8 @@ def main():
     standard_fake_tracks.add_argument(
         "--transfer-factor-source",
         choices=["fixed", "fit"],
-        default="fixed",
+        default="fit",
+        help="Transfer-factor source (default: fit).",
     )
     standard_fake_tracks.add_argument(
         "--fit-plots",

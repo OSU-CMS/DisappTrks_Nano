@@ -236,6 +236,10 @@ shards to avoid double counting. Nonstandard inputs can be supplied with
 `--basic-files`, `--zmumu-files`, and `--zee-files`; use `--input-base` or
 `--output-dir` to override the corresponding base paths.
 
+The standardized command fits the transfer factor from each control output by
+default. Use `--transfer-factor-source fixed` only to reproduce the stored
+AN Section-5.2 values, or add `--fit-plots` to save the default fit plots.
+
 Multiple periods can be processed together:
 
 ```bash
