@@ -418,7 +418,8 @@ disapptrks estimate-tau-background \
   --output-tex tables/tau_background_2022CD.tex \
   --trigger-efficiency 0.90 \
   --trigger-efficiency-error 0.006 \
-  --tau-probability-json tables/tau_trigger_probability_2022CD.json \
+  --tau-probability-files \
+    analysis_output/2022CD_tau_trigger_probability/output_*.coffea \
   --tau-control-files \
     analysis_output/2022CD_tau_pmiss_poffline/output_*.coffea \
   --tau-mu-files \

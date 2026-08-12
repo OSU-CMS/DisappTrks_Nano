@@ -1256,7 +1256,32 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
     )
     trigger_efficiency_method = "manual-cross-trigger-control"
 
-    if args.tau_probability_json is not None:
+    if args.tau_probability_files is not None:
+        if args.tau_probability_error != 0.0:
+            raise ValueError(
+                "--tau-probability-error cannot be combined with "
+                "--tau-probability-files"
+            )
+        probability_outputs = _load_outputs(args.tau_probability_files)
+        probability_numerator, probability_denominator, tau_probability = (
+            _tau_trigger_probability_from_outputs(
+                probability_outputs,
+                dataset=args.tau_control_dataset or args.dataset,
+                sample=args.tau_control_sample,
+            )
+        )
+        if probability_denominator.value <= 0.0:
+            raise ValueError(
+                "tau-probability denominator is zero; verify that the files "
+                "were produced in tau_trigger_probability mode"
+            )
+        print(
+            "Calculated tau_probability="
+            f"{tau_probability.value:.8g} ± {tau_probability.error:.8g} "
+            f"from N_total={probability_numerator.value:g}, "
+            f"N_IsoMu24={probability_denominator.value:g}"
+        )
+    elif args.tau_probability_json is not None:
         if args.tau_probability_error != 0.0:
             raise ValueError(
                 "--tau-probability-error cannot be combined with "
@@ -2047,7 +2072,7 @@ def main():
         "--tau-probability",
         type=float,
         help=(
-            "Data-derived IsoMu24+tau/IsoMu24 trigger scale P(tau). This "
+            "Data-derived N_total/N_IsoMu24 trigger scale P(tau). This "
             "scales the cross-triggered tau-control N_ctrl and is stored in JSON."
         ),
     )
@@ -2057,6 +2082,16 @@ def main():
         help=(
             "Read P(tau) and its uncertainty from the JSON written by "
             "extract-tau-trigger-probability."
+        ),
+    )
+    tau_probability_source.add_argument(
+        "--tau-probability-files",
+        nargs="+",
+        type=Path,
+        help=(
+            "Calculate P(tau)=N_total/N_IsoMu24 directly from one or more "
+            "Pocket Coffea outputs "
+            "produced with DISAPPTRKS_CATEGORY_MODE=tau_trigger_probability."
         ),
     )
     tau_background.add_argument(
