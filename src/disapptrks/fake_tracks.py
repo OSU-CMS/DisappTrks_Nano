@@ -1004,23 +1004,37 @@ def write_fake_track_table34_latex(
 ) -> None:
     """Write an AN Table-34-style comparison of Z->mumu and Z->ee estimates."""
 
-    by_layer: dict[str, dict[str, dict[str, Count]]] = {}
-    for json_path in json_paths:
-        payload = json.loads(json_path.read_text())
-        for estimate in payload.get("estimates", []):
-            layer = estimate["layer"]
-            control = _control_column_key(estimate["control_region"])
-            by_layer.setdefault(layer, {})[control] = {
-                "p_fake": _count_from_payload(estimate["fake_probability"]),
-                "n_fake": _count_from_payload(estimate["fake_yield"])
-                if estimate.get("fake_yield") is not None
-                else Count(0.0, 0.0),
-            }
+    write_combined_fake_track_table34_latex(
+        {run_period: json_paths},
+        path,
+        include_table_env=include_table_env,
+    )
+
+
+def write_combined_fake_track_table34_latex(
+    period_json_paths: Mapping[str, Sequence[Path]],
+    path: Path,
+    *,
+    include_table_env: bool = False,
+) -> None:
+    """Write one Table-34-style comparison spanning multiple run periods."""
+
+    by_period: dict[str, dict[str, dict[str, dict[str, Count]]]] = {}
+    for run_period, json_paths in period_json_paths.items():
+        by_layer = by_period.setdefault(run_period, {})
+        for json_path in json_paths:
+            payload = json.loads(json_path.read_text())
+            for estimate in payload.get("estimates", []):
+                layer = estimate["layer"]
+                control = _control_column_key(estimate["control_region"])
+                by_layer.setdefault(layer, {})[control] = {
+                    "p_fake": _count_from_payload(estimate["fake_probability"]),
+                    "n_fake": _count_from_payload(estimate["fake_yield"])
+                    if estimate.get("fake_yield") is not None
+                    else Count(0.0, 0.0),
+                }
 
     layer_order = ["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"]
-    layers = [layer for layer in layer_order if layer in by_layer] + [
-        layer for layer in by_layer if layer not in layer_order
-    ]
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as out:
@@ -1040,24 +1054,28 @@ def write_fake_track_table34_latex(
             r"$N^{\mathrm{fake}}_{\mathrm{est}}(Z\to ee)$ \\" + "\n"
         )
         out.write(r"\hline" + "\n")
-        for i, layer in enumerate(layers):
-            controls = by_layer[layer]
-            zmumu = controls.get("zmumu")
-            zee = controls.get("zee")
+        for run_period, by_layer in by_period.items():
+            layers = [layer for layer in layer_order if layer in by_layer] + [
+                layer for layer in by_layer if layer not in layer_order
+            ]
+            for i, layer in enumerate(layers):
+                controls = by_layer[layer]
+                zmumu = controls.get("zmumu")
+                zee = controls.get("zee")
 
-            def get(control: dict[str, Count] | None, key: str, formatter) -> str:
-                if control is None:
-                    return "--"
-                count = control[key]
-                return formatter(count.value, count.error)
+                def get(control: dict[str, Count] | None, key: str, formatter) -> str:
+                    if control is None:
+                        return "--"
+                    count = control[key]
+                    return formatter(count.value, count.error)
 
-            out.write(
-                f"{run_period if i == 0 else ''} & {_layer_label(layer)} & "
-                f"{get(zmumu, 'p_fake', _format_scientific_pm)} & "
-                f"{get(zee, 'p_fake', _format_scientific_pm)} & "
-                f"{get(zmumu, 'n_fake', _format_yield_pm)} & "
-                f"{get(zee, 'n_fake', _format_yield_pm)} \\\\\n"
-            )
+                out.write(
+                    f"{run_period if i == 0 else ''} & {_layer_label(layer)} & "
+                    f"{get(zmumu, 'p_fake', _format_scientific_pm)} & "
+                    f"{get(zee, 'p_fake', _format_scientific_pm)} & "
+                    f"{get(zmumu, 'n_fake', _format_yield_pm)} & "
+                    f"{get(zee, 'n_fake', _format_yield_pm)} \\\\\n"
+                )
         out.write(r"\hline" + "\n")
         out.write(r"\end{tabular}" + "\n")
         if include_table_env:

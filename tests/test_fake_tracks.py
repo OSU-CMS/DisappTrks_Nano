@@ -3,6 +3,7 @@ import json
 from disapptrks.fake_tracks import (
     estimate_fake_track_background,
     fixed_an_transfer_factor_fit,
+    write_combined_fake_track_table34_latex,
     write_fake_track_latex,
 )
 
@@ -92,3 +93,34 @@ def test_fixed_an_transfer_factor_accepts_run_period_aliases():
     assert fit.histogram == "fixed:2022CD:zmumu"
     assert fit.transfer_factor.value == 0.10
     assert fit.transfer_factor.error == 0.06
+
+
+def test_combined_table34_contains_each_run_period(tmp_path):
+    period_paths = {}
+    for period in ("2022CD", "2022EFG"):
+        json_paths = []
+        for control_region in (r"$Z\to\mu\mu$", r"$Z\to ee$"):
+            path = tmp_path / f"{period}_{len(json_paths)}.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "estimates": [
+                            {
+                                "layer": "NLayers4",
+                                "control_region": control_region,
+                                "fake_probability": {"value": 0.001, "variance": 1e-8},
+                                "fake_yield": {"value": 2.0, "variance": 0.25},
+                            }
+                        ]
+                    }
+                )
+            )
+            json_paths.append(path)
+        period_paths[period] = json_paths
+
+    output = tmp_path / "combined.tex"
+    write_combined_fake_track_table34_latex(period_paths, output)
+
+    text = output.read_text()
+    assert "2022CD" in text
+    assert "2022EFG" in text

@@ -220,6 +220,33 @@ root://cmseos.fnal.gov//store/group/lpcdisapptrks/disapptrks_output/<period>/<ca
 Set `DISAPPTRKS_COPY_TO_EOS=0` to disable the copy for a smoke test. The base
 can be overridden with `DISAPPTRKS_EOS_OUTPUT_BASE` when needed.
 
+### Standard fake-track estimate
+
+After the `basic`, `zmumu`, and `zee` fake-track modes finish for a period, make
+both control-region estimates and the combined table with:
+
+```bash
+disapptrks make-standard-fake-track-estimate --run-period 2022CD
+```
+
+This reads `analysis_output/2022CD/fake_tracks/{basic,zmumu,zee}/` and writes
+consistently named JSON and LaTeX products under `tables/fake_tracks/2022CD/`.
+If `output_all.coffea` exists, it is preferred over `output_job_*.coffea`
+shards to avoid double counting. Nonstandard inputs can be supplied with
+`--basic-files`, `--zmumu-files`, and `--zee-files`; use `--input-base` or
+`--output-dir` to override the corresponding base paths.
+
+Multiple periods can be processed together:
+
+```bash
+disapptrks make-standard-fake-track-estimate \
+  --run-period 2022CD 2022EFG 2023C 2023D
+```
+
+This retains the per-period products and also writes the combined table
+`tables/fake_tracks/table34_combined.tex`. Explicit per-control file overrides
+are limited to single-period invocations.
+
 ## LPC manual Condor fallback
 
 If Dask/lpcjobqueue is unavailable, the v2-style wrapper in

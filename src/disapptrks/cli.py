@@ -25,6 +25,7 @@ from .fake_tracks import (
     plot_dxy_transfer_factor,
     summed_hist_counts_edges,
     write_an_fake_track_latex,
+    write_combined_fake_track_table34_latex,
     write_fake_track_table34_latex,
     write_fake_track_z_control_latex,
     write_fake_track_latex,
@@ -762,6 +763,120 @@ def _make_fake_track_table34_command(args: argparse.Namespace) -> int:
         include_table_env=args.table_env,
     )
     print(f"Wrote {args.output}")
+    return 0
+
+
+def _standard_coffea_files(directory: Path) -> list[Path]:
+    """Resolve one logical PocketCoffea output without double counting shards."""
+    if not directory.is_dir():
+        raise SystemExit(f"error: standardized output directory not found: {directory}")
+
+    merged = directory / "output_all.coffea"
+    if merged.is_file():
+        return [merged]
+
+    shards = sorted(directory.glob("output_job_*.coffea"))
+    if shards:
+        return shards
+
+    outputs = sorted(directory.glob("*.coffea"))
+    if len(outputs) == 1:
+        return outputs
+    if outputs:
+        raise SystemExit(
+            f"error: ambiguous .coffea outputs in {directory}; expected "
+            "output_all.coffea or output_job_*.coffea. Pass explicit files "
+            "to avoid double counting."
+        )
+
+    raise SystemExit(f"error: no top-level .coffea files found in {directory}")
+
+
+def _make_standard_fake_track_estimate_command(args: argparse.Namespace) -> int:
+    run_periods = (
+        [args.run_period] if isinstance(args.run_period, str) else args.run_period
+    )
+    multiple_periods = len(run_periods) > 1
+    output_base = args.output_dir or Path("tables") / "fake_tracks"
+    combined_json_paths = {}
+
+    if multiple_periods and (args.basic_files or args.zmumu_files or args.zee_files):
+        raise SystemExit(
+            "error: explicit --basic-files/--zmumu-files/--zee-files can only "
+            "be used with one --run-period"
+        )
+
+    for run_period in run_periods:
+        input_root = args.input_base / run_period / "fake_tracks"
+        output_dir = output_base / run_period if multiple_periods else (
+            args.output_dir or output_base / run_period
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        basic_files = args.basic_files or _standard_coffea_files(input_root / "basic")
+        control_files = {
+            "zmumu": args.zmumu_files or _standard_coffea_files(input_root / "zmumu"),
+            "zee": args.zee_files or _standard_coffea_files(input_root / "zee"),
+        }
+        samples = {"zmumu": "DATA_Muon", "zee": "DATA_EGamma"}
+
+        json_paths = []
+        for control in ("zmumu", "zee"):
+            json_path = output_dir / f"{control}.json"
+            json_paths.append(json_path)
+            estimate_args = argparse.Namespace(
+                files=control_files[control],
+                counts_json=None,
+                dataset=None,
+                sample=samples[control],
+                variation="nominal",
+                run_period=run_period,
+                an_control=control,
+                transfer_factor_source=args.transfer_factor_source,
+                layers=["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"],
+                transfer_signal_category="fake_basic3hits_d0_signal",
+                transfer_sideband_category="fake_basic3hits_d0_sideband",
+                control_category="fake_control_{layer}",
+                basic_yield_category=args.basic_yield_category,
+                basic_files=basic_files,
+                basic_dataset=None,
+                basic_sample=args.basic_sample,
+                basic_variation=None,
+                z_to_ll_yield_category=None,
+                prescale=1.0,
+                output_json=json_path,
+                output_tex=output_dir / f"{control}.tex",
+                basic_cutflow_tex=(
+                    output_dir / "basic_cutflow.tex" if control == "zmumu" else None
+                ),
+                z_control_tex=output_dir / f"{control}_control.tex",
+                fit_plot=(
+                    output_dir / f"{control}_fit.pdf"
+                    if args.transfer_factor_source == "fit" and args.fit_plots
+                    else None
+                ),
+                table_env=args.table_env,
+            )
+            _estimate_fake_tracks_command(estimate_args)
+
+        table_args = argparse.Namespace(
+            jsons=json_paths,
+            output=output_dir / "table34.tex",
+            run_period=run_period,
+            table_env=args.table_env,
+        )
+        _make_fake_track_table34_command(table_args)
+        combined_json_paths[run_period] = json_paths
+        print(f"Wrote standardized fake-track products under {output_dir}")
+
+    if multiple_periods:
+        combined_path = output_base / "table34_combined.tex"
+        write_combined_fake_track_table34_latex(
+            combined_json_paths,
+            combined_path,
+            include_table_env=args.table_env,
+        )
+        print(f"Wrote {combined_path}")
     return 0
 
 
@@ -2499,6 +2614,59 @@ def main():
         help="Wrap the LaTeX tabular in a table environment.",
     )
     fake_track_table34.set_defaults(func=_make_fake_track_table34_command)
+
+    standard_fake_tracks = subparsers.add_parser(
+        "make-standard-fake-track-estimate",
+        help=(
+            "Build zmumu, zee, and combined fake-track estimates from the "
+            "standardized analysis_output directory tree."
+        ),
+    )
+    standard_fake_tracks.add_argument(
+        "--run-period",
+        nargs="+",
+        required=True,
+        help="One or more run-period directory/table labels, e.g. 2022CD 2022EFG.",
+    )
+    standard_fake_tracks.add_argument(
+        "--input-base",
+        type=Path,
+        default=Path("analysis_output"),
+        help="Input base containing <period>/fake_tracks (default: analysis_output).",
+    )
+    standard_fake_tracks.add_argument(
+        "--output-dir",
+        type=Path,
+        help=(
+            "For one period, the output directory; for multiple periods, the "
+            "base containing per-period directories and table34_combined.tex."
+        ),
+    )
+    standard_fake_tracks.add_argument("--basic-files", nargs="+", type=Path)
+    standard_fake_tracks.add_argument("--zmumu-files", nargs="+", type=Path)
+    standard_fake_tracks.add_argument("--zee-files", nargs="+", type=Path)
+    standard_fake_tracks.add_argument(
+        "--basic-yield-category",
+        default="basic_selection",
+        help="Basic/JetMET normalization category (default: basic_selection).",
+    )
+    standard_fake_tracks.add_argument(
+        "--basic-sample",
+        default="DATA_JetMET",
+        help="Basic-output sample key (default: DATA_JetMET).",
+    )
+    standard_fake_tracks.add_argument(
+        "--transfer-factor-source",
+        choices=["fixed", "fit"],
+        default="fixed",
+    )
+    standard_fake_tracks.add_argument(
+        "--fit-plots",
+        action="store_true",
+        help="With --transfer-factor-source fit, write control fit PDFs.",
+    )
+    standard_fake_tracks.add_argument("--table-env", action="store_true")
+    standard_fake_tracks.set_defaults(func=_make_standard_fake_track_estimate_command)
 
     dataset_json = subparsers.add_parser(
         "make-dataset-json",
