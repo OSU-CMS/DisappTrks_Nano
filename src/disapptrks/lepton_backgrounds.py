@@ -767,6 +767,17 @@ def _write_lepton_background_latex_body(
         n_rows = len(estimates)
         for index, estimate in enumerate(estimates):
             run_period_cell = rf"\multirow{{{n_rows}}}{{*}}{{{run_period}}}" if index == 0 else ""
+            sparse_tau_layer = is_tau and estimate.layer in ("NLayers4", "NLayers5")
+            poffline_text = (
+                r"---"
+                if sparse_tau_layer
+                else format_pm_latex(estimate.p_offline.value, estimate.p_offline.error)
+            )
+            ptrigger_text = (
+                r"---"
+                if sparse_tau_layer
+                else format_pm_latex(estimate.p_miss.value, estimate.p_miss.error)
+            )
             row = (
                 f"{run_period_cell} & {_an_layer_label(estimate.layer)} & "
                 f"{format_pm_latex(estimate.trigger_efficiency.value, estimate.trigger_efficiency.error)} & "
@@ -778,8 +789,8 @@ def _write_lepton_background_latex_body(
             row += (
                 f"{format_pm_latex(estimate.control_raw.value, estimate.control_raw.error)} & "
                 f"{(_format_tau_boundary if is_tau else _format_an_pm)(estimate.p_veto.value, estimate.p_veto.error)} & "
-                f"{format_pm_latex(estimate.p_offline.value, estimate.p_offline.error)} & "
-                f"{format_pm_latex(estimate.p_miss.value, estimate.p_miss.error)} & "
+                f"{poffline_text} & "
+                f"{ptrigger_text} & "
                 f"{(_format_tau_boundary if is_tau else _format_an_pm)(estimate.estimate.value, estimate.estimate.error)} "
                 r"\\" + "\n"
             )

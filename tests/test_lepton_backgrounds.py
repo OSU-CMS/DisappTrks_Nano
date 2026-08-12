@@ -588,6 +588,7 @@ def test_write_lepton_background_outputs(tmp_path: Path):
     scaled_text = scaled_tex_path.read_text()
     assert "P(\\tau)" in scaled_text
     assert "1.4600 $\\pm$ 0.0024" in scaled_text
+    assert " & --- & --- & " in scaled_text
 
 
 def test_write_combined_lepton_background_latex(tmp_path: Path):
