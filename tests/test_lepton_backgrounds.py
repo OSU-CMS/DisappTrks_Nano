@@ -16,6 +16,7 @@ from disapptrks.fake_tracks import Count
 from disapptrks.lepton_backgrounds import (
     _divide_counts_at_physical_boundary,
     _format_an_pm,
+    _format_tau_probability,
     _multiply_counts_at_physical_boundary,
     estimate_lepton_background,
     legacy_met_probabilities_from_outputs,
@@ -47,6 +48,13 @@ def test_tau_division_preserves_uncertainty_at_zero_boundary():
 
     assert result.value == 0.0
     assert np.isclose(result.error, 6.8 / 0.9)
+
+
+def test_tau_probability_formats_tiny_uncertainty_scientifically():
+    text = _format_tau_probability(1.2967107, 6.8849848e-5)
+
+    assert "1.296711" in text
+    assert "6.9 \\times 10^{-5}" in text
 
 
 class FakeAxis:
