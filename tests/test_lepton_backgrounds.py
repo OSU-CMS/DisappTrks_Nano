@@ -7,6 +7,7 @@ from disapptrks.cli import (
     _lepton_background_outputs,
     _met_probabilities_from_components,
     _sum_named_count_maps,
+    _tau_probability_from_json,
     _tau_trigger_probability_from_outputs,
     _trigger_efficiency_count_components_from_outputs,
     _trigger_efficiency_from_outputs,
@@ -376,6 +377,19 @@ def test_tau_trigger_probability_from_outputs_uses_mode_counters():
         probability.variance,
         (1.0 - efficiency) / (146.0 * efficiency**3),
     )
+
+
+def test_tau_probability_json_roundtrip(tmp_path: Path):
+    path = tmp_path / "tau_probability.json"
+    path.write_text(
+        '{"tau_probability": {"value": 1.2967107, '
+        '"error": 0.000068849848, "variance": 4.7403e-9}}'
+    )
+
+    probability = _tau_probability_from_json(path)
+
+    assert probability.value == 1.2967107
+    assert probability.variance == 4.7403e-9
 
 
 def test_legacy_met_probabilities_integrate_trigger_turn_on():

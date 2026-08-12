@@ -395,6 +395,31 @@ def _tau_trigger_probability_from_outputs(
     return numerator_count, denominator_count, probability
 
 
+def _tau_probability_from_json(path: Path) -> Count:
+    """Read the measured tau-trigger correction written by the extractor."""
+
+    with path.open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+    try:
+        probability = payload["tau_probability"]
+        value = float(probability["value"])
+        if "variance" in probability:
+            variance = float(probability["variance"])
+        else:
+            variance = float(probability["error"]) ** 2
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            f"invalid tau-probability JSON {path}: expected "
+            "tau_probability.value and tau_probability.variance or .error"
+        ) from error
+    if value <= 0.0 or variance < 0.0:
+        raise ValueError(
+            f"invalid tau probability in {path}: value must be positive and "
+            "variance must be non-negative"
+        )
+    return Count(value, variance)
+
+
 LEPTON_PVETO_PAIR_VARIABLES = {
     "electron": {
         "den_os": (
@@ -1205,8 +1230,8 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
         args.tau_control_dataset or args.dataset,
         args.tau_control_sample,
     )
-    # The AN tau control uses one Muon-dataset sample selected by the
-    # IsoMu20+tau cross-trigger.
+    # The tau control uses one Muon-dataset sample selected by the
+    # year-dependent IsoMu24+tau cross-trigger.
     # The EGamma leg contributes only to the combined P_veto measurement.
     control_counts = tau_control_counts["control"]
     offline_counts = tau_control_counts["offline"]
@@ -1231,11 +1256,20 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
     )
     trigger_efficiency_method = "manual-cross-trigger-control"
 
-    tau_probability = (
-        Count(args.tau_probability, args.tau_probability_error * args.tau_probability_error)
-        if args.tau_probability is not None
-        else None
-    )
+    if args.tau_probability_json is not None:
+        if args.tau_probability_error != 0.0:
+            raise ValueError(
+                "--tau-probability-error cannot be combined with "
+                "--tau-probability-json"
+            )
+        tau_probability = _tau_probability_from_json(args.tau_probability_json)
+    elif args.tau_probability is not None:
+        tau_probability = Count(
+            args.tau_probability,
+            args.tau_probability_error * args.tau_probability_error,
+        )
+    else:
+        tau_probability = None
     counts = {}
     for layer in args.layers:
         counts[f"tau_background_control_{layer}"] = control_counts[layer]
@@ -2008,12 +2042,21 @@ def main():
         default=0.0,
         help="Absolute uncertainty on --trigger-efficiency.",
     )
-    tau_background.add_argument(
+    tau_probability_source = tau_background.add_mutually_exclusive_group()
+    tau_probability_source.add_argument(
         "--tau-probability",
         type=float,
         help=(
             "Data-derived IsoMu24+tau/IsoMu24 trigger scale P(tau). This "
             "scales the cross-triggered tau-control N_ctrl and is stored in JSON."
+        ),
+    )
+    tau_probability_source.add_argument(
+        "--tau-probability-json",
+        type=Path,
+        help=(
+            "Read P(tau) and its uncertainty from the JSON written by "
+            "extract-tau-trigger-probability."
         ),
     )
     tau_background.add_argument(
