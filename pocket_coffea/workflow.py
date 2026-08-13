@@ -587,6 +587,33 @@ def _fake_fit_tracks_for_control(events, control_mask, *, fiducial_hot_spots=())
     return tracks[control_track_mask]
 
 
+def _fake_sideband_tracks_for_control(
+    events,
+    control_mask,
+    *,
+    layer,
+    fiducial_hot_spots=(),
+):
+    """Return the candidates entering an event-level N_sideband numerator.
+
+    The returned jagged collection retains every qualifying track in events
+    passing the requested Z control region.  Its event population is exactly
+    the one tested by ``_fake_track_count_for_control`` with the nominal
+    0.05 <= |d0| < 0.50 cm sideband.
+    """
+
+    tracks = events.IsoTrack[
+        _fake_track_mask(
+            events.IsoTrack,
+            layer=layer,
+            d0_region="sideband",
+            fiducial_hot_spots=fiducial_hot_spots,
+        )
+    ]
+    control_track_mask, _ = ak.broadcast_arrays(control_mask, tracks.pt)
+    return tracks[control_track_mask]
+
+
 def _jet_veto_map_parameter_year(year, era, processor_params):
     year = str(year)
     for container in (
@@ -1990,6 +2017,14 @@ class DisappTrksProcessor(BaseProcessorABC):
                 fiducial_hot_spots=fake_fiducial_hot_spots,
             )
             for layer in (*PVETO_LAYERS, "combinedBins"):
+                self.events[f"FakeZMuMuSidebandTrack_{layer}"] = (
+                    _fake_sideband_tracks_for_control(
+                        self.events,
+                        fake_zmumu_control,
+                        layer=layer,
+                        fiducial_hot_spots=fake_fiducial_hot_spots,
+                    )
+                )
                 self.events[f"nFakeZMuMuSideband_{layer}"] = _fake_track_count_for_control(
                     self.events,
                     fake_zmumu_control,
@@ -2014,6 +2049,14 @@ class DisappTrksProcessor(BaseProcessorABC):
                 fiducial_hot_spots=fake_fiducial_hot_spots,
             )
             for layer in (*PVETO_LAYERS, "combinedBins"):
+                self.events[f"FakeZeeSidebandTrack_{layer}"] = (
+                    _fake_sideband_tracks_for_control(
+                        self.events,
+                        fake_zee_control,
+                        layer=layer,
+                        fiducial_hot_spots=fake_fiducial_hot_spots,
+                    )
+                )
                 self.events[f"nFakeZeeSideband_{layer}"] = _fake_track_count_for_control(
                     self.events,
                     fake_zee_control,
@@ -2694,6 +2737,22 @@ class DisappTrksProcessor(BaseProcessorABC):
             fiducial_hot_spots=fake_fiducial_hot_spots,
         )
         for layer in (*PVETO_LAYERS, "combinedBins"):
+            self.events[f"FakeZMuMuSidebandTrack_{layer}"] = (
+                _fake_sideband_tracks_for_control(
+                    self.events,
+                    fake_zmumu_control,
+                    layer=layer,
+                    fiducial_hot_spots=fake_fiducial_hot_spots,
+                )
+            )
+            self.events[f"FakeZeeSidebandTrack_{layer}"] = (
+                _fake_sideband_tracks_for_control(
+                    self.events,
+                    fake_zee_control,
+                    layer=layer,
+                    fiducial_hot_spots=fake_fiducial_hot_spots,
+                )
+            )
             self.events[f"nFakeZMuMuSideband_{layer}"] = _fake_track_count_for_control(
                 self.events,
                 fake_zmumu_control,

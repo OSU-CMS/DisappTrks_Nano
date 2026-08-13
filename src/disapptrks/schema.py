@@ -19,6 +19,7 @@ ISOTRACK_BRANCHES = frozenset(
         "IsoTrack_charge",
         "IsoTrack_dxy",
         "IsoTrack_dz",
+        "IsoTrack_normalizedChi2",
         "IsoTrack_hp_nValidHits",
         "IsoTrack_hp_nValidPixelHits",
         "IsoTrack_hp_trackerLayersWithMeasurement",

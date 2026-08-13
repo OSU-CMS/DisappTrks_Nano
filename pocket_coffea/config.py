@@ -622,8 +622,8 @@ def _variables_for_mode(mode, variables):
 
     fake_track_prefixes = {
         "basic": (),
-        "zmumu": ("fakeZMuMuFitTrack_",),
-        "zee": ("fakeZeeFitTrack_",),
+        "zmumu": ("fakeZMuMuFitTrack_", "fakeZMuMuSideband_"),
+        "zee": ("fakeZeeFitTrack_", "fakeZeeSideband_"),
     }[fake_track_control_mode]
     prefixes_by_mode = {
         "muon_pveto": ("nMuon",),
@@ -637,8 +637,18 @@ def _variables_for_mode(mode, variables):
         "tau_pmiss_poffline": ("nTauBackground",),
         "tau_trigger_probability": ("nTauTriggerProbability",),
         "fake_tracks": fake_track_prefixes,
-        "muon_backgrounds": ("nMuon", "nTauMu", "fakeZMuMuFitTrack_"),
-        "egamma_backgrounds": ("nElectron", "nTauEle", "fakeZeeFitTrack_"),
+        "muon_backgrounds": (
+            "nMuon",
+            "nTauMu",
+            "fakeZMuMuFitTrack_",
+            "fakeZMuMuSideband_",
+        ),
+        "egamma_backgrounds": (
+            "nElectron",
+            "nTauEle",
+            "fakeZeeFitTrack_",
+            "fakeZeeSideband_",
+        ),
         "fiducial_maps": ("electronFiducial", "muonFiducial"),
     }
     prefixes = prefixes_by_mode.get(mode)
@@ -948,6 +958,77 @@ tau_trigger_probability_variables = {
     ),
 }
 
+
+# Candidate-level diagnostics for the tracks in events counted by the fake
+# background N_sideband numerator.  The six hit-pattern components identify
+# which pixel/strip subdetectors supplied the measured layers; dE/dx is shown
+# separately in each exclusive signal-region layer bin.
+fake_sideband_track_variables = {}
+_fake_hit_pattern_fields = {
+    "hp_pixelBarrelLayersWithMeasurement": "pixel barrel layers with hits",
+    "hp_pixelEndcapLayersWithMeasurement": "pixel endcap layers with hits",
+    "hp_stripTIBLayersWithMeasurement": "TIB layers with hits",
+    "hp_stripTIDLayersWithMeasurement": "TID layers with hits",
+    "hp_stripTOBLayersWithMeasurement": "TOB layers with hits",
+    "hp_stripTECLayersWithMeasurement": "TEC layers with hits",
+}
+for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to ee$")):
+    for layer in (*pveto_layers, "combinedBins"):
+        collection = f"Fake{control_key}SidebandTrack_{layer}"
+        for field, field_label in _fake_hit_pattern_fields.items():
+            fake_sideband_track_variables[
+                f"fake{control_key}Sideband_{layer}_{field}"
+            ] = HistConf(
+                [
+                    Axis(
+                        coll=collection,
+                        field=field,
+                        bins=11,
+                        start=-0.5,
+                        stop=10.5,
+                        label=f"{control_label} sideband {field_label} ({layer})",
+                    )
+                ],
+                only_categories=["inclusive"],
+            )
+        for field, detector in (("dEdxPixel", "pixel"), ("dEdxStrip", "strip")):
+            fake_sideband_track_variables[
+                f"fake{control_key}Sideband_{layer}_{field}"
+            ] = HistConf(
+                [
+                    Axis(
+                        coll=collection,
+                        field=field,
+                        bins=100,
+                        start=0.0,
+                        stop=20.0,
+                        label=(
+                            f"{control_label} sideband {detector} dE/dx "
+                            f"({layer}) [MeV/mm]"
+                        ),
+                    )
+                ],
+                only_categories=["inclusive"],
+            )
+        fake_sideband_track_variables[
+            f"fake{control_key}Sideband_{layer}_normalizedChi2"
+        ] = HistConf(
+            [
+                Axis(
+                    coll=collection,
+                    field="normalizedChi2",
+                    bins=100,
+                    start=0.0,
+                    stop=50.0,
+                    label=(
+                        f"{control_label} sideband track fit "
+                        rf"$\chi^2/\mathrm{{ndof}}$ ({layer})"
+                    ),
+                )
+            ],
+            only_categories=["inclusive"],
+        )
+
 cfg = Configurator(
     parameters=parameters,
     datasets={
@@ -963,6 +1044,7 @@ cfg = Configurator(
     weights_classes=[],
     variations={"weights": {"common": {"inclusive": []}}},
     variables=_variables_for_mode(category_mode, {
+        **fake_sideband_track_variables,
         "nIsoTrack": HistConf(
             [
                 Axis(

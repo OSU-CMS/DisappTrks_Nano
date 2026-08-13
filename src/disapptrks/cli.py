@@ -21,6 +21,7 @@ from .fake_tracks import (
     estimate_fake_track_background_an,
     fit_dxy_transfer_factor,
     fixed_an_transfer_factor_fit,
+    plot_fake_sideband_track_diagnostics,
     plot_dxy_transfer_factor,
     summed_hist_counts_edges,
     write_an_fake_track_latex,
@@ -852,6 +853,16 @@ def _make_standard_fake_track_estimate_command(args: argparse.Namespace) -> int:
                 table_env=args.table_env,
             )
             _estimate_fake_tracks_command(estimate_args)
+            if args.sideband_plots:
+                outputs = _load_outputs(control_files[control])
+                for plot_path in plot_fake_sideband_track_diagnostics(
+                    outputs,
+                    output_dir,
+                    control=control,
+                    sample=samples[control],
+                    title_prefix=run_period,
+                ):
+                    print(f"Wrote {plot_path}")
 
         table_args = argparse.Namespace(
             jsons=json_paths,
@@ -2835,6 +2846,14 @@ def main():
         "--fit-plots",
         action="store_true",
         help="With --transfer-factor-source fit, write control fit PDFs.",
+    )
+    standard_fake_tracks.add_argument(
+        "--sideband-plots",
+        action="store_true",
+        help=(
+            "Write candidate hit-pattern and per-layer dE/dx PDFs for the "
+            "Z-control events entering N_sideband."
+        ),
     )
     standard_fake_tracks.add_argument("--table-env", action="store_true")
     standard_fake_tracks.set_defaults(func=_make_standard_fake_track_estimate_command)

@@ -678,6 +678,108 @@ def plot_dxy_transfer_factor(
     plt.close(fig)
 
 
+def plot_fake_sideband_track_diagnostics(
+    outputs: Sequence[Mapping[str, Any]],
+    output_dir: Path,
+    *,
+    control: str,
+    sample: str | None = None,
+    title_prefix: str = "",
+) -> list[Path]:
+    """Plot hit-pattern and dE/dx diagnostics for N_sideband candidates."""
+
+    import numpy as np
+
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        raise RuntimeError("matplotlib is required for sideband diagnostic plots") from exc
+
+    control_key = {"zmumu": "ZMuMu", "zee": "Zee"}[control]
+    control_label = {"zmumu": r"$Z\to\mu\mu$", "zee": r"$Z\to ee$"}[control]
+    layers = (
+        ("NLayers4", "4 layers"),
+        ("NLayers5", "5 layers"),
+        ("NLayers6plus", r"$\geq6$ layers"),
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    hit_fields = (
+        ("hp_pixelBarrelLayersWithMeasurement", "Pixel barrel"),
+        ("hp_pixelEndcapLayersWithMeasurement", "Pixel endcap"),
+        ("hp_stripTIBLayersWithMeasurement", "TIB"),
+        ("hp_stripTIDLayersWithMeasurement", "TID"),
+        ("hp_stripTOBLayersWithMeasurement", "TOB"),
+        ("hp_stripTECLayersWithMeasurement", "TEC"),
+    )
+    fig, axes = plt.subplots(2, 3, figsize=(11, 6.5), sharey=False)
+    for ax, (field, detector) in zip(axes.flat, hit_fields):
+        for layer, layer_label in layers:
+            counts, edges = summed_hist_counts_edges(
+                outputs,
+                f"fake{control_key}Sideband_{layer}_{field}",
+                sample=sample,
+            )
+            ax.stairs(counts, edges, label=layer_label, linewidth=1.5)
+        ax.set_title(detector)
+        ax.set_xlabel("Layers with measurement")
+        ax.set_ylabel("Sideband candidates")
+        ax.set_yscale("log")
+        ax.set_ylim(bottom=0.7)
+    axes.flat[0].legend(fontsize=8)
+    fig.suptitle(f"{title_prefix} {control_label} fake-track sideband hit pattern".strip())
+    fig.tight_layout()
+    hit_path = output_dir / f"{control}_sideband_hit_pattern.pdf"
+    fig.savefig(hit_path)
+    plt.close(fig)
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.2))
+    for ax, (field, detector) in zip(
+        axes,
+        (("dEdxPixel", "Pixel"), ("dEdxStrip", "Strip")),
+    ):
+        for layer, layer_label in layers:
+            counts, edges = summed_hist_counts_edges(
+                outputs,
+                f"fake{control_key}Sideband_{layer}_{field}",
+                sample=sample,
+            )
+            integral = float(np.sum(counts))
+            density = counts / integral if integral > 0.0 else counts
+            ax.stairs(density, edges, label=layer_label, linewidth=1.5)
+        ax.set_title(detector)
+        ax.set_xlabel(r"d$E$/d$x$ [MeV/mm]")
+        ax.set_ylabel("Fraction of sideband candidates")
+    axes[0].legend(fontsize=8)
+    fig.suptitle(f"{title_prefix} {control_label} fake-track sideband dE/dx".strip())
+    fig.tight_layout()
+    dedx_path = output_dir / f"{control}_sideband_dedx.pdf"
+    fig.savefig(dedx_path)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(6.4, 4.8))
+    for layer, layer_label in layers:
+        counts, edges = summed_hist_counts_edges(
+            outputs,
+            f"fake{control_key}Sideband_{layer}_normalizedChi2",
+            sample=sample,
+        )
+        integral = float(np.sum(counts))
+        density = counts / integral if integral > 0.0 else counts
+        ax.stairs(density, edges, label=layer_label, linewidth=1.5)
+    ax.set_xlabel(r"Track fit $\chi^2/\mathrm{ndof}$")
+    ax.set_ylabel("Fraction of sideband candidates")
+    ax.set_yscale("log")
+    ax.set_ylim(bottom=1.0e-5)
+    ax.legend(fontsize=8)
+    ax.set_title(f"{title_prefix} {control_label} fake-track sideband fit quality".strip())
+    fig.tight_layout()
+    chi2_path = output_dir / f"{control}_sideband_track_chi2.pdf"
+    fig.savefig(chi2_path)
+    plt.close(fig)
+    return [hit_path, dedx_path, chi2_path]
+
+
 def estimate_fake_track_background_an(
     cutflow: Mapping[str, Any],
     *,
