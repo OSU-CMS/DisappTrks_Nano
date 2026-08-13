@@ -1,11 +1,37 @@
 import json
 
+import numpy as np
+import pytest
+
 from disapptrks.fake_tracks import (
     estimate_fake_track_background,
+    fit_dxy_transfer_factor,
     fixed_an_transfer_factor_fit,
     write_combined_fake_track_table34_latex,
     write_fake_track_latex,
 )
+
+
+def test_folded_dxy_poisson_likelihood_fit_recovers_shape():
+    edges = np.linspace(0.0, 0.5, 51)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    amplitude = 120.0
+    sigma = 0.23
+    constant = 8.0
+    counts = amplitude * np.exp(-0.5 * (centers / sigma) ** 2) + constant
+
+    fit = fit_dxy_transfer_factor(
+        counts,
+        edges,
+        control_region=r"$Z\to\mu\mu$",
+        histogram="fakeZMuMuFitTrack_absDxy",
+    )
+
+    assert fit.amplitude == pytest.approx(amplitude, rel=2e-3)
+    assert fit.sigma == pytest.approx(sigma, rel=2e-3)
+    assert fit.constant == pytest.approx(constant, rel=2e-2)
+    assert fit.transfer_factor.value > 0.0
+    assert fit.transfer_factor.error > 0.0
 
 
 def test_fake_track_estimate_from_cutflow_counts():

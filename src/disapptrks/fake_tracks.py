@@ -376,24 +376,57 @@ def _gauss_plus_constant_integral(amplitude: float, sigma: float, constant: floa
 
 
 def _fit_gauss_plus_constant(x, y):
+    """Fit binned counts with the legacy Poisson-likelihood prescription.
+
+    The OSUT3 ``TH1::Fit`` call used the ROOT ``L`` option.  Fit positive
+    parameters in log space so the equivalent Poisson likelihood remains
+    well behaved at the physical boundaries, then obtain the asymptotic
+    covariance from the expected Fisher information.
+    """
     import numpy as np
-    from scipy.optimize import curve_fit
+    from scipy.optimize import minimize
 
     def model(xvals, amplitude, sigma, constant):
         return amplitude * np.exp(-0.5 * (xvals / sigma) ** 2) + constant
 
-    yerr = np.sqrt(np.maximum(y, 1.0))
-    p0 = [max(float(y.max() - y.min()), 1.0), 0.10, max(float(y.min()), 0.0)]
-    return curve_fit(
-        model,
-        x,
-        y,
-        p0=p0,
-        sigma=yerr,
-        absolute_sigma=True,
-        bounds=([0.0, 1.0e-4, 0.0], [np.inf, 1.0, np.inf]),
-        maxfev=20000,
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    p0 = np.asarray(
+        [max(float(y.max() - y.min()), 1.0), 0.20, max(float(y.min()), 1.0e-3)],
+        dtype=float,
     )
+
+    def nll(log_params):
+        params = np.exp(log_params)
+        expected = np.maximum(model(x, *params), 1.0e-12)
+        # The omitted log(y!) term is independent of the fit parameters.
+        return float(np.sum(expected - y * np.log(expected)))
+
+    result = minimize(
+        nll,
+        np.log(p0),
+        method="L-BFGS-B",
+        bounds=[(-30.0, 30.0), (np.log(1.0e-4), 0.0), (-30.0, 30.0)],
+        options={"maxiter": 20000, "ftol": 1.0e-12, "gtol": 1.0e-8},
+    )
+    if not result.success:
+        raise RuntimeError(f"Poisson-likelihood d0 fit failed: {result.message}")
+
+    popt = np.exp(result.x)
+    amplitude, sigma, _ = popt
+    expected = np.maximum(model(x, *popt), 1.0e-12)
+    gaussian = np.exp(-0.5 * (x / sigma) ** 2)
+    # Derivatives of the expected bin counts with respect to A, sigma, C.
+    jacobian = np.column_stack(
+        (
+            gaussian,
+            amplitude * gaussian * x * x / sigma**3,
+            np.ones_like(x),
+        )
+    )
+    information = jacobian.T @ ((1.0 / expected)[:, None] * jacobian)
+    pcov = np.linalg.pinv(information)
+    return popt, pcov
 
 
 def _transfer_factor_from_fit(
@@ -438,7 +471,12 @@ def fit_dxy_transfer_factor(
     denominator_range: tuple[float, float] = (0.05, 0.50),
     fit_range: tuple[float, float] = (0.10, 0.50),
 ) -> DxyTransferFactorFit:
-    """Fit |dxy| sideband with Gaussian(mean=0)+constant and return zeta."""
+    """Fit folded |dxy| sideband with Gaussian(0)+constant and return zeta.
+
+    This follows the legacy estimator: a binned Poisson-likelihood fit is
+    performed in 0.10 <= |dxy| < 0.50 cm and extrapolated into the signal
+    window.
+    """
 
     import numpy as np
 
@@ -568,6 +606,12 @@ def plot_dxy_transfer_factor(
     centers = 0.5 * (signed_edges[:-1] + signed_edges[1:])
     xfit = np.linspace(float(signed_edges[0]), float(signed_edges[-1]), 1000)
     yfit = _dxy_fit_model(np.abs(xfit), fit.amplitude, fit.sigma, fit.constant)
+    if signed_counts is not None and signed_edges is not None and "absDxy" in fit.histogram:
+        # The folded histogram contains both signs.  Convert its counts/bin
+        # model to the signed histogram's counts/bin before drawing it.
+        folded_width = float(np.median(np.diff(np.asarray(edges, dtype=float))))
+        signed_width = float(np.median(np.diff(signed_edges)))
+        yfit *= signed_width / (2.0 * folded_width)
 
     fig, ax = plt.subplots(figsize=(6.4, 4.8))
     ax.stairs(signed_counts, signed_edges, label="data", color="black", linewidth=1.5)

@@ -20,7 +20,6 @@ from .fake_tracks import (
     estimate_fake_track_background,
     estimate_fake_track_background_an,
     fit_dxy_transfer_factor,
-    fit_signed_dxy_transfer_factor,
     fixed_an_transfer_factor_fit,
     plot_dxy_transfer_factor,
     summed_hist_counts_edges,
@@ -575,20 +574,15 @@ def _estimate_fake_tracks_command(args: argparse.Namespace) -> int:
             except KeyError:
                 signed_counts, signed_edges = None, None
 
-            if signed_counts is None or signed_edges is None:
-                fit = fit_dxy_transfer_factor(
-                    counts,
-                    edges,
-                    control_region=control_cfg["control_region"],
-                    histogram=control_cfg["histogram"],
-                )
-            else:
-                fit = fit_signed_dxy_transfer_factor(
-                    signed_counts,
-                    signed_edges,
-                    control_region=control_cfg["control_region"],
-                    histogram=control_cfg["signed_histogram"],
-                )
+            # Match the dissertation's legacy estimator: fit the folded
+            # |d0| histogram with a Poisson likelihood.  The signed histogram
+            # is retained only for the Figure-7.15-style visualization.
+            fit = fit_dxy_transfer_factor(
+                counts,
+                edges,
+                control_region=control_cfg["control_region"],
+                histogram=control_cfg["histogram"],
+            )
 
         if args.fit_plot:
             plot_dxy_transfer_factor(
@@ -873,6 +867,126 @@ def _make_standard_fake_track_estimate_command(args: argparse.Namespace) -> int:
         combined_path = output_base / "table34_combined.tex"
         write_combined_fake_track_table34_latex(
             combined_json_paths,
+            combined_path,
+            include_table_env=args.table_env,
+        )
+        print(f"Wrote {combined_path}")
+    return 0
+
+
+def _period_float_values(values: list[str], periods: list[str], option: str) -> dict[str, float]:
+    parsed = {}
+    for value in values:
+        if "=" in value:
+            period, raw = value.split("=", 1)
+            if period not in periods:
+                raise SystemExit(f"error: {option} has unknown period {period!r}")
+            if period in parsed:
+                raise SystemExit(f"error: duplicate {option} for {period}")
+            try:
+                parsed[period] = float(raw)
+            except ValueError as exc:
+                raise SystemExit(f"error: invalid {option} value {value!r}") from exc
+        elif len(periods) == 1:
+            try:
+                parsed[periods[0]] = float(value)
+            except ValueError as exc:
+                raise SystemExit(f"error: invalid {option} value {value!r}") from exc
+        else:
+            raise SystemExit(
+                f"error: {option} values must use PERIOD=VALUE for multiple periods"
+            )
+    missing = [period for period in periods if period not in parsed]
+    if missing:
+        raise SystemExit(f"error: {option} missing for: {', '.join(missing)}")
+    return parsed
+
+
+def _make_standard_tau_background_command(args: argparse.Namespace) -> int:
+    periods = args.run_period
+    multiple_periods = len(periods) > 1
+    output_base = args.output_dir or Path("tables") / "tau_background"
+    trigger_efficiencies = _period_float_values(
+        args.trigger_efficiency, periods, "--trigger-efficiency"
+    )
+    if args.trigger_efficiency_error:
+        trigger_errors = _period_float_values(
+            args.trigger_efficiency_error,
+            periods,
+            "--trigger-efficiency-error",
+        )
+    else:
+        trigger_errors = {period: 0.0 for period in periods}
+
+    explicit_inputs = (
+        args.tau_control_files,
+        args.tau_mu_files,
+        args.tau_ele_files,
+        args.tau_probability_files,
+    )
+    if multiple_periods and any(explicit_inputs):
+        raise SystemExit(
+            "error: explicit tau file overrides can only be used with one --run-period"
+        )
+
+    combined_inputs = []
+    for period in periods:
+        input_root = args.input_base / period
+        output_dir = output_base / period if multiple_periods else (
+            args.output_dir or output_base / period
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        tau_control_files = args.tau_control_files or _standard_coffea_files(
+            input_root / "tau_pmiss_poffline"
+        )
+        tau_mu_files = args.tau_mu_files or _standard_coffea_files(
+            input_root / "tau_mu_pveto"
+        )
+        tau_ele_files = args.tau_ele_files or _standard_coffea_files(
+            input_root / "tau_ele_pveto"
+        )
+        tau_probability_files = args.tau_probability_files or _standard_coffea_files(
+            input_root / "tau_trigger_probability"
+        )
+        output_json = output_dir / "tau_background.json"
+
+        estimate_args = argparse.Namespace(
+            tau_control_files=tau_control_files,
+            tau_mu_files=tau_mu_files,
+            tau_ele_files=tau_ele_files,
+            dataset=None,
+            tau_control_dataset=None,
+            tau_mu_dataset=None,
+            tau_ele_dataset=None,
+            tau_control_sample="DATA_Muon",
+            tau_mu_sample="DATA_Muon",
+            tau_ele_sample="DATA_EGamma",
+            variation="nominal",
+            run_period=period,
+            flavor=r"$\tau_h$",
+            layers=["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"],
+            control_prescale=args.control_prescale,
+            trigger_efficiency=trigger_efficiencies[period],
+            trigger_efficiency_error=trigger_errors[period],
+            tau_probability=None,
+            tau_probability_json=None,
+            tau_probability_files=tau_probability_files,
+            tau_probability_error=0.0,
+            met_cut=args.met_cut,
+            phi_cut=args.phi_cut,
+            output_json=output_json,
+            output_tex=output_dir / "tau_background.tex",
+            table_env=args.table_env,
+        )
+        _estimate_tau_background_command(estimate_args)
+        combined_inputs.append((period, read_lepton_background_json(output_json)))
+        print(f"Wrote standardized tau-background products under {output_dir}")
+
+    if multiple_periods:
+        combined_path = output_base / "tau_background_combined.tex"
+        write_combined_lepton_background_latex(
+            combined_inputs,
             combined_path,
             include_table_env=args.table_env,
         )
@@ -2243,6 +2357,62 @@ def main():
         help="Wrap the LaTeX tabular in a table environment.",
     )
     tau_background.set_defaults(func=_estimate_tau_background_command)
+
+    standard_tau_background = subparsers.add_parser(
+        "make-standard-tau-background",
+        help=(
+            "Build per-period and combined tau-background estimates from the "
+            "standardized analysis_output directory tree."
+        ),
+    )
+    standard_tau_background.add_argument(
+        "--run-period",
+        nargs="+",
+        required=True,
+        help="One or more run periods, e.g. 2022CD 2022EFG.",
+    )
+    standard_tau_background.add_argument(
+        "--trigger-efficiency",
+        nargs="+",
+        required=True,
+        help=(
+            "Effective trigger efficiency. A bare value is accepted for one "
+            "period; use PERIOD=VALUE for multiple periods."
+        ),
+    )
+    standard_tau_background.add_argument(
+        "--trigger-efficiency-error",
+        nargs="+",
+        help=(
+            "Absolute trigger-efficiency uncertainty. Defaults to zero; use "
+            "PERIOD=VALUE for multiple periods."
+        ),
+    )
+    standard_tau_background.add_argument(
+        "--input-base",
+        type=Path,
+        default=Path("analysis_output"),
+        help="Input base containing <period>/<mode> (default: analysis_output).",
+    )
+    standard_tau_background.add_argument(
+        "--output-dir",
+        type=Path,
+        help=(
+            "For one period, the output directory; for multiple periods, the "
+            "base containing per-period directories and the combined table."
+        ),
+    )
+    standard_tau_background.add_argument("--tau-control-files", nargs="+", type=Path)
+    standard_tau_background.add_argument("--tau-mu-files", nargs="+", type=Path)
+    standard_tau_background.add_argument("--tau-ele-files", nargs="+", type=Path)
+    standard_tau_background.add_argument(
+        "--tau-probability-files", nargs="+", type=Path
+    )
+    standard_tau_background.add_argument("--control-prescale", type=float, default=1.0)
+    standard_tau_background.add_argument("--met-cut", type=float, default=120.0)
+    standard_tau_background.add_argument("--phi-cut", type=float, default=0.5)
+    standard_tau_background.add_argument("--table-env", action="store_true")
+    standard_tau_background.set_defaults(func=_make_standard_tau_background_command)
 
     combined_lepton_background = subparsers.add_parser(
         "combine-lepton-background-tables",
