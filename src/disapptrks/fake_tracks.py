@@ -757,27 +757,39 @@ def plot_fake_sideband_track_diagnostics(
     fig.savefig(dedx_path)
     plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(6.4, 4.8))
-    for layer, layer_label in layers:
-        counts, edges = summed_hist_counts_edges(
-            outputs,
-            f"fake{control_key}Sideband_{layer}_normalizedChi2",
-            sample=sample,
+    chi2_hists = []
+    try:
+        for layer, layer_label in layers:
+            counts, edges = summed_hist_counts_edges(
+                outputs,
+                f"fake{control_key}Sideband_{layer}_normalizedChi2",
+                sample=sample,
+            )
+            chi2_hists.append((layer_label, counts, edges))
+    except KeyError:
+        chi2_hists = []
+
+    paths = [hit_path, dedx_path]
+    if chi2_hists:
+        fig, ax = plt.subplots(figsize=(6.4, 4.8))
+        for layer_label, counts, edges in chi2_hists:
+            integral = float(np.sum(counts))
+            density = counts / integral if integral > 0.0 else counts
+            ax.stairs(density, edges, label=layer_label, linewidth=1.5)
+        ax.set_xlabel(r"Track fit $\chi^2/\mathrm{ndof}$")
+        ax.set_ylabel("Fraction of sideband candidates")
+        ax.set_yscale("log")
+        ax.set_ylim(bottom=1.0e-5)
+        ax.legend(fontsize=8)
+        ax.set_title(
+            f"{title_prefix} {control_label} fake-track sideband fit quality".strip()
         )
-        integral = float(np.sum(counts))
-        density = counts / integral if integral > 0.0 else counts
-        ax.stairs(density, edges, label=layer_label, linewidth=1.5)
-    ax.set_xlabel(r"Track fit $\chi^2/\mathrm{ndof}$")
-    ax.set_ylabel("Fraction of sideband candidates")
-    ax.set_yscale("log")
-    ax.set_ylim(bottom=1.0e-5)
-    ax.legend(fontsize=8)
-    ax.set_title(f"{title_prefix} {control_label} fake-track sideband fit quality".strip())
-    fig.tight_layout()
-    chi2_path = output_dir / f"{control}_sideband_track_chi2.pdf"
-    fig.savefig(chi2_path)
-    plt.close(fig)
-    return [hit_path, dedx_path, chi2_path]
+        fig.tight_layout()
+        chi2_path = output_dir / f"{control}_sideband_track_chi2.pdf"
+        fig.savefig(chi2_path)
+        plt.close(fig)
+        paths.append(chi2_path)
+    return paths
 
 
 def estimate_fake_track_background_an(

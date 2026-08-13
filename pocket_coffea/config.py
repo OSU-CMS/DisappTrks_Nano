@@ -1010,24 +1010,25 @@ for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to e
                 ],
                 only_categories=["inclusive"],
             )
-        fake_sideband_track_variables[
-            f"fake{control_key}Sideband_{layer}_normalizedChi2"
-        ] = HistConf(
-            [
-                Axis(
-                    coll=collection,
-                    field="normalizedChi2",
-                    bins=100,
-                    start=0.0,
-                    stop=50.0,
-                    label=(
-                        f"{control_label} sideband track fit "
-                        rf"$\chi^2/\mathrm{{ndof}}$ ({layer})"
-                    ),
-                )
-            ],
-            only_categories=["inclusive"],
-        )
+        if _env_flag("DISAPPTRKS_FAKE_SIDEBAND_CHI2"):
+            fake_sideband_track_variables[
+                f"fake{control_key}Sideband_{layer}_normalizedChi2"
+            ] = HistConf(
+                [
+                    Axis(
+                        coll=collection,
+                        field="normalizedChi2",
+                        bins=100,
+                        start=0.0,
+                        stop=50.0,
+                        label=(
+                            f"{control_label} sideband track fit "
+                            rf"$\chi^2/\mathrm{{ndof}}$ ({layer})"
+                        ),
+                    )
+                ],
+                only_categories=["inclusive"],
+            )
 
 cfg = Configurator(
     parameters=parameters,
