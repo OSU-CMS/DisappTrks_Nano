@@ -251,6 +251,47 @@ This retains the per-period products and also writes the combined table
 `tables/fake_tracks/table34_combined.tex`. Explicit per-control file overrides
 are limited to single-period invocations.
 
+### Standard tau-background estimate
+
+After the tau production modes finish, the standardized estimator resolves
+their paths automatically. For one period:
+
+```bash
+disapptrks make-standard-tau-background \
+  --run-period 2022CD \
+  --trigger-efficiency 0.90 \
+  --trigger-efficiency-error 0.006
+```
+
+This reads the top-level coffea output from:
+
+```text
+analysis_output/2022CD/tau_mu_pveto/
+analysis_output/2022CD/tau_ele_pveto/
+analysis_output/2022CD/tau_pmiss_poffline/
+analysis_output/2022CD/tau_trigger_probability/
+```
+
+and writes `tau_background.json` and `tau_background.tex` under
+`tables/tau_background/2022CD/`. The trigger efficiency remains explicit
+because it is a physics input rather than a directory convention.
+
+For multiple periods, provide period-qualified efficiencies:
+
+```bash
+disapptrks make-standard-tau-background \
+  --run-period 2022CD 2022EFG 2023C 2023D \
+  --trigger-efficiency \
+    2022CD=0.90 2022EFG=0.91 2023C=0.92 2023D=0.93 \
+  --trigger-efficiency-error \
+    2022CD=0.006 2022EFG=0.006 2023C=0.007 2023D=0.007
+```
+
+In addition to the per-period products, this writes
+`tables/tau_background/tau_background_combined.tex`. For a nonstandard
+single-period run, override individual inputs with `--tau-control-files`,
+`--tau-mu-files`, `--tau-ele-files`, or `--tau-probability-files`.
+
 ## LPC manual Condor fallback
 
 If Dask/lpcjobqueue is unavailable, the v2-style wrapper in
