@@ -557,6 +557,8 @@ elif category_mode == "fiducial_maps":
     selected_categories = {
         "inclusive": common_categories["inclusive"],
     }
+elif category_mode == "signal_acceptance":
+    selected_categories = common_categories
 elif category_mode == "all":
     selected_categories = {
         **common_categories,
@@ -578,7 +580,7 @@ else:
         "electron_pmiss_poffline, tau_mu_pmiss_poffline, "
         "tau_ele_pmiss_poffline, tau_pmiss_poffline, tau_trigger_probability, "
         "fake_tracks, muon_backgrounds, "
-        "egamma_backgrounds, fiducial_maps, all."
+        "egamma_backgrounds, fiducial_maps, signal_acceptance, all."
     )
 
 selected_categories = {
@@ -672,6 +674,9 @@ def _variables_for_mode(mode, variables):
             "nFakeZeeSideband",
         ),
         "fiducial_maps": ("electronFiducial", "muonFiducial"),
+        # The acceptance comparison is read directly from category cutflows;
+        # it does not require any histogram variables.
+        "signal_acceptance": (),
     }
     prefixes = prefixes_by_mode.get(mode)
     if prefixes is None:
