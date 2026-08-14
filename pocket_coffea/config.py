@@ -35,6 +35,7 @@ from cuts import (
     fake_track_cuts,
     golden_json_lumi,
     has_disappearing_track,
+    has_high_purity_disappearing_track,
     jet_veto_map,
     lepton_background_cuts,
     lepton_pveto_cuts,
@@ -48,6 +49,7 @@ from cuts import (
     search_diagnostic_cuts,
     tau_background_diagnostic_cuts,
     search_kinematics,
+    signal_acceptance_layer_cuts,
     single_electron_hlt,
     single_muon_hlt,
     tau_trigger_probability_hlt,
@@ -387,7 +389,20 @@ common_categories = {
         candidate_track_selection,
         disappearing_track_selection,
     ],
+    "disappearing_track_selection_high_purity": [
+        basic_event_selection,
+        isolated_track_selection,
+        candidate_track_selection,
+        has_high_purity_disappearing_track,
+    ],
 }
+for _name, _cut in signal_acceptance_layer_cuts.items():
+    common_categories[_name] = [
+        basic_event_selection,
+        isolated_track_selection,
+        candidate_track_selection,
+        _cut,
+    ]
 muon_pveto_categories = {
     "muon_veto_tag": [has_muon_tag],
     "muon_veto_probe": [has_muon_tag, has_muon_veto_probe_track],

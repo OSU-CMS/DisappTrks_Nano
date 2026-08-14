@@ -750,6 +750,27 @@ has_disappearing_track = Cut(
     function=_has_disappearing_track,
 )
 
+has_high_purity_disappearing_track = Cut(
+    name="has_high_purity_disappearing_track",
+    params={"field": "nIsoTrackSearchHighPurity", "minimum": 1},
+    function=_has_count,
+)
+
+signal_acceptance_layer_cuts = {}
+for _layer in ("NLayers4", "NLayers5", "NLayers6plus"):
+    signal_acceptance_layer_cuts[f"disappearing_track_selection_{_layer}"] = Cut(
+        name=f"has_disappearing_track_{_layer}",
+        params={"field": f"nIsoTrackSearch_{_layer}", "minimum": 1},
+        function=_has_count,
+    )
+    signal_acceptance_layer_cuts[
+        f"disappearing_track_selection_high_purity_{_layer}"
+    ] = Cut(
+        name=f"has_high_purity_disappearing_track_{_layer}",
+        params={"field": f"nIsoTrackSearchHighPurity_{_layer}", "minimum": 1},
+        function=_has_count,
+    )
+
 golden_json_lumi = Cut(
     name="golden_json_lumi",
     params={},

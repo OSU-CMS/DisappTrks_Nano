@@ -1858,6 +1858,9 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["IsoTrackSearch"] = self.events.IsoTrack[
             search_track_mask(self.events.IsoTrack)
         ]
+        self.events["IsoTrackSearchHighPurity"] = self.events.IsoTrackSearch[
+            self.events.IsoTrackSearch.isHighPurityTrack
+        ]
 
     def _count_lepton_pair_fields(self, prefix):
         self.events[f"n{prefix}TagProbePair"] = ak.num(
@@ -1904,6 +1907,18 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events.IsoTrackSearchPreLeptonVeto
         )
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
+        self.events["nIsoTrackSearchHighPurity"] = ak.num(
+            self.events.IsoTrackSearchHighPurity
+        )
+        for layer in ("NLayers4", "NLayers5", "NLayers6plus"):
+            self.events[f"nIsoTrackSearch_{layer}"] = ak.num(
+                self.events.IsoTrackSearch[layer_mask(self.events.IsoTrackSearch, layer)]
+            )
+            self.events[f"nIsoTrackSearchHighPurity_{layer}"] = ak.num(
+                self.events.IsoTrackSearchHighPurity[
+                    layer_mask(self.events.IsoTrackSearchHighPurity, layer)
+                ]
+            )
 
     def _has_eta_leg(self, collection_name, eta_max=2.1):
         if collection_name not in self.events.fields:
