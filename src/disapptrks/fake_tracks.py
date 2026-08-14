@@ -778,8 +778,12 @@ def plot_fake_sideband_track_diagnostics(
                 f"nFake{control_key}Sideband{suffix}_{layer}",
                 sample=sample,
             )
-            centers = 0.5 * (edges[:-1] + edges[1:])
-            totals[key] = float(np.sum(counts * centers))
+            # These histograms contain non-negative integer counts with unit
+            # width bins [0, 1), [1, 2), ... .  Use the lower bin edge as the
+            # represented integer; using the center would assign 0.5
+            # candidates to every zero-candidate event.
+            integer_values = edges[:-1]
+            totals[key] = float(np.sum(counts * integer_values))
         coverage[layer] = totals
 
     hit_fields = (
@@ -892,17 +896,28 @@ def plot_fake_sideband_track_diagnostics(
                 f"fake{control_key}Sideband_{layer}_{subdet}_perHitDeDxVsLayer",
                 sample=sample,
             )
-            mesh = ax.pcolormesh(
-                layer_edges,
-                dedx_edges,
-                counts.T,
-                shading="auto",
-                cmap="viridis",
-            )
             ax.set_title(subdet)
             ax.set_xlabel("Layer/disk/wheel number")
             ax.set_ylabel("Per-hit normalized charge/path length")
-            fig.colorbar(mesh, ax=ax, label="Retained hit measurements")
+            if np.any(counts > 0.0):
+                mesh = ax.pcolormesh(
+                    layer_edges,
+                    dedx_edges,
+                    counts.T,
+                    shading="auto",
+                    cmap="viridis",
+                )
+                fig.colorbar(mesh, ax=ax, label="Retained hit measurements")
+            else:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No retained hits",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                    color="0.35",
+                )
 
         totals = coverage[layer]
         fraction = (
@@ -911,12 +926,12 @@ def plot_fake_sideband_track_diagnostics(
         fig.suptitle(
             (
                 f"{title_prefix} {control_label} sideband per-hit dE/dx "
-                f"({layer_label}); coverage {totals['with_hits']:.0f}/"
+                f"({layer_label})\ncoverage {totals['with_hits']:.0f}/"
                 f"{totals['all']:.0f} candidates ({fraction:.1%}), "
                 f"high purity {totals['high_purity']:.0f}/{totals['all']:.0f}"
             ).strip()
         )
-        fig.tight_layout()
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.93))
         per_hit_path = (
             output_dir / f"{control}_sideband_per_hit_dedx_vs_layer_{layer}.pdf"
         )
