@@ -24,6 +24,7 @@ from .fake_tracks import (
     plot_fake_sideband_track_diagnostics,
     plot_dxy_transfer_factor,
     summed_hist_counts_edges,
+    write_fake_sideband_event_manifest,
     write_an_fake_track_latex,
     write_combined_fake_track_table34_latex,
     write_fake_track_table34_latex,
@@ -863,6 +864,14 @@ def _make_standard_fake_track_estimate_command(args: argparse.Namespace) -> int:
                     title_prefix=run_period,
                 ):
                     print(f"Wrote {plot_path}")
+                manifest_path = output_dir / f"{control}_sideband_events.csv"
+                manifest_rows = write_fake_sideband_event_manifest(
+                    outputs,
+                    manifest_path,
+                    control=control,
+                    sample=samples[control],
+                )
+                print(f"Wrote {manifest_path} ({manifest_rows} candidates)")
 
         table_args = argparse.Namespace(
             jsons=json_paths,

@@ -12,6 +12,7 @@ ratio of the basic-search yield to the inclusive Z->ll yield.
 
 from __future__ import annotations
 
+import csv
 import json
 from dataclasses import asdict, dataclass
 from math import erf, sqrt
@@ -20,6 +21,32 @@ from typing import Any, Mapping, Sequence
 
 from .summaries import cutflow_count
 from .tables import format_count, format_pm_latex, format_value_with_uncertainty
+
+
+SIDEBAND_MANIFEST_TRACK_FIELDS = (
+    "isoTrackIdx",
+    "pt",
+    "eta",
+    "phi",
+    "charge",
+    "dxy",
+    "dz",
+    "isHighPurityTrack",
+    "hasTrackFitInfo",
+    "trackChi2",
+    "trackNdof",
+    "trackNormalizedChi2",
+    "hp_nValidHits",
+    "hp_nValidPixelHits",
+    "hp_trackerLayersWithMeasurement",
+    "missingInnerHits",
+    "missingMiddleHits",
+    "missingOuterHits",
+    "pfRelIso03_chg",
+    "caloEnergy",
+    "dEdxPixel",
+    "dEdxStrip",
+)
 
 
 @dataclass(frozen=True)
@@ -426,6 +453,79 @@ def summed_hist_counts_edges_2d(
     if total_counts is None or total_edges is None:
         raise KeyError(f"histogram variable {variable!r} not found")
     return total_counts, total_edges[0], total_edges[1]
+
+
+def write_fake_sideband_event_manifest(
+    outputs: Sequence[Mapping[str, Any]],
+    path: Path,
+    *,
+    control: str,
+    sample: str,
+) -> int:
+    """Write run/lumi/event and candidate details from PocketCoffea columns."""
+
+    control_key = {"zmumu": "ZMuMu", "zee": "Zee"}[control]
+    layers = ("NLayers4", "NLayers5", "NLayers6plus")
+    fieldnames = [
+        "control",
+        "layer_category",
+        "sample",
+        "dataset",
+        "run",
+        "luminosityBlock",
+        "event",
+        "candidate_index_in_event",
+        *SIDEBAND_MANIFEST_TRACK_FIELDS,
+    ]
+    rows = []
+
+    def values(columns, name):
+        value = columns[name]
+        return value.value if hasattr(value, "value") else value
+
+    for output in outputs:
+        sample_columns = output.get("columns", {}).get(sample, {})
+        for dataset, categories in sample_columns.items():
+            for layer in layers:
+                category = f"fake_{control}_sideband_{layer}"
+                nominal = categories.get(category, {}).get("nominal", {})
+                if not nominal:
+                    continue
+                collection = f"Fake{control_key}SidebandTrack_{layer}"
+                sizes = values(nominal, f"{collection}_N")
+                runs = values(nominal, "events_run")
+                lumis = values(nominal, "events_luminosityBlock")
+                event_ids = values(nominal, "events_event")
+                track_values = {
+                    field: values(nominal, f"{collection}_{field}")
+                    for field in SIDEBAND_MANIFEST_TRACK_FIELDS
+                }
+                offset = 0
+                for event_index, size in enumerate(sizes):
+                    for candidate_index in range(int(size)):
+                        flat_index = offset + candidate_index
+                        row = {
+                            "control": control,
+                            "layer_category": layer,
+                            "sample": sample,
+                            "dataset": dataset,
+                            "run": int(runs[event_index]),
+                            "luminosityBlock": int(lumis[event_index]),
+                            "event": int(event_ids[event_index]),
+                            "candidate_index_in_event": candidate_index,
+                        }
+                        for field, array in track_values.items():
+                            item = array[flat_index]
+                            row[field] = item.item() if hasattr(item, "item") else item
+                        rows.append(row)
+                    offset += int(size)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+    return len(rows)
 
 
 def _gauss_plus_constant_integral(amplitude: float, sigma: float, constant: float, lo: float, hi: float) -> float:
@@ -971,6 +1071,44 @@ def plot_fake_sideband_track_diagnostics(
         fig.savefig(chi2_path)
         plt.close(fig)
         paths.append(chi2_path)
+
+        fig, axes = plt.subplots(1, 3, figsize=(12, 4.2), sharey=True)
+        for ax, (layer, layer_label) in zip(axes, layers):
+            for quality, quality_label, color in (
+                ("HighPurity", "High purity", "tab:blue"),
+                ("NotHighPurity", "Not high purity", "tab:orange"),
+            ):
+                counts, edges = summed_hist_counts_edges(
+                    outputs,
+                    (
+                        f"fake{control_key}Sideband_{layer}_"
+                        f"normalizedChi2{quality}"
+                    ),
+                    sample=sample,
+                )
+                integral = float(np.sum(counts))
+                density = counts / integral if integral > 0.0 else counts
+                ax.stairs(
+                    density,
+                    edges,
+                    label=f"{quality_label} (N={integral:.0f})",
+                    color=color,
+                    linewidth=1.5,
+                )
+            ax.set_title(layer_label)
+            ax.set_xlabel(r"Track fit $\chi^2/\mathrm{ndof}$")
+            ax.set_yscale("log")
+            ax.set_ylim(bottom=1.0e-4)
+            ax.legend(fontsize=8)
+        axes[0].set_ylabel("Fraction of sideband candidates")
+        fig.suptitle(
+            f"{title_prefix} {control_label} sideband fit quality by high-purity flag".strip()
+        )
+        fig.tight_layout()
+        chi2_quality_path = output_dir / f"{control}_sideband_track_chi2_by_quality.pdf"
+        fig.savefig(chi2_quality_path)
+        plt.close(fig)
+        paths.append(chi2_quality_path)
     return paths
 
 

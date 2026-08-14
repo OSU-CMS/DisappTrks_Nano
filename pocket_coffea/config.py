@@ -19,6 +19,7 @@ import disapptrks.selections as disapptrks_selections
 from pocket_coffea.parameters import defaults
 from pocket_coffea.parameters.cuts import passthrough
 from pocket_coffea.lib.categorization import StandardSelection
+from pocket_coffea.lib.columns_manager import ColOut
 from pocket_coffea.lib.hist_manager import Axis, HistConf
 from pocket_coffea.utils.configurator import Configurator
 
@@ -1112,6 +1113,77 @@ for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to e
             ],
             only_categories=["inclusive"],
         )
+        for quality, quality_label in (
+            ("HighPurity", "high purity"),
+            ("NotHighPurity", "not high purity"),
+        ):
+            fake_sideband_track_variables[
+                f"fake{control_key}Sideband_{layer}_normalizedChi2{quality}"
+            ] = HistConf(
+                [
+                    Axis(
+                        coll=f"Fake{control_key}SidebandTrack{quality}_{layer}",
+                        field="trackNormalizedChi2",
+                        bins=100,
+                        start=0.0,
+                        stop=50.0,
+                        label=(
+                            f"{control_label} {quality_label} sideband track fit "
+                            rf"$\chi^2/\mathrm{{ndof}}$ ({layer})"
+                        ),
+                    )
+                ],
+                only_categories=["inclusive"],
+            )
+
+
+sideband_event_columns = {
+    "common": {"inclusive": [], "bycategory": {}},
+    "bysample": {},
+}
+_sideband_manifest_track_fields = [
+    "isoTrackIdx",
+    "pt",
+    "eta",
+    "phi",
+    "charge",
+    "dxy",
+    "dz",
+    "isHighPurityTrack",
+    "hasTrackFitInfo",
+    "trackChi2",
+    "trackNdof",
+    "trackNormalizedChi2",
+    "hp_nValidHits",
+    "hp_nValidPixelHits",
+    "hp_trackerLayersWithMeasurement",
+    "missingInnerHits",
+    "missingMiddleHits",
+    "missingOuterHits",
+    "pfRelIso03_chg",
+    "caloEnergy",
+    "dEdxPixel",
+    "dEdxStrip",
+]
+if category_mode == "fake_tracks" and fake_track_control_mode in ("zmumu", "zee"):
+    _manifest_control_key = "ZMuMu" if fake_track_control_mode == "zmumu" else "Zee"
+    for _manifest_layer in pveto_layers:
+        _manifest_category = (
+            f"fake_{fake_track_control_mode}_sideband_{_manifest_layer}"
+        )
+        sideband_event_columns["common"]["bycategory"][_manifest_category] = [
+            ColOut(
+                "events",
+                ["run", "luminosityBlock", "event"],
+                store_size=False,
+            ),
+            ColOut(
+                f"Fake{_manifest_control_key}SidebandTrack_{_manifest_layer}",
+                _sideband_manifest_track_fields,
+                flatten=True,
+                store_size=True,
+            ),
+        ]
 
 cfg = Configurator(
     parameters=parameters,
@@ -1926,5 +1998,5 @@ cfg = Configurator(
             ]
         ),
     }),
-    columns={},
+    columns=sideband_event_columns,
 )

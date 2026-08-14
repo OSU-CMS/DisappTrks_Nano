@@ -645,6 +645,7 @@ def _add_fake_sideband_hit_diagnostics(
     control_candidate_mask, _ = ak.broadcast_arrays(control_mask, candidates.pt)
     indices = indices[control_candidate_mask]
     candidates = candidates[control_candidate_mask]
+    candidates = ak.with_field(candidates, indices, "isoTrackIdx")
 
     hits = events.IsoTrackDeDxHit
     matches = hits.isoTrackIdx[:, :, None] == indices[:, None, :]
@@ -652,6 +653,13 @@ def _add_fake_sideband_hit_diagnostics(
     selected_hits = hits[ak.any(matches, axis=2)]
 
     prefix = f"Fake{control_key}Sideband"
+    events[f"{prefix}Track_{layer}"] = candidates
+    events[f"{prefix}TrackHighPurity_{layer}"] = candidates[
+        candidates.isHighPurityTrack
+    ]
+    events[f"{prefix}TrackNotHighPurity_{layer}"] = candidates[
+        ~candidates.isHighPurityTrack
+    ]
     events[f"n{prefix}Candidates_{layer}"] = ak.num(candidates)
     events[f"n{prefix}HighPurityCandidates_{layer}"] = ak.sum(
         candidates.isHighPurityTrack, axis=1
