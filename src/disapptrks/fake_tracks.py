@@ -367,6 +367,67 @@ def summed_hist_counts_edges(
     return total_counts, total_edges
 
 
+def summed_hist_counts_edges_2d(
+    outputs: Sequence[Mapping[str, Any]],
+    variable: str,
+    *,
+    dataset: str | None = None,
+    sample: str | None = None,
+    category: str = "inclusive",
+) -> tuple[Any, Any, Any]:
+    """Sum one two-dimensional histogram across PocketCoffea outputs."""
+
+    import numpy as np
+
+    total_counts = None
+    total_edges = None
+    for output in outputs:
+        variables = output.get("variables", {})
+        if variable not in variables:
+            continue
+        value: Any = variables[variable]
+        if sample is not None and isinstance(value, Mapping):
+            value = value.get(sample, {})
+        if dataset is not None and sample is None and isinstance(value, Mapping):
+            nested_values = value.values()
+        elif dataset is not None and isinstance(value, Mapping):
+            nested_values = [value.get(dataset, {})]
+        else:
+            nested_values = [value]
+
+        for nested in nested_values:
+            for hist_obj in _walk_hists(nested):
+                try:
+                    axis_names = [axis.name for axis in hist_obj.axes]
+                    if "cat" in axis_names:
+                        hist_obj = hist_obj[{"cat": category}]
+                    for axis_name in ("variation", "sample"):
+                        if axis_name in [axis.name for axis in hist_obj.axes]:
+                            hist_obj = hist_obj[{axis_name: "nominal"}]
+                    axes = list(hist_obj.axes)
+                    counts = np.asarray(hist_obj.values(flow=False), dtype=float)
+                    edges = [np.asarray(axis.edges, dtype=float) for axis in axes]
+                except Exception:
+                    continue
+                if counts.ndim != 2 or len(edges) != 2:
+                    continue
+                if total_counts is None:
+                    total_counts = counts.copy()
+                    total_edges = [edge.copy() for edge in edges]
+                else:
+                    if counts.shape != total_counts.shape or any(
+                        len(edge) != len(total_edge)
+                        or not np.allclose(edge, total_edge)
+                        for edge, total_edge in zip(edges, total_edges)
+                    ):
+                        raise ValueError(f"histogram {variable!r} has inconsistent binning")
+                    total_counts += counts
+
+    if total_counts is None or total_edges is None:
+        raise KeyError(f"histogram variable {variable!r} not found")
+    return total_counts, total_edges[0], total_edges[1]
+
+
 def _gauss_plus_constant_integral(amplitude: float, sigma: float, constant: float, lo: float, hi: float) -> float:
     if sigma <= 0.0:
         return constant * (hi - lo)
@@ -757,6 +818,53 @@ def plot_fake_sideband_track_diagnostics(
     fig.savefig(dedx_path)
     plt.close(fig)
 
+    correlation_paths = []
+    correlation_fields = (
+        ("hp_pixelBarrelLayersWithMeasurement", "Pixel barrel", "dEdxPixel"),
+        ("hp_pixelEndcapLayersWithMeasurement", "Pixel endcap", "dEdxPixel"),
+        ("hp_stripTIBLayersWithMeasurement", "TIB", "dEdxStrip"),
+        ("hp_stripTIDLayersWithMeasurement", "TID", "dEdxStrip"),
+        ("hp_stripTOBLayersWithMeasurement", "TOB", "dEdxStrip"),
+        ("hp_stripTECLayersWithMeasurement", "TEC", "dEdxStrip"),
+    )
+    for layer, layer_label in layers:
+        fig, axes = plt.subplots(2, 3, figsize=(11, 6.8))
+        for ax, (hit_field, detector, dedx_field) in zip(
+            axes.flat, correlation_fields
+        ):
+            counts, hit_edges, dedx_edges = summed_hist_counts_edges_2d(
+                outputs,
+                (
+                    f"fake{control_key}Sideband_{layer}_{dedx_field}"
+                    f"_vs_{hit_field}"
+                ),
+                sample=sample,
+            )
+            mesh = ax.pcolormesh(
+                hit_edges,
+                dedx_edges,
+                counts.T,
+                shading="auto",
+                cmap="viridis",
+            )
+            ax.set_title(detector)
+            ax.set_xlabel("Layers with measurement")
+            ax.set_ylabel(r"d$E$/d$x$")
+            fig.colorbar(mesh, ax=ax, label="Sideband candidates")
+        fig.suptitle(
+            (
+                f"{title_prefix} {control_label} fake-track sideband "
+                f"dE/dx vs hit pattern ({layer_label})"
+            ).strip()
+        )
+        fig.tight_layout()
+        correlation_path = (
+            output_dir / f"{control}_sideband_dedx_vs_hit_pattern_{layer}.pdf"
+        )
+        fig.savefig(correlation_path)
+        plt.close(fig)
+        correlation_paths.append(correlation_path)
+
     chi2_hists = []
     try:
         for layer, layer_label in layers:
@@ -769,7 +877,7 @@ def plot_fake_sideband_track_diagnostics(
     except KeyError:
         chi2_hists = []
 
-    paths = [hit_path, dedx_path]
+    paths = [hit_path, dedx_path, *correlation_paths]
     if chi2_hists:
         fig, ax = plt.subplots(figsize=(6.4, 4.8))
         for layer_label, counts, edges in chi2_hists:

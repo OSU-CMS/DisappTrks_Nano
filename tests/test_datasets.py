@@ -57,6 +57,24 @@ def test_osunano_path_classification():
     assert is_allowed_osunano_path(path)
 
 
+def test_dev_2_path_classification():
+    path = "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev_2/Muon0/nested/Run2023C_nano.root"
+
+    assert osunano_area_and_top_dir(path) == ("dev_2", "Muon0")
+    assert is_allowed_osunano_path(path)
+
+
+def test_dev_2_files_are_only_included_when_selected():
+    standard = "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev/Muon0/nested/Run2023C_nano.root"
+    special = "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev_2/Muon0/nested/Run2023C_nano.root"
+
+    standard_grouped = group_osunano_files([standard, special])
+    special_grouped = group_osunano_files([standard, special], source_areas=("dev_2",))
+
+    assert standard_grouped[("Muon", "2023C")] == [standard]
+    assert special_grouped[("Muon", "2023C")] == [special]
+
+
 def test_filter_latest_prod_versions_is_only_for_explicit_override():
     files = [
         "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/prod/Muon0_Run2023C_v1/nano_1.root",

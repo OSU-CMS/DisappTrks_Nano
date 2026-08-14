@@ -214,9 +214,9 @@ def era_group_label_from_path(path: str) -> str | None:
 
 
 def osunano_area_and_top_dir(path: str) -> tuple[str, str] | None:
-    """Return ``(dev|prod, top_dir)`` for files under the OSUNano EOS areas."""
+    """Return ``(area, top_dir)`` for files under an OSUNano EOS area."""
     parts = Path(path).parts
-    for area in ("dev", "prod"):
+    for area in ("dev", "prod", "dev_2"):
         if area in parts:
             index = parts.index(area)
             if index + 1 < len(parts):
@@ -237,7 +237,7 @@ def is_allowed_osunano_path(
     area, top_dir = area_top
     if top_dir.startswith("JetMET"):
         return True
-    if area == "dev":
+    if area in ("dev", "dev_2"):
         return top_dir in allowed_dev_dirs
     if area == "prod":
         return top_dir in allowed_prod_dirs
@@ -292,11 +292,21 @@ def group_osunano_files(
     primary_datasets: tuple[str, ...] = PRIMARY_DATASETS,
     group_labels: tuple[str, ...] = tuple(group.label for group in ERA_GROUPS),
     prod_version_policy: str = "all",
+    source_areas: tuple[str, ...] = ("dev", "prod"),
 ) -> dict[tuple[str, str], list[str]]:
     """Group OSUNano ROOT files by ``(primary_dataset, era_group_label)``."""
     if prod_version_policy not in ("latest", "all"):
         raise ValueError("prod_version_policy must be 'latest' or 'all'")
-    files = [path for path in files if is_allowed_osunano_path(path)]
+    selected_files = []
+    for path in files:
+        area_top = osunano_area_and_top_dir(path)
+        if (
+            area_top is not None
+            and area_top[0] in source_areas
+            and is_allowed_osunano_path(path)
+        ):
+            selected_files.append(path)
+    files = selected_files
     if prod_version_policy == "latest":
         files = filter_latest_prod_versions(files)
 

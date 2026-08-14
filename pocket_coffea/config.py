@@ -1010,6 +1010,38 @@ for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to e
                 ],
                 only_categories=["inclusive"],
             )
+        if layer != "combinedBins":
+            for hit_field, detector, dedx_field in (
+                ("hp_pixelBarrelLayersWithMeasurement", "pixel barrel", "dEdxPixel"),
+                ("hp_pixelEndcapLayersWithMeasurement", "pixel endcap", "dEdxPixel"),
+                ("hp_stripTIBLayersWithMeasurement", "TIB", "dEdxStrip"),
+                ("hp_stripTIDLayersWithMeasurement", "TID", "dEdxStrip"),
+                ("hp_stripTOBLayersWithMeasurement", "TOB", "dEdxStrip"),
+                ("hp_stripTECLayersWithMeasurement", "TEC", "dEdxStrip"),
+            ):
+                fake_sideband_track_variables[
+                    f"fake{control_key}Sideband_{layer}_{dedx_field}_vs_{hit_field}"
+                ] = HistConf(
+                    [
+                        Axis(
+                            coll=collection,
+                            field=hit_field,
+                            bins=11,
+                            start=-0.5,
+                            stop=10.5,
+                            label=f"{detector} layers with measurement",
+                        ),
+                        Axis(
+                            coll=collection,
+                            field=dedx_field,
+                            bins=78,
+                            start=0.5,
+                            stop=20.0,
+                            label=f"{detector} dE/dx",
+                        ),
+                    ],
+                    only_categories=["inclusive"],
+                )
         if _env_flag("DISAPPTRKS_FAKE_SIDEBAND_CHI2"):
             fake_sideband_track_variables[
                 f"fake{control_key}Sideband_{layer}_normalizedChi2"
