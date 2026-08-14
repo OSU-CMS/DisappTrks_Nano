@@ -216,7 +216,7 @@ def era_group_label_from_path(path: str) -> str | None:
 def osunano_area_and_top_dir(path: str) -> tuple[str, str] | None:
     """Return ``(area, top_dir)`` for files under an OSUNano EOS area."""
     parts = Path(path).parts
-    for area in ("dev", "prod", "dev_2"):
+    for area in ("dev", "prod", "dev_v2"):
         if area in parts:
             index = parts.index(area)
             if index + 1 < len(parts):
@@ -237,7 +237,7 @@ def is_allowed_osunano_path(
     area, top_dir = area_top
     if top_dir.startswith("JetMET"):
         return True
-    if area in ("dev", "dev_2"):
+    if area in ("dev", "dev_v2"):
         return top_dir in allowed_dev_dirs
     if area == "prod":
         return top_dir in allowed_prod_dirs

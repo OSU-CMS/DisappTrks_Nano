@@ -11,8 +11,8 @@ or
 
     /data/user/mjoyce/disapptrks_nano/Muon_2023C/prod/Muon0_Run2023C_v4/nano_1.root
 
-Special-test files copied from ``dev_2`` can be selected independently with
-``--source-area dev_2``.  Their dataset names and JSON filenames default to an
+Special-test files copied from ``dev_v2`` can be selected independently with
+``--source-area dev_v2``.  Their dataset names and JSON filenames default to an
 ``OSUv2`` suffix so they cannot be confused with the standard outputs.
 
 This helper scans those local files, groups them by primary dataset and Run-3
@@ -128,16 +128,16 @@ def main() -> int:
     )
     parser.add_argument(
         "--dataset-name-suffix",
-        help="Suffix used in dataset names. Defaults to OSU, or OSUv2 for dev_2.",
+        help="Suffix used in dataset names. Defaults to OSU, or OSUv2 for dev_v2.",
     )
     parser.add_argument(
         "--output-filename-suffix",
-        help="Suffix before .json. Defaults to none, or OSUv2 for dev_2.",
+        help="Suffix before .json. Defaults to none, or OSUv2 for dev_v2.",
     )
     parser.add_argument(
         "--source-area",
         action="append",
-        choices=("dev", "prod", "dev_2"),
+        choices=("dev", "prod", "dev_v2"),
         help="OSUNano area to include. Repeat to include multiple areas. Default: dev and prod.",
     )
     parser.add_argument(
@@ -163,11 +163,11 @@ def main() -> int:
 
     files = find_root_files(args.base)
     source_areas = tuple(args.source_area or ("dev", "prod"))
-    is_dev_2_only = source_areas == ("dev_2",)
-    dataset_name_suffix = args.dataset_name_suffix or ("OSUv2" if is_dev_2_only else "OSU")
+    is_dev_v2_only = source_areas == ("dev_v2",)
+    dataset_name_suffix = args.dataset_name_suffix or ("OSUv2" if is_dev_v2_only else "OSU")
     output_filename_suffix = args.output_filename_suffix
     if output_filename_suffix is None:
-        output_filename_suffix = "OSUv2" if is_dev_2_only else ""
+        output_filename_suffix = "OSUv2" if is_dev_v2_only else ""
     outputs = write_osu_outputs(
         files,
         output_dir=args.output_dir,

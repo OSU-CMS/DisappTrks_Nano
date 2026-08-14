@@ -57,19 +57,19 @@ def test_osunano_path_classification():
     assert is_allowed_osunano_path(path)
 
 
-def test_dev_2_path_classification():
-    path = "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev_2/Muon0/nested/Run2023C_nano.root"
+def test_dev_v2_path_classification():
+    path = "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev_v2/Muon0/nested/Run2023C_nano.root"
 
-    assert osunano_area_and_top_dir(path) == ("dev_2", "Muon0")
+    assert osunano_area_and_top_dir(path) == ("dev_v2", "Muon0")
     assert is_allowed_osunano_path(path)
 
 
-def test_dev_2_files_are_only_included_when_selected():
+def test_dev_v2_files_are_only_included_when_selected():
     standard = "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev/Muon0/nested/Run2023C_nano.root"
-    special = "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev_2/Muon0/nested/Run2023C_nano.root"
+    special = "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev_v2/Muon0/nested/Run2023C_nano.root"
 
     standard_grouped = group_osunano_files([standard, special])
-    special_grouped = group_osunano_files([standard, special], source_areas=("dev_2",))
+    special_grouped = group_osunano_files([standard, special], source_areas=("dev_v2",))
 
     assert standard_grouped[("Muon", "2023C")] == [standard]
     assert special_grouped[("Muon", "2023C")] == [special]
@@ -174,7 +174,7 @@ def test_write_grouped_filelists_uses_2024_nano_v15_metadata(tmp_path):
 def test_write_grouped_filelists_adds_special_output_suffix(tmp_path):
     grouped = {
         ("Muon", "2023C"): [
-            "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev_2/Muon0/Run2023C_nano.root"
+            "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev_v2/Muon0/Run2023C_nano.root"
         ]
     }
 

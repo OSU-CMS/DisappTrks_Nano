@@ -1047,11 +1047,11 @@ def _make_era_filelists_command(args: argparse.Namespace) -> int:
         dict.fromkeys(Path(path.rstrip("/")).name for path in args.eos_paths)
     )
     source_areas = tuple(
-        area for area in source_areas if area in ("dev", "prod", "dev_2")
+        area for area in source_areas if area in ("dev", "prod", "dev_v2")
     ) or ("dev", "prod")
     output_suffix = args.output_suffix
     if output_suffix is None:
-        output_suffix = "OSUv2" if source_areas == ("dev_2",) else ""
+        output_suffix = "OSUv2" if source_areas == ("dev_v2",) else ""
 
     grouped = group_osunano_files(
         files,
@@ -2931,7 +2931,7 @@ def main():
         "--output-suffix",
         help=(
             "Suffix for generated filelists, dataset JSON filenames, and dataset names. "
-            "Defaults to OSUv2 when scanning only dev_2, otherwise no suffix."
+            "Defaults to OSUv2 when scanning only dev_v2, otherwise no suffix."
         ),
     )
     era_filelists.add_argument(
