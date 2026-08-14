@@ -346,12 +346,14 @@ def write_grouped_filelists(
     output_dir: Path,
     dataset_json_dir: Path | None = None,
     nano_version: int | None = None,
+    output_suffix: str = "",
 ) -> dict[str, dict[str, Path | int | str]]:
     """Write grouped filelists and optionally matching PocketCoffea JSONs."""
+    filename_suffix = f"_{output_suffix}" if output_suffix else ""
     outputs: dict[str, dict[str, Path | int | str]] = {}
     for (primary, label), files in sorted(grouped.items()):
         key = f"{primary}_{label}"
-        filelist_path = output_dir / f"{primary}_{label}.txt"
+        filelist_path = output_dir / f"{primary}_{label}{filename_suffix}.txt"
         write_filelist(files, filelist_path)
 
         group = ERA_GROUP_BY_LABEL[label]
@@ -361,9 +363,10 @@ def write_grouped_filelists(
         }
 
         if dataset_json_dir is not None:
-            dataset_name = f"Run{label}_{primary}_OSUNano_EOS"
+            dataset_name_suffix = f"_{output_suffix}" if output_suffix else ""
+            dataset_name = f"Run{label}_{primary}_OSUNano_EOS{dataset_name_suffix}"
             sample = f"DATA_{primary}"
-            dataset_path = dataset_json_dir / f"eos_{label}_{primary}.json"
+            dataset_path = dataset_json_dir / f"eos_{label}_{primary}{filename_suffix}.json"
             dataset = build_dataset_definition(
                 dataset_name=dataset_name,
                 files=files,

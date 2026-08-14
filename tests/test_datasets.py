@@ -169,3 +169,23 @@ def test_write_grouped_filelists_uses_2024_nano_v15_metadata(tmp_path):
     dataset_json = outputs["Muon_2024"]["dataset_json"].read_text()
     assert '"year": "2024"' in dataset_json
     assert '"nano_version": 15' in dataset_json
+
+
+def test_write_grouped_filelists_adds_special_output_suffix(tmp_path):
+    grouped = {
+        ("Muon", "2023C"): [
+            "root://cmseos.fnal.gov//store/group/lpcdisapptrks/nano/dev_2/Muon0/Run2023C_nano.root"
+        ]
+    }
+
+    outputs = write_grouped_filelists(
+        grouped,
+        output_dir=tmp_path / "filelists",
+        dataset_json_dir=tmp_path / "datasets",
+        output_suffix="OSUv2",
+    )
+
+    entry = outputs["Muon_2023C"]
+    assert entry["filelist"].name == "Muon_2023C_OSUv2.txt"
+    assert entry["dataset_json"].name == "eos_2023C_Muon_OSUv2.json"
+    assert "Run2023C_Muon_OSUNano_EOS_OSUv2" in entry["dataset_json"].read_text()

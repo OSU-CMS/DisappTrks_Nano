@@ -1043,15 +1043,27 @@ def _make_era_filelists_command(args: argparse.Namespace) -> int:
     else:
         files = scan_eos_bases_for_root_files(args.eos_paths, xrootd=args.xrootd)
 
+    source_areas = tuple(
+        dict.fromkeys(Path(path.rstrip("/")).name for path in args.eos_paths)
+    )
+    source_areas = tuple(
+        area for area in source_areas if area in ("dev", "prod", "dev_2")
+    ) or ("dev", "prod")
+    output_suffix = args.output_suffix
+    if output_suffix is None:
+        output_suffix = "OSUv2" if source_areas == ("dev_2",) else ""
+
     grouped = group_osunano_files(
         files,
         prod_version_policy=args.prod_version_policy,
+        source_areas=source_areas,
     )
     outputs = write_grouped_filelists(
         grouped,
         output_dir=args.output_dir,
         dataset_json_dir=args.dataset_json_dir,
         nano_version=args.nano_version,
+        output_suffix=output_suffix,
     )
 
     print(f"Scanned {len(files)} ROOT file(s)")
@@ -2914,6 +2926,13 @@ def main():
         "--dataset-json-dir",
         type=Path,
         help="Also write PocketCoffea dataset JSONs to this directory.",
+    )
+    era_filelists.add_argument(
+        "--output-suffix",
+        help=(
+            "Suffix for generated filelists, dataset JSON filenames, and dataset names. "
+            "Defaults to OSUv2 when scanning only dev_2, otherwise no suffix."
+        ),
     )
     era_filelists.add_argument(
         "--filelist",
