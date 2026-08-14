@@ -622,8 +622,12 @@ def _variables_for_mode(mode, variables):
 
     fake_track_prefixes = {
         "basic": (),
-        "zmumu": ("fakeZMuMuFitTrack_", "fakeZMuMuSideband_"),
-        "zee": ("fakeZeeFitTrack_", "fakeZeeSideband_"),
+        "zmumu": (
+            "fakeZMuMuFitTrack_",
+            "fakeZMuMuSideband_",
+            "nFakeZMuMuSideband",
+        ),
+        "zee": ("fakeZeeFitTrack_", "fakeZeeSideband_", "nFakeZeeSideband"),
     }[fake_track_control_mode]
     prefixes_by_mode = {
         "muon_pveto": ("nMuon",),
@@ -642,12 +646,14 @@ def _variables_for_mode(mode, variables):
             "nTauMu",
             "fakeZMuMuFitTrack_",
             "fakeZMuMuSideband_",
+            "nFakeZMuMuSideband",
         ),
         "egamma_backgrounds": (
             "nElectron",
             "nTauEle",
             "fakeZeeFitTrack_",
             "fakeZeeSideband_",
+            "nFakeZeeSideband",
         ),
         "fiducial_maps": ("electronFiducial", "muonFiducial"),
     }
@@ -975,6 +981,18 @@ _fake_hit_pattern_fields = {
 for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to ee$")):
     for layer in (*pveto_layers, "combinedBins"):
         collection = f"Fake{control_key}SidebandTrack_{layer}"
+        for suffix, description in (
+            ("Candidates", "all sideband candidates"),
+            ("HighPurityCandidates", "high-purity sideband candidates"),
+            ("CandidatesWithDeDxHits", "sideband candidates with retained dE/dx hits"),
+        ):
+            fake_sideband_track_variables[
+                f"nFake{control_key}Sideband{suffix}_{layer}"
+            ] = _event_count_hist(
+                f"nFake{control_key}Sideband{suffix}_{layer}",
+                f"N({control_label} {description}, {layer})",
+                bins=20,
+            )
         for field, field_label in _fake_hit_pattern_fields.items():
             fake_sideband_track_variables[
                 f"fake{control_key}Sideband_{layer}_{field}"
@@ -1042,25 +1060,58 @@ for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to e
                     ],
                     only_categories=["inclusive"],
                 )
-        if _env_flag("DISAPPTRKS_FAKE_SIDEBAND_CHI2"):
-            fake_sideband_track_variables[
-                f"fake{control_key}Sideband_{layer}_normalizedChi2"
-            ] = HistConf(
-                [
-                    Axis(
-                        coll=collection,
-                        field="normalizedChi2",
-                        bins=100,
-                        start=0.0,
-                        stop=50.0,
-                        label=(
-                            f"{control_label} sideband track fit "
-                            rf"$\chi^2/\mathrm{{ndof}}$ ({layer})"
+            for subdet, max_layer in (
+                ("PXB", 4),
+                ("PXF", 3),
+                ("TIB", 4),
+                ("TID", 3),
+                ("TOB", 6),
+                ("TEC", 9),
+            ):
+                hit_collection = (
+                    f"Fake{control_key}SidebandDeDxHit_{layer}_{subdet}"
+                )
+                fake_sideband_track_variables[
+                    f"fake{control_key}Sideband_{layer}_{subdet}_perHitDeDxVsLayer"
+                ] = HistConf(
+                    [
+                        Axis(
+                            coll=hit_collection,
+                            field="layer",
+                            bins=max_layer,
+                            start=0.5,
+                            stop=max_layer + 0.5,
+                            label=f"{subdet} layer/disk/wheel number",
                         ),
-                    )
-                ],
-                only_categories=["inclusive"],
-            )
+                        Axis(
+                            coll=hit_collection,
+                            field="dEdx",
+                            bins=100,
+                            start=0.0,
+                            stop=25.0,
+                            label="per-hit normalized charge/path length",
+                        ),
+                    ],
+                    only_categories=["inclusive"],
+                )
+        fake_sideband_track_variables[
+            f"fake{control_key}Sideband_{layer}_normalizedChi2"
+        ] = HistConf(
+            [
+                Axis(
+                    coll=collection,
+                    field="trackNormalizedChi2",
+                    bins=100,
+                    start=0.0,
+                    stop=50.0,
+                    label=(
+                        f"{control_label} sideband track fit "
+                        rf"$\chi^2/\mathrm{{ndof}}$ ({layer})"
+                    ),
+                )
+            ],
+            only_categories=["inclusive"],
+        )
 
 cfg = Configurator(
     parameters=parameters,

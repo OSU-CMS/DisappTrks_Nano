@@ -765,6 +765,23 @@ def plot_fake_sideband_track_diagnostics(
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    coverage = {}
+    for layer, _ in layers:
+        totals = {}
+        for key, suffix in (
+            ("all", "Candidates"),
+            ("high_purity", "HighPurityCandidates"),
+            ("with_hits", "CandidatesWithDeDxHits"),
+        ):
+            counts, edges = summed_hist_counts_edges(
+                outputs,
+                f"nFake{control_key}Sideband{suffix}_{layer}",
+                sample=sample,
+            )
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            totals[key] = float(np.sum(counts * centers))
+        coverage[layer] = totals
+
     hit_fields = (
         ("hp_pixelBarrelLayersWithMeasurement", "Pixel barrel"),
         ("hp_pixelEndcapLayersWithMeasurement", "Pixel endcap"),
@@ -865,6 +882,48 @@ def plot_fake_sideband_track_diagnostics(
         plt.close(fig)
         correlation_paths.append(correlation_path)
 
+    per_hit_paths = []
+    subdetectors = ("PXB", "PXF", "TIB", "TID", "TOB", "TEC")
+    for layer, layer_label in layers:
+        fig, axes = plt.subplots(2, 3, figsize=(11, 6.8))
+        for ax, subdet in zip(axes.flat, subdetectors):
+            counts, layer_edges, dedx_edges = summed_hist_counts_edges_2d(
+                outputs,
+                f"fake{control_key}Sideband_{layer}_{subdet}_perHitDeDxVsLayer",
+                sample=sample,
+            )
+            mesh = ax.pcolormesh(
+                layer_edges,
+                dedx_edges,
+                counts.T,
+                shading="auto",
+                cmap="viridis",
+            )
+            ax.set_title(subdet)
+            ax.set_xlabel("Layer/disk/wheel number")
+            ax.set_ylabel("Per-hit normalized charge/path length")
+            fig.colorbar(mesh, ax=ax, label="Retained hit measurements")
+
+        totals = coverage[layer]
+        fraction = (
+            totals["with_hits"] / totals["all"] if totals["all"] > 0.0 else 0.0
+        )
+        fig.suptitle(
+            (
+                f"{title_prefix} {control_label} sideband per-hit dE/dx "
+                f"({layer_label}); coverage {totals['with_hits']:.0f}/"
+                f"{totals['all']:.0f} candidates ({fraction:.1%}), "
+                f"high purity {totals['high_purity']:.0f}/{totals['all']:.0f}"
+            ).strip()
+        )
+        fig.tight_layout()
+        per_hit_path = (
+            output_dir / f"{control}_sideband_per_hit_dedx_vs_layer_{layer}.pdf"
+        )
+        fig.savefig(per_hit_path)
+        plt.close(fig)
+        per_hit_paths.append(per_hit_path)
+
     chi2_hists = []
     try:
         for layer, layer_label in layers:
@@ -877,7 +936,7 @@ def plot_fake_sideband_track_diagnostics(
     except KeyError:
         chi2_hists = []
 
-    paths = [hit_path, dedx_path, *correlation_paths]
+    paths = [hit_path, dedx_path, *correlation_paths, *per_hit_paths]
     if chi2_hists:
         fig, ax = plt.subplots(figsize=(6.4, 4.8))
         for layer_label, counts, edges in chi2_hists:
