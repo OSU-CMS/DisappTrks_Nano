@@ -77,6 +77,7 @@ FAKE_TRACK_DIAGNOSTIC_FIELDS = [
 
 TAU_BACKGROUND_DIAGNOSTIC_FIELDS = [
     "event_quality",
+    "event_cross_trigger",
     "tau_pt50",
     "tau_eta2p1",
     "tau_decay_mode",

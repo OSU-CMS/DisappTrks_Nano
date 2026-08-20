@@ -1345,6 +1345,9 @@ class DisappTrksProcessor(BaseProcessorABC):
         cumulative = event_quality
         diagnostics = {"event_quality": cumulative}
         cumulative = cumulative & required_lepton
+        # Keep this stage explicit so a diagnostic run with the framework HLT
+        # skim disabled can measure the loss from the muon+tau cross trigger.
+        diagnostics["event_cross_trigger"] = cumulative
         for name, tau_mask in (
             ("tau_pt50", tau_pt),
             ("tau_eta2p1", tau_eta),
@@ -1764,6 +1767,13 @@ class DisappTrksProcessor(BaseProcessorABC):
                     flavor="tau",
                     tags=self.events.TauControlTag,
                     event_quality=event_quality,
+                    # Usually redundant with the framework skim, but keeping
+                    # the HLT requirement here makes no-skim diagnostic runs
+                    # faithful to the production control selection.
+                    required_event_mask=_muon_tau_trigger_mask(
+                        self.events,
+                        self._year,
+                    ),
                     fiducial_hot_spots=(),
                 )
             if (
