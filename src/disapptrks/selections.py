@@ -719,7 +719,9 @@ def fiducial_map_probe_track_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dxy) < 0.02)
         & (abs(tracks.dz) < 0.5)
-        & analysis_layer_mask(tracks, layer)
+        # Fiducial maps measure detector hot spots and are kept independent of
+        # the layer-dependent high-purity requirement in the analysis bins.
+        & layer_mask(tracks, layer)
         & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     )
 
