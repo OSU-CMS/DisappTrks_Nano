@@ -639,12 +639,6 @@ def _add_fake_sideband_track_diagnostics(
 
     prefix = f"Fake{control_key}Sideband"
     events[f"{prefix}Track_{layer}"] = candidates
-    events[f"{prefix}TrackHighPurity_{layer}"] = candidates[
-        candidates.isHighPurityTrack
-    ]
-    events[f"{prefix}TrackNotHighPurity_{layer}"] = candidates[
-        ~candidates.isHighPurityTrack
-    ]
     events[f"n{prefix}Candidates_{layer}"] = ak.num(candidates)
     events[f"n{prefix}HighPurityCandidates_{layer}"] = ak.sum(
         candidates.isHighPurityTrack, axis=1
@@ -952,6 +946,14 @@ class DisappTrksProcessor(BaseProcessorABC):
             or os.environ.get("DISAPPTRKS_FULL_VARIABLES", "").lower()
             in ("1", "true", "yes", "on")
         )
+
+    def _fake_sideband_histograms_enabled(self):
+        try:
+            return bool(self.params.disapptrks.fake_sideband_histograms)
+        except Exception:
+            return os.environ.get(
+                "DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS", "1"
+            ).lower() in ("1", "true", "yes", "on")
 
     def _mode_enabled(self, *modes):
         mode = self._category_mode()
@@ -2094,13 +2096,14 @@ class DisappTrksProcessor(BaseProcessorABC):
                     d0_region="sideband",
                     fiducial_hot_spots=fake_fiducial_hot_spots,
                 )
-                _add_fake_sideband_track_diagnostics(
-                    self.events,
-                    fake_zmumu_control,
-                    control_key="ZMuMu",
-                    layer=layer,
-                    fiducial_hot_spots=fake_fiducial_hot_spots,
-                )
+                if self._fake_sideband_histograms_enabled():
+                    _add_fake_sideband_track_diagnostics(
+                        self.events,
+                        fake_zmumu_control,
+                        control_key="ZMuMu",
+                        layer=layer,
+                        fiducial_hot_spots=fake_fiducial_hot_spots,
+                    )
 
         if "zee" in controls:
             fake_zee_control = _z_to_ee_control_mask(self.events, self.events.Electron)
@@ -2133,13 +2136,14 @@ class DisappTrksProcessor(BaseProcessorABC):
                     d0_region="sideband",
                     fiducial_hot_spots=fake_fiducial_hot_spots,
                 )
-                _add_fake_sideband_track_diagnostics(
-                    self.events,
-                    fake_zee_control,
-                    control_key="Zee",
-                    layer=layer,
-                    fiducial_hot_spots=fake_fiducial_hot_spots,
-                )
+                if self._fake_sideband_histograms_enabled():
+                    _add_fake_sideband_track_diagnostics(
+                        self.events,
+                        fake_zee_control,
+                        control_key="Zee",
+                        layer=layer,
+                        fiducial_hot_spots=fake_fiducial_hot_spots,
+                    )
 
     def _event_quality_masks(self):
         event_golden_json = _golden_json_mask(
@@ -2843,20 +2847,21 @@ class DisappTrksProcessor(BaseProcessorABC):
                 d0_region="sideband",
                 fiducial_hot_spots=fake_fiducial_hot_spots,
             )
-            _add_fake_sideband_track_diagnostics(
-                self.events,
-                fake_zmumu_control,
-                control_key="ZMuMu",
-                layer=layer,
-                fiducial_hot_spots=fake_fiducial_hot_spots,
-            )
-            _add_fake_sideband_track_diagnostics(
-                self.events,
-                fake_zee_control,
-                control_key="Zee",
-                layer=layer,
-                fiducial_hot_spots=fake_fiducial_hot_spots,
-            )
+            if self._fake_sideband_histograms_enabled():
+                _add_fake_sideband_track_diagnostics(
+                    self.events,
+                    fake_zmumu_control,
+                    control_key="ZMuMu",
+                    layer=layer,
+                    fiducial_hot_spots=fake_fiducial_hot_spots,
+                )
+                _add_fake_sideband_track_diagnostics(
+                    self.events,
+                    fake_zee_control,
+                    control_key="Zee",
+                    layer=layer,
+                    fiducial_hot_spots=fake_fiducial_hot_spots,
+                )
 
         event_golden_json = _golden_json_mask(
             self.events,

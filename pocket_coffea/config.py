@@ -241,6 +241,9 @@ enable_pveto_diagnostics = os.environ.get(
 ).lower() in ("1", "true", "yes", "on")
 category_mode = os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
 fake_track_control_mode = os.environ.get("DISAPPTRKS_FAKE_TRACK_CONTROL", "basic").lower()
+enable_fake_sideband_histograms = os.environ.get(
+    "DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS", "1"
+).lower() in ("1", "true", "yes", "on")
 if fake_track_control_mode in ("jetmet", "basic_selection"):
     fake_track_control_mode = "basic"
 if fake_track_control_mode not in ("basic", "zmumu", "zee"):
@@ -251,6 +254,7 @@ if fake_track_control_mode not in ("basic", "zmumu", "zee"):
 parameters["disapptrks"] = {
     "category_mode": category_mode,
     "fake_track_control": fake_track_control_mode,
+    "fake_sideband_histograms": enable_fake_sideband_histograms,
     "full_workflow": os.environ.get("DISAPPTRKS_FULL_WORKFLOW", "").lower()
     in ("1", "true", "yes", "on"),
     "full_variables": os.environ.get("DISAPPTRKS_FULL_VARIABLES", "").lower()
@@ -1080,46 +1084,6 @@ for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to e
                     ],
                     only_categories=["inclusive"],
                 )
-        fake_sideband_track_variables[
-            f"fake{control_key}Sideband_{layer}_normalizedChi2"
-        ] = HistConf(
-            [
-                Axis(
-                    coll=collection,
-                    field="trackNormalizedChi2",
-                    bins=100,
-                    start=0.0,
-                    stop=50.0,
-                    label=(
-                        f"{control_label} sideband track fit "
-                        rf"$\chi^2/\mathrm{{ndof}}$ ({layer})"
-                    ),
-                )
-            ],
-            only_categories=["inclusive"],
-        )
-        for quality, quality_label in (
-            ("HighPurity", "high purity"),
-            ("NotHighPurity", "not high purity"),
-        ):
-            fake_sideband_track_variables[
-                f"fake{control_key}Sideband_{layer}_normalizedChi2{quality}"
-            ] = HistConf(
-                [
-                    Axis(
-                        coll=f"Fake{control_key}SidebandTrack{quality}_{layer}",
-                        field="trackNormalizedChi2",
-                        bins=100,
-                        start=0.0,
-                        stop=50.0,
-                        label=(
-                            f"{control_label} {quality_label} sideband track fit "
-                            rf"$\chi^2/\mathrm{{ndof}}$ ({layer})"
-                        ),
-                    )
-                ],
-                only_categories=["inclusive"],
-            )
 
 
 sideband_event_columns = {
@@ -1135,10 +1099,6 @@ _sideband_manifest_track_fields = [
     "dxy",
     "dz",
     "isHighPurityTrack",
-    "hasTrackFitInfo",
-    "trackChi2",
-    "trackNdof",
-    "trackNormalizedChi2",
     "hp_nValidHits",
     "hp_nValidPixelHits",
     "hp_trackerLayersWithMeasurement",
@@ -1150,7 +1110,11 @@ _sideband_manifest_track_fields = [
     "dEdxPixel",
     "dEdxStrip",
 ]
-if category_mode == "fake_tracks" and fake_track_control_mode in ("zmumu", "zee"):
+if (
+    enable_fake_sideband_histograms
+    and category_mode == "fake_tracks"
+    and fake_track_control_mode in ("zmumu", "zee")
+):
     _manifest_control_key = "ZMuMu" if fake_track_control_mode == "zmumu" else "Zee"
     for _manifest_layer in pveto_layers:
         _manifest_category = (
@@ -1185,7 +1149,7 @@ cfg = Configurator(
     weights_classes=[],
     variations={"weights": {"common": {"inclusive": []}}},
     variables=_variables_for_mode(category_mode, {
-        **fake_sideband_track_variables,
+        **(fake_sideband_track_variables if enable_fake_sideband_histograms else {}),
         "nIsoTrack": HistConf(
             [
                 Axis(

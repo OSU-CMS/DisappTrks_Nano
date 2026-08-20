@@ -511,5 +511,6 @@ relationship remains obvious.
 | `DISAPPTRKS_FIDUCIAL_MAP_DIR` | Directory containing `electron_fiducial_map.json` and `muon_fiducial_map.json`. |
 | `DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON` | Explicit electron fiducial-map JSON path. |
 | `DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON` | Explicit muon fiducial-map JSON path. |
+| `DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS` | Set to `0` for production fake-track jobs to skip exploratory sideband hit-pattern and dE/dx histograms and event manifests while retaining estimate counts and transfer-factor fits. Defaults to `1`. |
 | `DISAPPTRKS_JET_VETO_MAP_DIR` | Directory containing JME jet-veto-map payloads. |
 | `DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP` | Set only for non-production diagnostics when jet-veto-map payloads are unavailable. |

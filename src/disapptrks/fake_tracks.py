@@ -32,10 +32,6 @@ SIDEBAND_MANIFEST_TRACK_FIELDS = (
     "dxy",
     "dz",
     "isHighPurityTrack",
-    "hasTrackFitInfo",
-    "trackChi2",
-    "trackNdof",
-    "trackNormalizedChi2",
     "hp_nValidHits",
     "hp_nValidPixelHits",
     "hp_trackerLayersWithMeasurement",
@@ -965,76 +961,7 @@ def plot_fake_sideband_track_diagnostics(
         plt.close(fig)
         correlation_paths.append(correlation_path)
 
-    chi2_hists = []
-    try:
-        for layer, layer_label in layers:
-            counts, edges = summed_hist_counts_edges(
-                outputs,
-                f"fake{control_key}Sideband_{layer}_normalizedChi2",
-                sample=sample,
-            )
-            chi2_hists.append((layer_label, counts, edges))
-    except KeyError:
-        chi2_hists = []
-
     paths = [hit_path, dedx_path, *correlation_paths]
-    if chi2_hists:
-        fig, ax = plt.subplots(figsize=(6.4, 4.8))
-        for layer_label, counts, edges in chi2_hists:
-            integral = float(np.sum(counts))
-            density = counts / integral if integral > 0.0 else counts
-            ax.stairs(density, edges, label=layer_label, linewidth=1.5)
-        ax.set_xlabel(r"Track fit $\chi^2/\mathrm{ndof}$")
-        ax.set_ylabel("Fraction of sideband candidates")
-        ax.set_yscale("log")
-        ax.set_ylim(bottom=1.0e-5)
-        ax.legend(fontsize=8)
-        ax.set_title(
-            f"{title_prefix} {control_label} fake-track sideband fit quality".strip()
-        )
-        fig.tight_layout()
-        chi2_path = output_dir / f"{control}_sideband_track_chi2.pdf"
-        fig.savefig(chi2_path)
-        plt.close(fig)
-        paths.append(chi2_path)
-
-        fig, axes = plt.subplots(1, 3, figsize=(12, 4.2), sharey=True)
-        for ax, (layer, layer_label) in zip(axes, layers):
-            for quality, quality_label, color in (
-                ("HighPurity", "High purity", "tab:blue"),
-                ("NotHighPurity", "Not high purity", "tab:orange"),
-            ):
-                counts, edges = summed_hist_counts_edges(
-                    outputs,
-                    (
-                        f"fake{control_key}Sideband_{layer}_"
-                        f"normalizedChi2{quality}"
-                    ),
-                    sample=sample,
-                )
-                integral = float(np.sum(counts))
-                density = counts / integral if integral > 0.0 else counts
-                ax.stairs(
-                    density,
-                    edges,
-                    label=f"{quality_label} (N={integral:.0f})",
-                    color=color,
-                    linewidth=1.5,
-                )
-            ax.set_title(layer_label)
-            ax.set_xlabel(r"Track fit $\chi^2/\mathrm{ndof}$")
-            ax.set_yscale("log")
-            ax.set_ylim(bottom=1.0e-4)
-            ax.legend(fontsize=8)
-        axes[0].set_ylabel("Fraction of sideband candidates")
-        fig.suptitle(
-            f"{title_prefix} {control_label} sideband fit quality by high-purity flag".strip()
-        )
-        fig.tight_layout()
-        chi2_quality_path = output_dir / f"{control}_sideband_track_chi2_by_quality.pdf"
-        fig.savefig(chi2_quality_path)
-        plt.close(fig)
-        paths.append(chi2_quality_path)
     return paths
 
 
