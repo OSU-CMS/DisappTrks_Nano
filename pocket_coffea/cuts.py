@@ -78,6 +78,7 @@ FAKE_TRACK_DIAGNOSTIC_FIELDS = [
 TAU_BACKGROUND_DIAGNOSTIC_FIELDS = [
     "event_quality",
     "event_cross_trigger",
+    "event_reference_muon_trigger",
     "tau_pt50",
     "tau_eta2p1",
     "tau_decay_mode",
@@ -726,13 +727,16 @@ def _tau_cross_hlt(events, params, year, **kwargs):
 
 
 def _tau_trigger_probability_hlt(events, params, year, **kwargs):
-    # Equation 7.8 needs N_total before any HLT selection.  Check that the
-    # reference decision is available, but do not use it to skim the sample.
+    # Equation 7.8 is evaluated inside the cross-trigger population.  Keep all
+    # events here so the workflow can store both N_cross and
+    # N_(cross && IsoMu24), but fail loudly if either decision is unavailable.
     available = set(events.HLT.fields) if "HLT" in events.fields else set()
-    if ISO_MUON_REFERENCE_TRIGGER not in available:
+    required = (tau_cross_trigger_for_year(year), ISO_MUON_REFERENCE_TRIGGER)
+    missing = [path for path in required if path not in available]
+    if missing:
         raise RuntimeError(
             "Required HLT branch is absent from this NanoAOD: "
-            f"HLT_{ISO_MUON_REFERENCE_TRIGGER}"
+            + ", ".join(f"HLT_{path}" for path in missing)
         )
     return ak.ones_like(events.event, dtype=bool)
 

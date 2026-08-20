@@ -1196,6 +1196,8 @@ class DisappTrksProcessor(BaseProcessorABC):
         tags,
         event_quality,
         required_event_mask=None,
+        diagnostic_cross_trigger=None,
+        diagnostic_reference_trigger=None,
         fiducial_hot_spots=(),
         met_cut=120.0,
         phi_cut=0.5,
@@ -1284,6 +1286,8 @@ class DisappTrksProcessor(BaseProcessorABC):
                 tags=tags,
                 event_quality=event_quality,
                 required_lepton=required_event_mask,
+                cross_trigger=diagnostic_cross_trigger,
+                reference_trigger=diagnostic_reference_trigger,
                 met_pt=met_pt,
                 met_phi=met_phi,
                 matched_object_d_r=matched_object_d_r,
@@ -1295,6 +1299,8 @@ class DisappTrksProcessor(BaseProcessorABC):
         tags,
         event_quality,
         required_lepton,
+        cross_trigger,
+        reference_trigger,
         met_pt,
         met_phi,
         matched_object_d_r,
@@ -1322,10 +1328,14 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         cumulative = event_quality
         diagnostics = {"event_quality": cumulative}
-        cumulative = cumulative & required_lepton
-        # Keep this stage explicit so a diagnostic run with the framework HLT
-        # skim disabled can measure the loss from the muon+tau cross trigger.
+        if cross_trigger is None:
+            cross_trigger = required_lepton
+        cumulative = cumulative & cross_trigger
         diagnostics["event_cross_trigger"] = cumulative
+        if reference_trigger is None:
+            reference_trigger = required_lepton
+        cumulative = cumulative & reference_trigger
+        diagnostics["event_reference_muon_trigger"] = cumulative
         for name, tau_mask in (
             ("tau_pt50", tau_pt),
             ("tau_eta2p1", tau_eta),
@@ -1740,18 +1750,21 @@ class DisappTrksProcessor(BaseProcessorABC):
                 self._mode_enabled("tau_pmiss_poffline")
                 and "TauControlTag" in self.events.fields
             ):
+                cross_trigger = _muon_tau_trigger_mask(self.events, self._year)
+                reference_trigger = _tau_probability_single_muon_trigger_mask(
+                    self.events
+                )
                 self._store_lepton_background_controls(
                     prefix="Tau",
                     flavor="tau",
                     tags=self.events.TauControlTag,
                     event_quality=event_quality,
-                    # Usually redundant with the framework skim, but keeping
-                    # the HLT requirement here makes no-skim diagnostic runs
-                    # faithful to the production control selection.
-                    required_event_mask=_muon_tau_trigger_mask(
-                        self.events,
-                        self._year,
-                    ),
+                    # The framework skim supplies the cross-trigger condition;
+                    # legacy TauTagPt55 additionally required IsoMu24.  Keep
+                    # both explicit so no-skim diagnostics remain faithful.
+                    required_event_mask=cross_trigger & reference_trigger,
+                    diagnostic_cross_trigger=cross_trigger,
+                    diagnostic_reference_trigger=reference_trigger,
                     fiducial_hot_spots=(),
                 )
             if (
@@ -1920,12 +1933,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         muon_eta_leg = self._has_eta_leg("Muon", eta_max=2.1)
         tau_eta_leg = self._has_eta_leg("Tau", eta_max=2.1)
         eta_legs = muon_eta_leg & tau_eta_leg
+        cross_trigger = _muon_tau_trigger_mask(self.events, self._year)
         single_muon_trigger = _tau_probability_single_muon_trigger_mask(self.events)
-        # Dissertation Eq. 7.8: N_tau = N_ctrl / P(muon), with
-        # P(muon) = N_muon/N_total.  N_ctrl already contains P(muon+tau), so
-        # the cross-trigger probability cancels and the scale is N_total/N_muon.
-        numerator = eta_legs
-        denominator = eta_legs & single_muon_trigger
+        # Legacy/Dissertation Eq. 7.8: correct the control sample selected by
+        # both triggers back to the full muon+tau cross-trigger population.
+        numerator = eta_legs & cross_trigger
+        denominator = numerator & single_muon_trigger
 
         self.events["nTauTriggerProbabilityMuonEtaLeg"] = ak.values_astype(
             muon_eta_leg, np.int64

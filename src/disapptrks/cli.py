@@ -1539,8 +1539,8 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
         print(
             "Calculated tau_probability="
             f"{tau_probability.value:.8g} ± {tau_probability.error:.8g} "
-            f"from N_total={probability_numerator.value:g}, "
-            f"N_IsoMu24={probability_denominator.value:g}"
+            f"from N_cross={probability_numerator.value:g}, "
+            f"N_cross_and_IsoMu24={probability_denominator.value:g}"
         )
     elif args.tau_probability_json is not None:
         if args.tau_probability_error != 0.0:
@@ -1689,7 +1689,8 @@ def _extract_tau_trigger_probability_command(args: argparse.Namespace) -> int:
     print(
         "tau_probability="
         f"{probability.value:.6g} ± {probability.error:.6g} "
-        f"(N_total={numerator.value:.6g}, N_IsoMu24={denominator.value:.6g})"
+        f"(N_cross={numerator.value:.6g}, "
+        f"N_cross_and_IsoMu24={denominator.value:.6g})"
     )
     print(
         "Use with estimate-lepton-background: "
@@ -2238,8 +2239,9 @@ def main():
         type=Path,
         required=True,
         help=(
-            "Muon-data tau_pmiss_poffline outputs selected by the muon+tau "
-            "cross-trigger; supplies N_ctrl, P_offline, and P_trigger."
+            "Muon-data tau_pmiss_poffline outputs selected by both the "
+            "muon+tau cross trigger and IsoMu24; supplies N_ctrl, P_offline, "
+            "and P_trigger."
         ),
     )
     tau_background.add_argument(
@@ -2333,8 +2335,9 @@ def main():
         "--tau-probability",
         type=float,
         help=(
-            "Data-derived N_total/N_IsoMu24 trigger scale P(tau). This "
-            "scales the cross-triggered tau-control N_ctrl and is stored in JSON."
+            "Data-derived N_cross/N_(cross and IsoMu24) trigger scale P(tau). "
+            "This scales the cross-and-IsoMu24 tau-control N_ctrl back to the "
+            "full cross-trigger population and is stored in JSON."
         ),
     )
     tau_probability_source.add_argument(
@@ -2350,8 +2353,8 @@ def main():
         nargs="+",
         type=Path,
         help=(
-            "Calculate P(tau)=N_total/N_IsoMu24 directly from one or more "
-            "Pocket Coffea outputs "
+            "Calculate P(tau)=N_cross/N_(cross and IsoMu24) directly from one "
+            "or more Pocket Coffea outputs "
             "produced with DISAPPTRKS_CATEGORY_MODE=tau_trigger_probability."
         ),
     )
