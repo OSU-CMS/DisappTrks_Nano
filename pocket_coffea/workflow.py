@@ -614,7 +614,7 @@ def _fake_sideband_tracks_for_control(
     return tracks[control_track_mask]
 
 
-def _add_fake_sideband_hit_diagnostics(
+def _add_fake_sideband_track_diagnostics(
     events,
     control_mask,
     *,
@@ -622,17 +622,7 @@ def _add_fake_sideband_hit_diagnostics(
     layer,
     fiducial_hot_spots=(),
 ):
-    """Attach hit-level diagnostics without changing the sideband selection.
-
-    MiniAOD retains ``DeDxHitInfo`` only for a subset of isolated tracks.  The
-    coverage counters make that incompleteness explicit, while the hit
-    collections contain only rows linked to selected sideband candidates.
-    """
-
-    if "IsoTrackDeDxHit" not in events.fields:
-        raise AttributeError(
-            "per-layer fake-track diagnostics require the IsoTrackDeDxHit table"
-        )
+    """Attach selected-track diagnostics without changing the sideband selection."""
 
     candidate_mask = _fake_track_mask(
         events.IsoTrack,
@@ -647,11 +637,6 @@ def _add_fake_sideband_hit_diagnostics(
     candidates = candidates[control_candidate_mask]
     candidates = ak.with_field(candidates, indices, "isoTrackIdx")
 
-    hits = events.IsoTrackDeDxHit
-    matches = hits.isoTrackIdx[:, :, None] == indices[:, None, :]
-    candidate_has_hits = ak.any(matches, axis=1)
-    selected_hits = hits[ak.any(matches, axis=2)]
-
     prefix = f"Fake{control_key}Sideband"
     events[f"{prefix}Track_{layer}"] = candidates
     events[f"{prefix}TrackHighPurity_{layer}"] = candidates[
@@ -664,15 +649,6 @@ def _add_fake_sideband_hit_diagnostics(
     events[f"n{prefix}HighPurityCandidates_{layer}"] = ak.sum(
         candidates.isHighPurityTrack, axis=1
     )
-    events[f"n{prefix}CandidatesWithDeDxHits_{layer}"] = ak.sum(
-        candidate_has_hits, axis=1
-    )
-    for subdet, name in enumerate(("", "PXB", "PXF", "TIB", "TID", "TOB", "TEC")):
-        if subdet == 0:
-            continue
-        events[f"{prefix}DeDxHit_{layer}_{name}"] = selected_hits[
-            selected_hits.subdet == subdet
-        ]
 
 
 def _jet_veto_map_parameter_year(year, era, processor_params):
@@ -2118,7 +2094,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     d0_region="sideband",
                     fiducial_hot_spots=fake_fiducial_hot_spots,
                 )
-                _add_fake_sideband_hit_diagnostics(
+                _add_fake_sideband_track_diagnostics(
                     self.events,
                     fake_zmumu_control,
                     control_key="ZMuMu",
@@ -2157,7 +2133,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     d0_region="sideband",
                     fiducial_hot_spots=fake_fiducial_hot_spots,
                 )
-                _add_fake_sideband_hit_diagnostics(
+                _add_fake_sideband_track_diagnostics(
                     self.events,
                     fake_zee_control,
                     control_key="Zee",
@@ -2867,14 +2843,14 @@ class DisappTrksProcessor(BaseProcessorABC):
                 d0_region="sideband",
                 fiducial_hot_spots=fake_fiducial_hot_spots,
             )
-            _add_fake_sideband_hit_diagnostics(
+            _add_fake_sideband_track_diagnostics(
                 self.events,
                 fake_zmumu_control,
                 control_key="ZMuMu",
                 layer=layer,
                 fiducial_hot_spots=fake_fiducial_hot_spots,
             )
-            _add_fake_sideband_hit_diagnostics(
+            _add_fake_sideband_track_diagnostics(
                 self.events,
                 fake_zee_control,
                 control_key="Zee",

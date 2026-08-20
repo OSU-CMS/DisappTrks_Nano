@@ -1005,7 +1005,6 @@ for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to e
         for suffix, description in (
             ("Candidates", "all sideband candidates"),
             ("HighPurityCandidates", "high-purity sideband candidates"),
-            ("CandidatesWithDeDxHits", "sideband candidates with retained dE/dx hits"),
         ):
             fake_sideband_track_variables[
                 f"nFake{control_key}Sideband{suffix}_{layer}"
@@ -1077,40 +1076,6 @@ for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to e
                             start=0.5,
                             stop=20.0,
                             label=f"{detector} dE/dx",
-                        ),
-                    ],
-                    only_categories=["inclusive"],
-                )
-            for subdet, max_layer in (
-                ("PXB", 4),
-                ("PXF", 3),
-                ("TIB", 4),
-                ("TID", 3),
-                ("TOB", 6),
-                ("TEC", 9),
-            ):
-                hit_collection = (
-                    f"Fake{control_key}SidebandDeDxHit_{layer}_{subdet}"
-                )
-                fake_sideband_track_variables[
-                    f"fake{control_key}Sideband_{layer}_{subdet}_perHitDeDxVsLayer"
-                ] = HistConf(
-                    [
-                        Axis(
-                            coll=hit_collection,
-                            field="layer",
-                            bins=max_layer,
-                            start=0.5,
-                            stop=max_layer + 0.5,
-                            label=f"{subdet} layer/disk/wheel number",
-                        ),
-                        Axis(
-                            coll=hit_collection,
-                            field="dEdx",
-                            bins=100,
-                            start=0.0,
-                            stop=25.0,
-                            label="per-hit normalized charge/path length",
                         ),
                     ],
                     only_categories=["inclusive"],
