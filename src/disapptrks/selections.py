@@ -438,6 +438,20 @@ def layer_mask(tracks, layer: str):
     raise ValueError(f"unknown layer bin: {layer}")
 
 
+def analysis_layer_mask(tracks, layer: str):
+    """Layer-bin selection including the 4-layer high-purity requirement.
+
+    Four-layer tracks have the least hit redundancy and must carry the CMS
+    high-purity track-quality bit.  The 5- and >=6-layer bins are unchanged.
+    Keep this separate from :func:`layer_mask` so detector hit-pattern plots
+    can still classify rejected tracks by their measured layer count.
+    """
+
+    return layer_mask(tracks, layer) & (
+        ~layer_mask(tracks, "NLayers4") | tracks.isHighPurityTrack
+    )
+
+
 ISOLATED_TRACK_SELECTION_FIELDS = (
     "track_pt55",
     "track_eta2p1",
@@ -573,7 +587,7 @@ def base_probe_track_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dxy) < 0.02)
         & (abs(tracks.dz) < 0.5)
-        & layer_mask(tracks, layer)
+        & analysis_layer_mask(tracks, layer)
     )
     if apply_jet_cut:
         mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
@@ -705,7 +719,7 @@ def fiducial_map_probe_track_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dxy) < 0.02)
         & (abs(tracks.dz) < 0.5)
-        & layer_mask(tracks, layer)
+        & analysis_layer_mask(tracks, layer)
         & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     )
 
@@ -794,7 +808,7 @@ def muon_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & (tracks.caloEnergy < 10.0)
     masks["track_calo10"] = mask
 
-    mask = mask & layer_mask(tracks, layer)
+    mask = mask & analysis_layer_mask(tracks, layer)
     masks["track_layers4plus"] = mask
 
     return masks
@@ -924,7 +938,7 @@ def tau_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
     masks["track_muonVeto"] = mask
 
-    mask = mask & layer_mask(tracks, layer)
+    mask = mask & analysis_layer_mask(tracks, layer)
     masks["track_layers4plus"] = mask
 
     return masks
@@ -1232,7 +1246,7 @@ def fake_track_no_d0_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dz) < 0.5)
         & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
-        & layer_mask(tracks, layer)
+        & analysis_layer_mask(tracks, layer)
         & (tracks.caloEnergy < 10.0)
         & (tracks.missingOuterHits >= 3)
         & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
@@ -1318,10 +1332,10 @@ def fake_track_sideband_cutflow_masks(
     mask = mask & (abs_dxy >= sideband_min) & (abs_dxy < sideband_max)
     masks["track_d0Sideband"] = mask
 
-    masks["track_NLayers4"] = mask & layer_mask(tracks, "NLayers4")
-    masks["track_NLayers5"] = mask & layer_mask(tracks, "NLayers5")
-    masks["track_NLayers6plus"] = mask & layer_mask(tracks, "NLayers6plus")
-    masks["track_combinedBins"] = mask & layer_mask(tracks, "combinedBins")
+    masks["track_NLayers4"] = mask & analysis_layer_mask(tracks, "NLayers4")
+    masks["track_NLayers5"] = mask & analysis_layer_mask(tracks, "NLayers5")
+    masks["track_NLayers6plus"] = mask & analysis_layer_mask(tracks, "NLayers6plus")
+    masks["track_combinedBins"] = mask & analysis_layer_mask(tracks, "combinedBins")
 
     return masks
 
@@ -1374,7 +1388,7 @@ def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     masks["track_dRJet0p5"] = mask
 
-    mask = mask & layer_mask(tracks, layer)
+    mask = mask & analysis_layer_mask(tracks, layer)
     masks["track_layers4plus"] = mask
 
     mask = mask & (tracks.caloEnergy < 10.0)

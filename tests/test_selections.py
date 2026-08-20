@@ -3,6 +3,7 @@ import pytest
 ak = pytest.importorskip("awkward")
 
 from disapptrks.selections import (
+    analysis_layer_mask,
     build_lepton_veto_tag_probe_pairs,
     build_muon_veto_tag_probe_pairs,
     fiducial_map_probe_track_mask,
@@ -10,6 +11,30 @@ from disapptrks.selections import (
     met_no_mu_minus_lepton,
     muon_veto_probe_track_mask,
 )
+
+
+def test_analysis_layer_mask_requires_high_purity_only_for_four_layers():
+    tracks = ak.Array(
+        [[
+            {"hp_trackerLayersWithMeasurement": 4, "isHighPurityTrack": False},
+            {"hp_trackerLayersWithMeasurement": 4, "isHighPurityTrack": True},
+            {"hp_trackerLayersWithMeasurement": 5, "isHighPurityTrack": False},
+            {"hp_trackerLayersWithMeasurement": 6, "isHighPurityTrack": False},
+        ]]
+    )
+
+    assert ak.to_list(analysis_layer_mask(tracks, "combinedBins")) == [
+        [False, True, True, True]
+    ]
+    assert ak.to_list(analysis_layer_mask(tracks, "NLayers4")) == [
+        [False, True, False, False]
+    ]
+    assert ak.to_list(analysis_layer_mask(tracks, "NLayers5")) == [
+        [False, False, True, False]
+    ]
+    assert ak.to_list(analysis_layer_mask(tracks, "NLayers6plus")) == [
+        [False, False, False, True]
+    ]
 
 
 def test_met_no_mu_minus_muon_does_not_add_muon_twice():
