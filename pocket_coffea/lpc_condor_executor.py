@@ -159,6 +159,7 @@ echo 'Done'
             "RequestCpus": self.run_options["cores-per-worker"],
             "RequestMemory": f"{self.run_options['mem-per-worker']}",
             "RequestDisk": f"{self.run_options['disk-per-worker']}",
+            "+JobFlavour": f'"{self.run_options.get("queue", "workday")}"',
             "arguments": "$(ProcId) config_job_$(ProcId).pkl $(chunksize)",
             "should_transfer_files": "YES",
             "when_to_transfer_output": "ON_EXIT",

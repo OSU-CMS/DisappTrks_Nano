@@ -76,7 +76,7 @@ Supported modes are:
 | `fiducial_maps` | `DATA_Muon` or `DATA_EGamma` | Before/after eta-phi histograms used to make electron and muon fiducial-map JSON/NPZ files. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
 | `high_purity_study` | `DATA_Muon` or `DATA_EGamma` | Lightweight Z-sideband comparison of track-quality inputs before and after the `highPurity` bit. |
-| `z_sideband_skim` | `DATA_Muon` or `DATA_EGamma` | Writes reusable ROOT skims with the exact Z control and a broad four-layer d0-sideband track, without cutting high-purity inputs. |
+| `z_sideband_skim` | `DATA_Muon` or `DATA_EGamma` | Writes reusable ROOT skims with an inclusive raw-Nano Z control preselection and a broad four-layer d0-sideband track, without cutting high-purity inputs. |
 | `muon_backgrounds` | `DATA_Muon` | Combined muon plus tau-mu categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
 | `egamma_backgrounds` | `DATA_EGamma` | Combined electron plus tau-ele categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
 | `all` | Diagnostic only | Builds every category; generally too heavy for production. |
@@ -113,12 +113,18 @@ disapptrks plot-high-purity-study output_all.coffea \
 
 ### Reusable Z-sideband ROOT skims
 
-The skim requires the exact `zmumu` or `zee` Z control and at least one raw
+The skim requires an inclusive raw-Nano `zmumu` or `zee` Z control preselection and at least one raw
 IsoTrack with `pt > 55 GeV`, `abs(eta) < 2.1`, four measured tracker layers,
 and `0.05 <= abs(dxy) < 0.50 cm`. It deliberately does not require
 `highPurity`, hit quality, missing hits, inactive layers, chi-squared,
 isolation, calorimeter energy, overlap vetoes, or fiducial maps. Those remain
 available for unbiased downstream study.
+
+Muon/electron trigger-object matching and the exact tag multiplicity are
+intentionally deferred to the downstream analysis because the matching fields
+are constructed after PocketCoffea's raw skim stage. The skim therefore uses
+at least one opposite-sign Z-mass pair among tight isolated raw leptons; this is
+inclusive with respect to the final Z control.
 
 For a small LPC-visible test destination:
 
@@ -130,11 +136,17 @@ DISAPPTRKS_OUTPUT_VARIANT=zmumu \
 DISAPPTRKS_DATASET_JSON=datasets/eos_2025_Muon_OSUv2.json \
 DISAPPTRKS_DATASET_SAMPLE=DATA_Muon \
 DISAPPTRKS_DATASET_YEAR=2025 \
-scripts/run_lpc_dask.sh --custom-run-options run_options_lpc_skim.yaml
+python -m pocket_coffea.scripts.runner run \
+  --cfg config.py \
+  --outputdir analysis_output/2025/z_sideband_skim/zmumu \
+  --executor condor \
+  --executor-custom-setup lpc_condor_executor.py \
+  --custom-run-options run_options_lpc_z_sideband_skim.yaml
 ```
 
-For full production, prefer an XRootD EOS destination for
-`DISAPPTRKS_SKIM_OUTPUT`. PocketCoffea writes one ROOT file per processed chunk
+Use the direct Condor executor for skim production, not Dask. For full
+production, prefer an XRootD EOS destination for `DISAPPTRKS_SKIM_OUTPUT`.
+PocketCoffea writes one ROOT file per independently retryable processed chunk
 and exits before object preselection, categories, or histograms are evaluated.
 
 ## Muon Pveto Workflow

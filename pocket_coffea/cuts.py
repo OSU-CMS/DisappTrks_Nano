@@ -13,7 +13,7 @@ from pocket_coffea.lib.cut_definition import Cut
 from pocket_coffea.lib.cut_functions import apply_golden_json, get_JetVetoMap_Mask
 
 from disapptrks.triggers import ISO_MUON_REFERENCE_TRIGGER, tau_cross_trigger_for_year
-from disapptrks.selections import invariant_mass, muon_tag_mask, single_electron_trigger_mask
+from disapptrks.selections import invariant_mass, single_electron_trigger_mask
 
 
 EVENT_DIAGNOSTIC_FIELDS = [
@@ -771,12 +771,21 @@ def _z_sideband_skim(events, params, **kwargs):
 
     control = params["control"]
     if control == "zmumu":
-        selected = events.Muon[muon_tag_mask(events.Muon)]
+        muons = events.Muon
+        # Trigger-object matching is a derived field built after the raw skim.
+        # Omitting it here is deliberately inclusive; the exact control applies
+        # matchedIsoMu24 downstream on the reduced sample.
+        selected = muons[
+            (muons.pt > 26.0)
+            & (abs(muons.eta) < 2.1)
+            & muons.tightId
+            & (muons.pfRelIso04_all < 0.15)
+        ]
         first, second = ak.unzip(ak.combinations(selected, 2, axis=1))
         mass = invariant_mass(first, second, first_mass=0.105658, second_mass=0.105658)
         z_control = (
             _hlt_or(events, ("IsoMu24",))
-            & (ak.num(selected) == 2)
+            & (ak.num(selected) >= 2)
             & ak.any((first.charge * second.charge < 0) & (abs(mass - 91.1876) < 10.0), axis=1)
         )
     elif control == "zee":
@@ -794,7 +803,7 @@ def _z_sideband_skim(events, params, **kwargs):
         mass = invariant_mass(first, second, first_mass=0.000511, second_mass=0.000511)
         z_control = (
             single_electron_trigger_mask(events)
-            & (ak.num(selected) == 2)
+            & (ak.num(selected) >= 2)
             & ak.any(selected.pt > 32.0, axis=1)
             & ak.any((first.charge * second.charge < 0) & (abs(mass - 91.1876) < 10.0), axis=1)
         )
