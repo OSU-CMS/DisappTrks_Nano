@@ -76,6 +76,7 @@ Supported modes are:
 | `fiducial_maps` | `DATA_Muon` or `DATA_EGamma` | Before/after eta-phi histograms used to make electron and muon fiducial-map JSON/NPZ files. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
 | `high_purity_study` | `DATA_Muon` or `DATA_EGamma` | Lightweight Z-sideband comparison of track-quality inputs before and after the `highPurity` bit. |
+| `z_sideband_skim` | `DATA_Muon` or `DATA_EGamma` | Writes reusable ROOT skims with the exact Z control and a broad four-layer d0-sideband track, without cutting high-purity inputs. |
 | `muon_backgrounds` | `DATA_Muon` | Combined muon plus tau-mu categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
 | `egamma_backgrounds` | `DATA_EGamma` | Combined electron plus tau-ele categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
 | `all` | Diagnostic only | Builds every category; generally too heavy for production. |
@@ -109,6 +110,32 @@ After the job finishes, make one multipage PDF per requested layer bin:
 disapptrks plot-high-purity-study output_all.coffea \
   --control zmumu --sample DATA_Muon --title-prefix 2025
 ```
+
+### Reusable Z-sideband ROOT skims
+
+The skim requires the exact `zmumu` or `zee` Z control and at least one raw
+IsoTrack with `pt > 55 GeV`, `abs(eta) < 2.1`, four measured tracker layers,
+and `0.05 <= abs(dxy) < 0.50 cm`. It deliberately does not require
+`highPurity`, hit quality, missing hits, inactive layers, chi-squared,
+isolation, calorimeter energy, overlap vetoes, or fiducial maps. Those remain
+available for unbiased downstream study.
+
+For a small LPC-visible test destination:
+
+```bash
+DISAPPTRKS_CATEGORY_MODE=z_sideband_skim \
+DISAPPTRKS_FAKE_TRACK_CONTROL=zmumu \
+DISAPPTRKS_SKIM_OUTPUT=skim/zmumu \
+DISAPPTRKS_OUTPUT_VARIANT=zmumu \
+DISAPPTRKS_DATASET_JSON=datasets/eos_2025_Muon_OSUv2.json \
+DISAPPTRKS_DATASET_SAMPLE=DATA_Muon \
+DISAPPTRKS_DATASET_YEAR=2025 \
+scripts/run_lpc_dask.sh --custom-run-options run_options_lpc_skim.yaml
+```
+
+For full production, prefer an XRootD EOS destination for
+`DISAPPTRKS_SKIM_OUTPUT`. PocketCoffea writes one ROOT file per processed chunk
+and exits before object preselection, categories, or histograms are evaluated.
 
 ## Muon Pveto Workflow
 
@@ -540,5 +567,6 @@ relationship remains obvious.
 | `DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON` | Explicit muon fiducial-map JSON path. |
 | `DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS` | Set to `0` for production fake-track jobs to skip exploratory sideband hit-pattern and dE/dx histograms and event manifests while retaining estimate counts and transfer-factor fits. Defaults to `1`. |
 | `DISAPPTRKS_HIGH_PURITY_STUDY_LAYERS` | Comma-separated layer bins for `high_purity_study`; defaults to `NLayers4`. |
+| `DISAPPTRKS_SKIM_OUTPUT` | Required output directory for `z_sideband_skim`; may be a worker-visible local path or XRootD EOS URL. |
 | `DISAPPTRKS_JET_VETO_MAP_DIR` | Directory containing JME jet-veto-map payloads. |
 | `DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP` | Set only for non-production diagnostics when jet-veto-map payloads are unavailable. |

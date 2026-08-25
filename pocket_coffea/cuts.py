@@ -13,6 +13,7 @@ from pocket_coffea.lib.cut_definition import Cut
 from pocket_coffea.lib.cut_functions import apply_golden_json, get_JetVetoMap_Mask
 
 from disapptrks.triggers import ISO_MUON_REFERENCE_TRIGGER, tau_cross_trigger_for_year
+from disapptrks.selections import invariant_mass, muon_tag_mask, single_electron_trigger_mask
 
 
 EVENT_DIAGNOSTIC_FIELDS = [
@@ -745,6 +746,63 @@ def _single_electron_hlt(events, params, **kwargs):
     return _hlt_or(events, params["paths"])
 
 
+def _z_sideband_skim(events, params, **kwargs):
+    """Loose raw-Nano skim for repeated four-layer fake-sideband studies.
+
+    The Z control matches the analysis definition.  The track leg intentionally
+    applies only kinematics, the d0 sideband, and measured-layer count; none of
+    the high-purity inputs is cut at skim time.
+    """
+
+    tracks = events.IsoTrack
+    layers = (
+        tracks.hp_trackerLayersWithMeasurement
+        if "hp_trackerLayersWithMeasurement" in tracks.fields
+        else tracks.hp_nValidTrackerHits
+    )
+    broad_track = (
+        (tracks.pt > 55.0)
+        & (abs(tracks.eta) < 2.1)
+        & (abs(tracks.dxy) >= 0.05)
+        & (abs(tracks.dxy) < 0.50)
+        & (layers == 4)
+    )
+    has_broad_track = ak.any(broad_track, axis=1)
+
+    control = params["control"]
+    if control == "zmumu":
+        selected = events.Muon[muon_tag_mask(events.Muon)]
+        first, second = ak.unzip(ak.combinations(selected, 2, axis=1))
+        mass = invariant_mass(first, second, first_mass=0.105658, second_mass=0.105658)
+        z_control = (
+            _hlt_or(events, ("IsoMu24",))
+            & (ak.num(selected) == 2)
+            & ak.any((first.charge * second.charge < 0) & (abs(mass - 91.1876) < 10.0), axis=1)
+        )
+    elif control == "zee":
+        electrons = events.Electron
+        abs_sc_eta = abs(electrons.eta + electrons.deltaEtaSC)
+        barrel = abs_sc_eta <= 1.479
+        dxy_ok = (barrel & (abs(electrons.dxy) < 0.05)) | (~barrel & (abs(electrons.dxy) < 0.10))
+        dz_ok = (barrel & (abs(electrons.dz) < 0.10)) | (~barrel & (abs(electrons.dz) < 0.20))
+        trigger_match = electrons.matchedSingleElectron if "matchedSingleElectron" in electrons.fields else True
+        selected = electrons[
+            (electrons.pt > 25.0) & (abs(electrons.eta) < 2.1)
+            & (electrons.cutBased >= 4) & dxy_ok & dz_ok & trigger_match
+        ]
+        first, second = ak.unzip(ak.combinations(selected, 2, axis=1))
+        mass = invariant_mass(first, second, first_mass=0.000511, second_mass=0.000511)
+        z_control = (
+            single_electron_trigger_mask(events)
+            & (ak.num(selected) == 2)
+            & ak.any(selected.pt > 32.0, axis=1)
+            & ak.any((first.charge * second.charge < 0) & (abs(mass - 91.1876) < 10.0), axis=1)
+        )
+    else:
+        raise ValueError(f"unknown Z-sideband skim control: {control}")
+    return z_control & has_broad_track
+
+
 def _met_hlt(events, params, **kwargs):
     return _hlt_or(events, params["paths"])
 
@@ -823,6 +881,15 @@ single_electron_hlt = Cut(
     },
     function=_single_electron_hlt,
 )
+
+z_sideband_skim_cuts = {
+    control: Cut(
+        name=f"{control}_four_layer_sideband_skim",
+        params={"control": control},
+        function=_z_sideband_skim,
+    )
+    for control in ("zmumu", "zee")
+}
 
 met_hlt = Cut(
     name="met_hlt",

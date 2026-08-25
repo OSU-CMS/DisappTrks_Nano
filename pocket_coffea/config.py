@@ -54,6 +54,7 @@ from cuts import (
     single_muon_hlt,
     tau_trigger_probability_hlt,
     tau_pveto_diagnostic_cuts,
+    z_sideband_skim_cuts,
 )
 from cuts import (
     has_muon_veto_os_mass10_pair,
@@ -312,6 +313,18 @@ def _skim_cuts_for_mode(mode, sample):
 
 
 skim_cuts = _skim_cuts_for_mode(category_mode, dataset_sample)
+skim_output = None
+if category_mode == "z_sideband_skim":
+    if fake_track_control_mode not in ("zmumu", "zee"):
+        raise ValueError(
+            "z_sideband_skim requires DISAPPTRKS_FAKE_TRACK_CONTROL=zmumu or zee"
+        )
+    skim_output = os.environ.get("DISAPPTRKS_SKIM_OUTPUT")
+    if not skim_output:
+        raise ValueError(
+            "z_sideband_skim requires DISAPPTRKS_SKIM_OUTPUT to name the ROOT output directory"
+        )
+    skim_cuts = [z_sideband_skim_cuts[fake_track_control_mode]]
 if os.environ.get("DISAPPTRKS_DISABLE_HLT_SKIM", "").lower() in ("1", "true", "yes", "on"):
     skim_cuts = []
 enable_generic_diagnostics = enable_search_diagnostics and (
@@ -555,6 +568,8 @@ elif category_mode == "high_purity_study":
             "high_purity_study requires DISAPPTRKS_FAKE_TRACK_CONTROL=zmumu or zee"
         )
     selected_categories = {"inclusive": common_categories["inclusive"]}
+elif category_mode == "z_sideband_skim":
+    selected_categories = {"inclusive": common_categories["inclusive"]}
 elif category_mode == "muon_backgrounds":
     selected_categories = {
         **common_categories,
@@ -597,7 +612,7 @@ else:
         "tau_mu_pveto, tau_ele_pveto, muon_pmiss_poffline, "
         "electron_pmiss_poffline, tau_mu_pmiss_poffline, "
         "tau_ele_pmiss_poffline, tau_pmiss_poffline, tau_trigger_probability, "
-        "fake_tracks, high_purity_study, muon_backgrounds, "
+        "fake_tracks, high_purity_study, z_sideband_skim, muon_backgrounds, "
         "egamma_backgrounds, fiducial_maps, signal_acceptance, all."
     )
 
@@ -678,6 +693,7 @@ def _variables_for_mode(mode, variables):
         "tau_trigger_probability": ("nTauTriggerProbability",),
         "fake_tracks": fake_track_prefixes,
         "high_purity_study": ("highPurityStudy",),
+        "z_sideband_skim": (),
         "muon_backgrounds": (
             "nMuon",
             "nTauMu",
@@ -2020,4 +2036,6 @@ cfg = Configurator(
         ),
     }),
     columns=sideband_event_columns,
+    workflow_options={"skim_mode": "skim"} if skim_output else None,
+    save_skimmed_files=skim_output,
 )
