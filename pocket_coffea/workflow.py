@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 
 import awkward as ak
 import numpy as np
+import uproot
 from coffea.lumi_tools import LumiMask
 
 from pocket_coffea.workflows.base import BaseProcessorABC
+from pocket_coffea.utils.skim import copy_file, uproot_writeable
 
 from disapptrks.selections import (
     add_electron_derived_fields,
@@ -953,6 +956,66 @@ def _jet_veto_map_mask(
 
 
 class DisappTrksProcessor(BaseProcessorABC):
+    def export_skimmed_chunk(self):
+        """Export a skim through stable worker-local scratch.
+
+        Dask workers can outlive the Condor sandbox directory that was their
+        original current working directory.  Upstream PocketCoffea writes a
+        bare relative filename there, which then fails with ENOENT.  Use an
+        explicit temporary directory and retain the upstream output metadata.
+        """
+
+        if self._category_mode() != "z_sideband_skim":
+            return super().export_skimmed_chunk()
+
+        if self._isMC:
+            skimmed_sumw = ak.sum(self.events.genWeight)
+            if skimmed_sumw == 0:
+                self.events["skimRescaleGenWeight"] = np.zeros(
+                    self.nEvents_after_skim
+                )
+            else:
+                self.events["skimRescaleGenWeight"] = (
+                    np.ones(self.nEvents_after_skim)
+                    * self.output["sum_genweights"][self._dataset]
+                    / skimmed_sumw
+                )
+            self.output["sum_genweights_skimmed"] = {
+                self._dataset: skimmed_sumw
+            }
+
+        filename = "__".join(
+            [
+                self._dataset,
+                str(self.events.metadata["fileuuid"]),
+                str(self.events.metadata["entrystart"]),
+                str(self.events.metadata["entrystop"]),
+            ]
+        ) + ".root"
+        with tempfile.TemporaryDirectory(prefix="disapptrks-skim-") as scratch:
+            local_path = os.path.join(scratch, filename)
+            with uproot.recreate(local_path, compression=uproot.ZSTD(5)) as fout:
+                fout["Events"] = uproot_writeable(self.events)
+            copy_file(
+                filename,
+                scratch,
+                self.cfg.save_skimmed_files_folder,
+                subdirs=[self._dataset],
+            )
+
+        self.output["skimmed_files"] = {
+            self._dataset: [
+                os.path.join(
+                    self.cfg.save_skimmed_files_folder,
+                    self._dataset,
+                    filename,
+                )
+            ]
+        }
+        self.output["nskimmed_events"] = {
+            self._dataset: [self.nEvents_after_skim]
+        }
+
     def _category_mode(self):
         try:
             return self.params.disapptrks.category_mode

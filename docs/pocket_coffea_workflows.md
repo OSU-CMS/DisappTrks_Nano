@@ -148,6 +148,10 @@ Use the direct Condor executor for skim production, not Dask. For full
 production, prefer an XRootD EOS destination for `DISAPPTRKS_SKIM_OUTPUT`.
 PocketCoffea writes one ROOT file per independently retryable processed chunk
 and exits before object preselection, categories, or histograms are evaluated.
+If the LPC schedd is unavailable from the submission environment, the local
+fallback `run_options_lpc_skim.yaml` can be used with `run_lpc_dask.sh`; use a
+fresh output directory when retrying so a failed run's partial files are not
+mixed with the new production.
 
 ## Muon Pveto Workflow
 
