@@ -241,6 +241,13 @@ enable_pveto_diagnostics = os.environ.get(
 ).lower() in ("1", "true", "yes", "on")
 category_mode = os.environ.get("DISAPPTRKS_CATEGORY_MODE", "muon_pveto")
 fake_track_control_mode = os.environ.get("DISAPPTRKS_FAKE_TRACK_CONTROL", "basic").lower()
+high_purity_study_layers = tuple(
+    item.strip()
+    for item in os.environ.get("DISAPPTRKS_HIGH_PURITY_STUDY_LAYERS", "NLayers4").split(",")
+    if item.strip()
+)
+if any(layer not in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins") for layer in high_purity_study_layers):
+    raise ValueError("DISAPPTRKS_HIGH_PURITY_STUDY_LAYERS contains an unknown layer bin")
 enable_fake_sideband_histograms = os.environ.get(
     "DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS", "1"
 ).lower() in ("1", "true", "yes", "on")
@@ -255,6 +262,7 @@ parameters["disapptrks"] = {
     "category_mode": category_mode,
     "fake_track_control": fake_track_control_mode,
     "fake_sideband_histograms": enable_fake_sideband_histograms,
+    "high_purity_study_layers": high_purity_study_layers,
     "full_workflow": os.environ.get("DISAPPTRKS_FULL_WORKFLOW", "").lower()
     in ("1", "true", "yes", "on"),
     "full_variables": os.environ.get("DISAPPTRKS_FULL_VARIABLES", "").lower()
@@ -293,7 +301,7 @@ def _skim_cuts_for_mode(mode, sample):
             return [single_muon_hlt]
         if sample == "DATA_EGamma":
             return [single_electron_hlt]
-    if mode == "fake_tracks":
+    if mode in ("fake_tracks", "high_purity_study"):
         if sample == "DATA_Muon":
             return [single_muon_hlt]
         if sample == "DATA_EGamma":
@@ -541,6 +549,12 @@ elif category_mode == "fake_tracks":
             **common_categories,
             **fake_track_basic_categories,
         }
+elif category_mode == "high_purity_study":
+    if fake_track_control_mode not in ("zmumu", "zee"):
+        raise ValueError(
+            "high_purity_study requires DISAPPTRKS_FAKE_TRACK_CONTROL=zmumu or zee"
+        )
+    selected_categories = {"inclusive": common_categories["inclusive"]}
 elif category_mode == "muon_backgrounds":
     selected_categories = {
         **common_categories,
@@ -583,7 +597,7 @@ else:
         "tau_mu_pveto, tau_ele_pveto, muon_pmiss_poffline, "
         "electron_pmiss_poffline, tau_mu_pmiss_poffline, "
         "tau_ele_pmiss_poffline, tau_pmiss_poffline, tau_trigger_probability, "
-        "fake_tracks, muon_backgrounds, "
+        "fake_tracks, high_purity_study, muon_backgrounds, "
         "egamma_backgrounds, fiducial_maps, signal_acceptance, all."
     )
 
@@ -663,6 +677,7 @@ def _variables_for_mode(mode, variables):
         "tau_pmiss_poffline": ("nTauBackground",),
         "tau_trigger_probability": ("nTauTriggerProbability",),
         "fake_tracks": fake_track_prefixes,
+        "high_purity_study": ("highPurityStudy",),
         "muon_backgrounds": (
             "nMuon",
             "nTauMu",
@@ -1086,6 +1101,62 @@ for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to e
                 )
 
 
+# Dedicated, sparse sideband study of the variables entering the CMS track
+# high-purity decision.  The workflow fills two nested collections: all tracks
+# before the high-purity requirement and the subset carrying the bit.  Book
+# only requested layer bins (four layers by default) to keep production small.
+high_purity_study_variables = {}
+_high_purity_features = {
+    "pt": (100, 50.0, 550.0, r"track $p_T$ [GeV]"),
+    "eta": (84, -2.1, 2.1, r"track $\eta$"),
+    "phi": (64, -3.2, 3.2, r"track $\phi$"),
+    "trackPtErr": (100, 0.0, 50.0, r"$\delta p_T$ [GeV]"),
+    "trackEtaErr": (100, 0.0, 0.05, r"$\delta\eta$"),
+    "trackPhiErr": (100, 0.0, 0.05, r"$\delta\phi$ [rad]"),
+    "innerPx": (120, -600.0, 600.0, r"inner-state $p_x$ [GeV]"),
+    "innerPy": (120, -600.0, 600.0, r"inner-state $p_y$ [GeV]"),
+    "innerPz": (160, -1600.0, 1600.0, r"inner-state $p_z$ [GeV]"),
+    "innerPt": (100, 50.0, 550.0, r"inner-state $p_T$ [GeV]"),
+    "outerPx": (120, -600.0, 600.0, r"outer-state $p_x$ [GeV]"),
+    "outerPy": (120, -600.0, 600.0, r"outer-state $p_y$ [GeV]"),
+    "outerPz": (160, -1600.0, 1600.0, r"outer-state $p_z$ [GeV]"),
+    "outerPt": (100, 0.0, 550.0, r"outer-state $p_T$ [GeV]"),
+    "dxyBS": (100, -0.5, 0.5, r"$d_0$ (beamspot) [cm]"),
+    "dzBS": (100, -0.5, 0.5, r"$d_z$ (beamspot) [cm]"),
+    "dxyClosestPV": (100, -0.5, 0.5, r"$d_0$ (closest PV) [cm]"),
+    "dzClosestPV": (100, -0.5, 0.5, r"$d_z$ (closest PV) [cm]"),
+    "dxyBSErr": (100, 0.0, 0.1, r"$\delta d_0$ (beamspot) [cm]"),
+    "dzBSErr": (100, 0.0, 0.1, r"$\delta d_z$ (beamspot) [cm]"),
+    "dxyClosestPVErr": (100, 0.0, 0.1, r"$\delta d_0$ (closest PV) [cm]"),
+    "dzClosestPVErr": (100, 0.0, 0.1, r"$\delta d_z$ (closest PV) [cm]"),
+    "trackChi2": (120, 0.0, 120.0, r"track $\chi^2$"),
+    "trackNdof": (81, -0.5, 80.5, r"track ndof"),
+    "trackNormalizedChi2": (100, 0.0, 25.0, r"track $\chi^2$/ndof"),
+    "hp_nValidPixelHits": (16, -0.5, 15.5, "valid pixel hits"),
+    "hp_nValidStripHits": (31, -0.5, 30.5, "valid strip hits"),
+    "hp_nLostHitsInner": (11, -0.5, 10.5, "missing hits before innermost hit"),
+    "hp_nLostHitsOuter": (16, -0.5, 15.5, "missing hits after outermost hit"),
+    "hp_trackerLayersTotallyOffOrBadInner": (11, -0.5, 10.5, "inactive layers before innermost hit"),
+    "hp_trackerLayersTotallyOffOrBadOuter": (16, -0.5, 15.5, "inactive layers after outermost hit"),
+    "missingMiddleHits": (11, -0.5, 10.5, "layers without hits on track body"),
+    "trackAlgo": (31, -1.5, 29.5, "track algorithm / iteration flag"),
+    "trackOriginalAlgo": (31, -1.5, 29.5, "original track algorithm / iteration flag"),
+}
+if category_mode == "high_purity_study":
+    _study_control_key = "ZMuMu" if fake_track_control_mode == "zmumu" else "Zee"
+    for _study_layer in high_purity_study_layers:
+        for _selection, _selection_label in (("All", "before highPurity"), ("Pass", "with highPurity")):
+            _collection = f"HighPurityStudy{_study_control_key}{_selection}_{_study_layer}"
+            for _field, (_bins, _start, _stop, _label) in _high_purity_features.items():
+                high_purity_study_variables[
+                    f"highPurityStudy{_study_control_key}_{_study_layer}_{_selection}_{_field}"
+                ] = HistConf(
+                    [Axis(coll=_collection, field=_field, bins=_bins, start=_start, stop=_stop,
+                          label=f"{_label} ({_selection_label})")],
+                    only_categories=["inclusive"],
+                )
+
+
 sideband_event_columns = {
     "common": {"inclusive": [], "bycategory": {}},
     "bysample": {},
@@ -1149,6 +1220,7 @@ cfg = Configurator(
     weights_classes=[],
     variations={"weights": {"common": {"inclusive": []}}},
     variables=_variables_for_mode(category_mode, {
+        **high_purity_study_variables,
         **(fake_sideband_track_variables if enable_fake_sideband_histograms else {}),
         "nIsoTrack": HistConf(
             [

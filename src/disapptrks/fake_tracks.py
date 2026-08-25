@@ -965,6 +965,71 @@ def plot_fake_sideband_track_diagnostics(
     return paths
 
 
+def plot_high_purity_input_distributions(
+    outputs: Sequence[Mapping[str, Any]], output_dir: Path, *, control: str,
+    layers: Sequence[str] = ("NLayers4",), sample: str | None = None,
+    title_prefix: str = "",
+) -> list[Path]:
+    """Write multipage before/after-highPurity sideband comparison PDFs."""
+    import numpy as np
+    try:
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+    except ImportError as exc:
+        raise RuntimeError("matplotlib is required for high-purity study plots") from exc
+
+    control_key = {"zmumu": "ZMuMu", "zee": "Zee"}[control]
+    control_label = {"zmumu": r"$Z\to\mu\mu$", "zee": r"$Z\to ee$"}[control]
+    features = {
+        "pt": r"track $p_T$ [GeV]", "eta": r"track $\eta$", "phi": r"track $\phi$",
+        "trackPtErr": r"$\delta p_T$ [GeV]", "trackEtaErr": r"$\delta\eta$", "trackPhiErr": r"$\delta\phi$ [rad]",
+        "innerPx": r"inner-state $p_x$ [GeV]", "innerPy": r"inner-state $p_y$ [GeV]",
+        "innerPz": r"inner-state $p_z$ [GeV]", "innerPt": r"inner-state $p_T$ [GeV]",
+        "outerPx": r"outer-state $p_x$ [GeV]", "outerPy": r"outer-state $p_y$ [GeV]",
+        "outerPz": r"outer-state $p_z$ [GeV]", "outerPt": r"outer-state $p_T$ [GeV]",
+        "dxyBS": r"$d_0$ (beamspot) [cm]", "dzBS": r"$d_z$ (beamspot) [cm]",
+        "dxyClosestPV": r"$d_0$ (closest PV) [cm]", "dzClosestPV": r"$d_z$ (closest PV) [cm]",
+        "dxyBSErr": r"$\delta d_0$ (beamspot) [cm]", "dzBSErr": r"$\delta d_z$ (beamspot) [cm]",
+        "dxyClosestPVErr": r"$\delta d_0$ (closest PV) [cm]", "dzClosestPVErr": r"$\delta d_z$ (closest PV) [cm]",
+        "trackChi2": r"track $\chi^2$", "trackNdof": "track ndof",
+        "trackNormalizedChi2": r"track $\chi^2$/ndof",
+        "hp_nValidPixelHits": "valid pixel hits", "hp_nValidStripHits": "valid strip hits",
+        "hp_nLostHitsInner": "missing hits before innermost hit", "hp_nLostHitsOuter": "missing hits after outermost hit",
+        "hp_trackerLayersTotallyOffOrBadInner": "inactive layers before innermost hit",
+        "hp_trackerLayersTotallyOffOrBadOuter": "inactive layers after outermost hit",
+        "missingMiddleHits": "layers without hits on track body",
+        "trackAlgo": "track algorithm / iteration flag",
+        "trackOriginalAlgo": "original track algorithm / iteration flag",
+    }
+    layer_labels = {"NLayers4": "4 layers", "NLayers5": "5 layers", "NLayers6plus": r"$\geq6$ layers", "combinedBins": r"$\geq4$ layers"}
+    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for layer in layers:
+        path = output_dir / f"{control}_high_purity_inputs_{layer}.pdf"
+        with PdfPages(path) as pdf:
+            for field, xlabel in features.items():
+                prefix = f"highPurityStudy{control_key}_{layer}"
+                all_counts, edges = summed_hist_counts_edges(outputs, f"{prefix}_All_{field}", sample=sample)
+                pass_counts, pass_edges = summed_hist_counts_edges(outputs, f"{prefix}_Pass_{field}", sample=sample)
+                if not np.allclose(edges, pass_edges):
+                    raise ValueError(f"before/after binning differs for {field}")
+                n_all, n_pass = float(all_counts.sum()), float(pass_counts.sum())
+                fig, ax = plt.subplots(figsize=(7.2, 5.0))
+                if n_all:
+                    ax.stairs(all_counts / n_all, edges, linewidth=1.7, label=f"Before highPurity (N={n_all:g})")
+                if n_pass:
+                    ax.stairs(pass_counts / n_pass, edges, linewidth=1.7, label=f"With highPurity (N={n_pass:g})")
+                if not n_all:
+                    ax.text(0.5, 0.5, "Variable unavailable or no selected tracks", transform=ax.transAxes, ha="center", va="center")
+                ax.set(xlabel=xlabel, ylabel="Fraction of sideband candidates")
+                ax.set_title(f"{title_prefix} {control_label} fake-track sideband, {layer_labels.get(layer, layer)}".strip())
+                if n_all or n_pass:
+                    ax.legend(fontsize=9)
+                fig.tight_layout(); pdf.savefig(fig); plt.close(fig)
+        paths.append(path)
+    return paths
+
+
 def estimate_fake_track_background_an(
     cutflow: Mapping[str, Any],
     *,

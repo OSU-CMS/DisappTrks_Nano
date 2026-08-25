@@ -7,6 +7,7 @@ from disapptrks.selections import (
     build_lepton_veto_tag_probe_pairs,
     build_muon_veto_tag_probe_pairs,
     fiducial_map_probe_track_mask,
+    fake_track_no_d0_mask,
     hadronic_tau_control_object_mask,
     met_no_mu_minus_lepton,
     muon_veto_probe_track_mask,
@@ -35,6 +36,30 @@ def test_analysis_layer_mask_requires_high_purity_only_for_four_layers():
     assert ak.to_list(analysis_layer_mask(tracks, "NLayers6plus")) == [
         [False, False, False, True]
     ]
+
+
+def test_high_purity_study_can_retain_non_high_purity_four_layer_track():
+    base = {
+        "pt": 100.0, "eta": 0.8, "dxy": 0.1, "dz": 0.1,
+        "inECALCrack": False, "inDTWheelGap": False,
+        "inCSCTransition": False, "inTOBCrack": False,
+        "isFiducialECALTrack": True, "hp_nValidPixelHits": 4,
+        "hp_nValidHits": 4, "missingInnerHits": 0, "missingMiddleHits": 0,
+        "missingOuterHits": 3, "pfRelIso03_chg": 0.01, "dRMinJet": 1.0,
+        "dRMinElectron": 1.0, "dRMinMuon": 1.0, "dRMinTauHad": 1.0,
+        "hp_trackerLayersWithMeasurement": 4, "caloEnergy": 1.0,
+    }
+    tracks = ak.Array([[
+        {**base, "isHighPurityTrack": False},
+        {**base, "isHighPurityTrack": True},
+    ]])
+
+    nominal = fake_track_no_d0_mask(tracks, layer="NLayers4")
+    study = fake_track_no_d0_mask(
+        tracks, layer="NLayers4", require_four_layer_high_purity=False
+    )
+    assert ak.to_list(nominal) == [[False, True]]
+    assert ak.to_list(study) == [[True, True]]
 
 
 def test_met_no_mu_minus_muon_does_not_add_muon_twice():

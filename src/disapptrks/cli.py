@@ -22,6 +22,7 @@ from .fake_tracks import (
     fit_dxy_transfer_factor,
     fixed_an_transfer_factor_fit,
     plot_fake_sideband_track_diagnostics,
+    plot_high_purity_input_distributions,
     plot_dxy_transfer_factor,
     summed_hist_counts_edges,
     write_fake_sideband_event_manifest,
@@ -1798,6 +1799,20 @@ def _merge_pveto_tables_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _plot_high_purity_study_command(args: argparse.Namespace) -> int:
+    outputs = _load_outputs(args.files)
+    for path in plot_high_purity_input_distributions(
+        outputs,
+        args.output_dir,
+        control=args.control,
+        layers=args.layers,
+        sample=args.sample,
+        title_prefix=args.title_prefix,
+    ):
+        print(f"Wrote {path}")
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(prog="disapptrks")
     subparsers = parser.add_subparsers(dest="command")
@@ -2670,6 +2685,21 @@ def main():
         help="Wrap the tabular in a LaTeX table environment.",
     )
     merge_pveto_tables.set_defaults(func=_merge_pveto_tables_command)
+
+    high_purity_study = subparsers.add_parser(
+        "plot-high-purity-study",
+        help="Overlay fake-sideband track inputs before and after highPurity.",
+    )
+    high_purity_study.add_argument("files", nargs="+", type=Path)
+    high_purity_study.add_argument("--control", choices=("zmumu", "zee"), required=True)
+    high_purity_study.add_argument("--sample")
+    high_purity_study.add_argument(
+        "--layers", nargs="+", default=["NLayers4"],
+        choices=("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"),
+    )
+    high_purity_study.add_argument("--output-dir", type=Path, default=Path("plots/high_purity_study"))
+    high_purity_study.add_argument("--title-prefix", default="")
+    high_purity_study.set_defaults(func=_plot_high_purity_study_command)
 
     fake_tracks = subparsers.add_parser(
         "estimate-fake-tracks",

@@ -75,6 +75,7 @@ Supported modes are:
 | `tau_trigger_probability` | Muon data containing the cross-trigger path | Optional AN diagnostic for the muon+tau-trigger normalization factor. |
 | `fiducial_maps` | `DATA_Muon` or `DATA_EGamma` | Before/after eta-phi histograms used to make electron and muon fiducial-map JSON/NPZ files. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
+| `high_purity_study` | `DATA_Muon` or `DATA_EGamma` | Lightweight Z-sideband comparison of track-quality inputs before and after the `highPurity` bit. |
 | `muon_backgrounds` | `DATA_Muon` | Combined muon plus tau-mu categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
 | `egamma_backgrounds` | `DATA_EGamma` | Combined electron plus tau-ele categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
 | `all` | Diagnostic only | Builds every category; generally too heavy for production. |
@@ -82,6 +83,32 @@ Supported modes are:
 Skim triggers are inferred from the mode and sample in `config.py`. For example,
 `muon_pveto` applies the SingleMuon skim, while `electron_pveto` applies the
 SingleElectron/EGamma skim.
+
+### High-purity input study
+
+This mode keeps the nominal Z control-region and fake-track sideband selection,
+but deliberately forms its track collection before the four-layer
+`isHighPurityTrack` requirement. It books only the requested input-variable
+histograms and the inclusive category. The default is the four-layer bin.
+
+```bash
+DISAPPTRKS_CATEGORY_MODE=high_purity_study \
+DISAPPTRKS_FAKE_TRACK_CONTROL=zmumu \
+DISAPPTRKS_DATASET_JSON=datasets/eos_2025_Muon.json \
+DISAPPTRKS_DATASET_SAMPLE=DATA_Muon \
+DISAPPTRKS_DATASET_YEAR=2025 \
+scripts/run_lpc_dask.sh --scaleout 50 --skip-bad-files
+```
+
+Use `zee` with the EGamma dataset for the electron control. To study additional
+bins, set (for example)
+`DISAPPTRKS_HIGH_PURITY_STUDY_LAYERS=NLayers4,NLayers5,NLayers6plus`.
+After the job finishes, make one multipage PDF per requested layer bin:
+
+```bash
+disapptrks plot-high-purity-study output_all.coffea \
+  --control zmumu --sample DATA_Muon --title-prefix 2025
+```
 
 ## Muon Pveto Workflow
 
@@ -512,5 +539,6 @@ relationship remains obvious.
 | `DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON` | Explicit electron fiducial-map JSON path. |
 | `DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON` | Explicit muon fiducial-map JSON path. |
 | `DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS` | Set to `0` for production fake-track jobs to skip exploratory sideband hit-pattern and dE/dx histograms and event manifests while retaining estimate counts and transfer-factor fits. Defaults to `1`. |
+| `DISAPPTRKS_HIGH_PURITY_STUDY_LAYERS` | Comma-separated layer bins for `high_purity_study`; defaults to `NLayers4`. |
 | `DISAPPTRKS_JET_VETO_MAP_DIR` | Directory containing JME jet-veto-map payloads. |
 | `DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP` | Set only for non-production diagnostics when jet-veto-map payloads are unavailable. |

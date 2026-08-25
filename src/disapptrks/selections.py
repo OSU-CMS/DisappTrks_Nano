@@ -1216,6 +1216,7 @@ def fake_track_no_d0_mask(
     pt_min: float = 55.0,
     sideband_min: float = 0.05,
     sideband_max: float = 0.50,
+    require_four_layer_high_purity: bool = True,
 ):
     """Fake-track control selection with the d0 requirement replaced.
 
@@ -1248,7 +1249,11 @@ def fake_track_no_d0_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dz) < 0.5)
         & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
-        & analysis_layer_mask(tracks, layer)
+        & (
+            analysis_layer_mask(tracks, layer)
+            if require_four_layer_high_purity
+            else layer_mask(tracks, layer)
+        )
         & (tracks.caloEnergy < 10.0)
         & (tracks.missingOuterHits >= 3)
         & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))

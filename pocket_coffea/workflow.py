@@ -537,6 +537,7 @@ def _fake_track_mask(
     fiducial_hot_spots=(),
     sideband_min: float = 0.05,
     sideband_max: float = 0.50,
+    require_four_layer_high_purity: bool = True,
 ):
     mask = fake_track_no_d0_mask(
         tracks,
@@ -544,10 +545,35 @@ def _fake_track_mask(
         d0_region=d0_region,
         sideband_min=sideband_min,
         sideband_max=sideband_max,
+        require_four_layer_high_purity=require_four_layer_high_purity,
     )
     if fiducial_hot_spots:
         mask = mask & _outside_fiducial_hot_spots(tracks, fiducial_hot_spots)
     return mask
+
+
+def _high_purity_study_tracks_for_control(
+    events, control_mask, *, layer, fiducial_hot_spots=()
+):
+    """Sideband candidates before the analysis high-purity requirement.
+
+    All other nominal fake-track sideband requirements are retained.  Keeping
+    this collection separate prevents the study from changing the background
+    estimate's nominal four-layer selection.
+    """
+
+    tracks = events.IsoTrack[
+        _fake_track_mask(
+            events.IsoTrack,
+            layer=layer,
+            d0_region="sideband",
+            fiducial_hot_spots=fiducial_hot_spots,
+            require_four_layer_high_purity=False,
+        )
+    ]
+    control_track_mask, _ = ak.broadcast_arrays(control_mask, tracks.pt)
+    tracks = tracks[control_track_mask]
+    return tracks, tracks[tracks.isHighPurityTrack]
 
 
 def _fake_track_count_for_control(
@@ -954,6 +980,18 @@ class DisappTrksProcessor(BaseProcessorABC):
             return os.environ.get(
                 "DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS", "1"
             ).lower() in ("1", "true", "yes", "on")
+
+    def _high_purity_study_layers(self):
+        try:
+            return tuple(self.params.disapptrks.high_purity_study_layers)
+        except Exception:
+            return tuple(
+                item.strip()
+                for item in os.environ.get(
+                    "DISAPPTRKS_HIGH_PURITY_STUDY_LAYERS", "NLayers4"
+                ).split(",")
+                if item.strip()
+            )
 
     def _mode_enabled(self, *modes):
         mode = self._category_mode()
@@ -1451,6 +1489,59 @@ class DisappTrksProcessor(BaseProcessorABC):
             self._category_mode() == "tau_trigger_probability"
             and not self._full_workflow_enabled()
         ):
+            return
+        if (
+            self._category_mode() == "high_purity_study"
+            and not self._full_workflow_enabled()
+        ):
+            control = self._fake_track_controls()[0]
+            if control == "zmumu":
+                self.events["Muon"] = add_muon_derived_fields(self.events)
+            elif control == "zee":
+                self.events["Electron"] = add_electron_derived_fields(self.events)
+            else:
+                raise ValueError("high_purity_study supports only zmumu or zee")
+            self.events["IsoTrack"] = add_isotrack_derived_fields(self.events)
+            # Permit schema-transition validation files to run. Histograms for
+            # newly added fields remain empty (the sentinel is below range)
+            # instead of aborting the whole job.
+            for field in (
+                "innerPx", "innerPy", "innerPz", "innerPt",
+                "outerPx", "outerPy", "outerPz", "outerPt",
+            ):
+                if field not in self.events.IsoTrack.fields:
+                    self.events["IsoTrack"] = ak.with_field(
+                        self.events.IsoTrack,
+                        ak.ones_like(self.events.IsoTrack.pt) * -999.0,
+                        field,
+                    )
+            # The older schema has the same reco::Track covariance errors
+            # under generic names.  Reference-point translation supplies no
+            # separate covariance estimate, so these are valid aliases.
+            for field, source in (
+                ("dxyBSErr", "dxyErr"), ("dzBSErr", "dzErr"),
+                ("dxyClosestPVErr", "dxyErr"), ("dzClosestPVErr", "dzErr"),
+            ):
+                if field not in self.events.IsoTrack.fields:
+                    self.events["IsoTrack"] = ak.with_field(
+                        self.events.IsoTrack, self.events.IsoTrack[source], field
+                    )
+            control_mask = (
+                _z_to_mumu_control_mask(self.events, self.events.Muon)
+                if control == "zmumu"
+                else _z_to_ee_control_mask(self.events, self.events.Electron)
+            )
+            control_key = "ZMuMu" if control == "zmumu" else "Zee"
+            hot_spots = self._lepton_fiducial_hot_spots("electron", "muon")
+            for layer in self._high_purity_study_layers():
+                all_tracks, passing_tracks = _high_purity_study_tracks_for_control(
+                    self.events,
+                    control_mask,
+                    layer=layer,
+                    fiducial_hot_spots=hot_spots,
+                )
+                self.events[f"HighPurityStudy{control_key}All_{layer}"] = all_tracks
+                self.events[f"HighPurityStudy{control_key}Pass_{layer}"] = passing_tracks
             return
         if (
             "Electron" in self.events.fields
@@ -2594,6 +2685,8 @@ class DisappTrksProcessor(BaseProcessorABC):
 
     def _count_objects_mode_aware(self, variation):
         mode = self._category_mode()
+        if mode == "high_purity_study":
+            return
         if mode != "tau_trigger_probability":
             self._count_common_search_fields()
 
