@@ -193,7 +193,8 @@ def _install_cvmfs_resolver_fallback():
 
 _install_cvmfs_resolver_fallback()
 parameters = defaults.get_default_parameters()
-_install_embedded_golden_json("2026", parameters)
+for _golden_json_year in ("2022", "2023", "2024", "2025", "2026"):
+    _install_embedded_golden_json(_golden_json_year, parameters)
 cloudpickle.register_pickle_by_value(cuts)
 cloudpickle.register_pickle_by_value(workflow)
 dataset_json = os.environ.get(

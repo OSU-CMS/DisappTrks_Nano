@@ -395,7 +395,11 @@ def _local_golden_json_path(mapped_year):
 
 
 def _payload_golden_json_mask(events, mapped_year):
-    payload = GOLDEN_JSON_PAYLOADS.get(str(mapped_year))
+    mapped_year = str(mapped_year)
+    payload = GOLDEN_JSON_PAYLOADS.get(mapped_year)
+    if payload is None:
+        # The same certification applies to both pre/post subperiods.
+        payload = GOLDEN_JSON_PAYLOADS.get(mapped_year.split("_", 1)[0])
     if payload is None:
         return None
 

@@ -789,7 +789,10 @@ def _local_golden_json_path(mapped_year):
 
 
 def _payload_golden_json_mask(events, mapped_year):
-    payload = GOLDEN_JSON_PAYLOADS.get(str(mapped_year))
+    mapped_year = str(mapped_year)
+    payload = GOLDEN_JSON_PAYLOADS.get(mapped_year)
+    if payload is None:
+        payload = GOLDEN_JSON_PAYLOADS.get(mapped_year.split("_", 1)[0])
     if payload is None:
         return None
 
@@ -961,6 +964,21 @@ def _jet_veto_map_mask(
 
 
 class DisappTrksProcessor(BaseProcessorABC):
+    def process(self, events):
+        """Run a chunk from a stable working directory.
+
+        Condor may remove the sandbox directory while a long-lived Dask worker
+        is still alive.  Python path handling and Numba compilation both fail
+        when the process cwd no longer exists, even when all required payloads
+        are otherwise available.
+        """
+
+        try:
+            os.getcwd()
+        except OSError:
+            os.chdir(tempfile.gettempdir())
+        return super().process(events)
+
     def export_skimmed_chunk(self):
         """Export a skim through stable worker-local scratch.
 
