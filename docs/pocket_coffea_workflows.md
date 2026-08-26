@@ -156,6 +156,13 @@ event and disappearing-track cut. The explicit `highPurity for 4-layer tracks`
 row is the only definition that differs between them; subsequent rows retain
 that difference. Use `--layers NLayers4` to print only the affected bin.
 
+The cutflow uses PocketCoffea's native categorization and event counting. The
+event and pre-layer rows are `StandardSelection` categories. After the layer
+split, `CartesianSelection` combines independent high-purity, layer-bin, and
+cumulative-stage `MultiCut` axes. This follows PocketCoffea's recommended
+pattern for products larger than the 64-mask `PackedSelection` limit and keeps
+the standard `cutflow`, `sumw`, and `sumw2` outputs.
+
 ### Reusable Z-sideband ROOT skims
 
 The skim requires an inclusive raw-Nano `zmumu` or `zee` Z control preselection and at least one raw

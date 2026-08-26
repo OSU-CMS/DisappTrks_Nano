@@ -18,7 +18,11 @@ import disapptrks.selections as disapptrks_selections
 
 from pocket_coffea.parameters import defaults
 from pocket_coffea.parameters.cuts import passthrough
-from pocket_coffea.lib.categorization import StandardSelection
+from pocket_coffea.lib.categorization import (
+    CartesianSelection,
+    MultiCut,
+    StandardSelection,
+)
 from pocket_coffea.lib.columns_manager import ColOut
 from pocket_coffea.lib.hist_manager import Axis, HistConf
 from pocket_coffea.utils.configurator import Configurator
@@ -49,8 +53,13 @@ from cuts import (
     search_diagnostic_cuts,
     tau_background_diagnostic_cuts,
     search_kinematics,
-    signal_acceptance_cutflow_cuts,
+    SIGNAL_ACCEPTANCE_CARTESIAN_FIELDS,
+    signal_acceptance_common_cutflow_cuts,
+    signal_acceptance_layer_axis_cuts,
+    signal_acceptance_layer_entry_cuts,
     signal_acceptance_layer_cuts,
+    signal_acceptance_stage_cuts,
+    signal_acceptance_variant_axis_cuts,
     single_electron_hlt,
     single_muon_hlt,
     tau_trigger_probability_hlt,
@@ -278,10 +287,6 @@ parameters["disapptrks"] = {
     "search_diagnostics": enable_search_diagnostics,
     "pveto_diagnostics": enable_pveto_diagnostics,
     "lepton_background_categories": enable_lepton_background_categories,
-    # These rows are accumulated directly by DisappTrksProcessor rather than
-    # registered as categories.  Registering all 232 masks would exceed
-    # Coffea PackedSelection's uint64 capacity.
-    "signal_acceptance_cutflow_names": list(signal_acceptance_cutflow_cuts),
 }
 data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 
@@ -618,6 +623,14 @@ elif category_mode == "signal_acceptance":
             name: category_cut_list
             for name, category_cut_list in common_categories.items()
             if name.startswith("signal_selection_")
+        },
+        **{
+            name: [cut]
+            for name, cut in signal_acceptance_common_cutflow_cuts.items()
+        },
+        **{
+            name: [cut]
+            for name, cut in signal_acceptance_layer_entry_cuts.items()
         },
     }
 elif category_mode == "all":
@@ -1249,6 +1262,39 @@ if (
             ),
         ]
 
+if category_mode == "signal_acceptance":
+    category_selection = CartesianSelection(
+        multicuts=[
+            MultiCut(
+                name="high_purity_variant",
+                cuts=signal_acceptance_variant_axis_cuts,
+                cuts_names=[
+                    "signal_cutflow_without_high_purity",
+                    "signal_cutflow_with_high_purity",
+                ],
+            ),
+            MultiCut(
+                name="layer_bin",
+                cuts=signal_acceptance_layer_axis_cuts,
+                cuts_names=[
+                    "NLayers4",
+                    "NLayers5",
+                    "NLayers6plus",
+                    "combinedBins",
+                ],
+            ),
+            MultiCut(
+                name="cutflow_stage",
+                cuts=signal_acceptance_stage_cuts,
+                cuts_names=list(SIGNAL_ACCEPTANCE_CARTESIAN_FIELDS),
+            ),
+        ],
+        common_cats=StandardSelection(selected_categories),
+    )
+else:
+    category_selection = StandardSelection(selected_categories)
+
+
 cfg = Configurator(
     parameters=parameters,
     datasets={
@@ -1259,7 +1305,7 @@ cfg = Configurator(
     calibrators=[],
     skim=skim_cuts,
     preselections=data_quality_cuts,
-    categories=StandardSelection(selected_categories),
+    categories=category_selection,
     weights={"common": {"inclusive": []}, "bysample": {}},
     weights_classes=[],
     variations={"weights": {"common": {"inclusive": []}}},

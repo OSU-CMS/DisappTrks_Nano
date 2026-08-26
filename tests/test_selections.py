@@ -9,6 +9,7 @@ from disapptrks.selections import (
     fiducial_map_probe_track_mask,
     fake_track_no_d0_mask,
     hadronic_tau_control_object_mask,
+    layer_mask,
     met_no_mu_minus_lepton,
     muon_veto_probe_track_mask,
     search_track_cutflow_masks,
@@ -105,6 +106,50 @@ def test_signal_track_comparison_changes_only_four_layer_high_purity():
     assert ak.to_list(nominal_cutflow["track_layers4plus"]) == [[True, True]]
     assert ak.to_list(nominal_cutflow["track_highPurity4Layer"]) == [[False, True]]
     assert ak.to_list(comparison_cutflow["track_highPurity4Layer"]) == [[True, True]]
+
+
+def test_signal_cartesian_axes_reproduce_post_high_purity_cutflows():
+    base = {
+        "pt": 100.0, "eta": 0.8, "dxy": 0.01, "dz": 0.1,
+        "inECALCrack": False, "inDTWheelGap": False,
+        "inCSCTransition": False, "inTOBCrack": False,
+        "isFiducialECALTrack": True, "hp_nValidPixelHits": 4,
+        "hp_nValidHits": 4, "missingInnerHits": 0, "missingMiddleHits": 0,
+        "missingOuterHits": 3, "pfRelIso03_chg": 0.01, "dRMinJet": 1.0,
+        "dRMinElectron": 1.0, "dRMinMuon": 1.0, "dRMinTauHad": 1.0,
+        "caloEnergy": 1.0,
+    }
+    tracks = ak.Array([[
+        {**base, "hp_trackerLayersWithMeasurement": 4, "isHighPurityTrack": False},
+        {**base, "hp_trackerLayersWithMeasurement": 4, "isHighPurityTrack": True},
+        {**base, "hp_trackerLayersWithMeasurement": 5, "isHighPurityTrack": False},
+        {**base, "hp_trackerLayersWithMeasurement": 6, "isHighPurityTrack": False},
+    ]])
+    generic = search_track_cutflow_masks(
+        tracks,
+        layer="combinedBins",
+        require_four_layer_high_purity=False,
+    )
+    post_high_purity_fields = list(generic)[
+        list(generic).index("track_highPurity4Layer"):
+    ]
+
+    for layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+        layer_axis = layer_mask(tracks, layer)
+        for require_high_purity in (False, True):
+            variant_axis = (
+                (~layer_mask(tracks, "NLayers4") | tracks.isHighPurityTrack)
+                if require_high_purity
+                else ak.ones_like(tracks.pt, dtype=bool)
+            )
+            expected = search_track_cutflow_masks(
+                tracks,
+                layer=layer,
+                require_four_layer_high_purity=require_high_purity,
+            )
+            for field in post_high_purity_fields:
+                factored = generic[field] & layer_axis & variant_axis
+                assert ak.to_list(factored) == ak.to_list(expected[field])
 
 
 def test_met_no_mu_minus_muon_does_not_add_muon_twice():

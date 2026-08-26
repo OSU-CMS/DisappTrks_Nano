@@ -964,17 +964,6 @@ def _jet_veto_map_mask(
 
 
 class DisappTrksProcessor(BaseProcessorABC):
-    def __init__(self, cfg):
-        super().__init__(cfg)
-        if self._category_mode() != "signal_acceptance":
-            return
-        try:
-            cutflow_names = self.params.disapptrks.signal_acceptance_cutflow_names
-        except Exception:
-            cutflow_names = ()
-        for name in cutflow_names:
-            self.output_format["cutflow"].setdefault(str(name), {})
-
     def process(self, events):
         """Run a chunk from a stable working directory.
 
@@ -989,33 +978,6 @@ class DisappTrksProcessor(BaseProcessorABC):
         except OSError:
             os.chdir(tempfile.gettempdir())
         return super().process(events)
-
-    def count_events(self, variation):
-        """Count standard categories plus the expanded signal cutflow rows.
-
-        PocketCoffea stores every category cut in one uint64 PackedSelection,
-        so the 232 diagnostic rows cannot safely be modeled as categories.
-        Their already-computed event masks are instead summed directly into
-        the ordinary cutflow accumulator.
-        """
-
-        super().count_events(variation)
-        if self._category_mode() != "signal_acceptance":
-            return
-
-        for variant_key, collection_prefix in (
-            ("without_high_purity", "SignalAcceptanceWithoutHighPurity"),
-            ("with_high_purity", "SignalAcceptanceWithHighPurity"),
-        ):
-            for layer in (*PVETO_LAYERS, "combinedBins"):
-                diagnostics = self.events[f"{collection_prefix}_{layer}"]
-                for field in diagnostics.fields:
-                    category = f"signal_cutflow_{variant_key}_{layer}_{field}"
-                    self.output["cutflow"].setdefault(category, {}).setdefault(
-                        self._dataset, {}
-                    ).setdefault(self._sample, {})[variation] = ak.sum(
-                        diagnostics[field]
-                    )
 
     def export_skimmed_chunk(self):
         """Export a skim through stable worker-local scratch.
@@ -2839,29 +2801,49 @@ class DisappTrksProcessor(BaseProcessorABC):
             else None
         )
 
-        for variant, require_high_purity in (
-            ("WithoutHighPurity", False),
-            ("WithHighPurity", True),
-        ):
-            for layer in (*PVETO_LAYERS, "combinedBins"):
-                track_masks = search_track_cutflow_masks(
-                    self.events.IsoTrack,
-                    layer=layer,
-                    require_four_layer_high_purity=require_high_purity,
-                )
-                diagnostics = dict(event_masks)
-                after_fiducial_selection = False
-                for name, track_mask in track_masks.items():
-                    if name == "track_fiducialECAL":
-                        after_fiducial_selection = True
-                    if after_fiducial_selection and fiducial_mask is not None:
-                        track_mask = track_mask & fiducial_mask
-                    diagnostics[name] = basic_event_mask & (
-                        ak.num(self.events.IsoTrack[track_mask]) >= 1
-                    )
-                self.events[f"SignalAcceptance{variant}_{layer}"] = ak.zip(
-                    diagnostics
-                )
+        def apply_fiducial_mask(track_masks):
+            updated = {}
+            after_fiducial_selection = False
+            for name, track_mask in track_masks.items():
+                if name == "track_fiducialECAL":
+                    after_fiducial_selection = True
+                if after_fiducial_selection and fiducial_mask is not None:
+                    track_mask = track_mask & fiducial_mask
+                updated[name] = track_mask
+            return updated
+
+        # CartesianSelection combines these per-track cumulative stages with
+        # independent layer and high-purity axes.  Keeping them jagged ensures
+        # all requirements are applied to the same candidate track.
+        generic_track_masks = apply_fiducial_mask(
+            search_track_cutflow_masks(
+                self.events.IsoTrack,
+                layer="combinedBins",
+                require_four_layer_high_purity=False,
+            )
+        )
+        self.events["SignalAcceptanceBasicEvent"] = basic_event_mask
+        self.events["SignalAcceptanceTrackStages"] = ak.zip(generic_track_masks)
+
+        common_diagnostics = dict(event_masks)
+        for name, track_mask in generic_track_masks.items():
+            if name == "track_layers4plus":
+                break
+            common_diagnostics[name] = basic_event_mask & (
+                ak.num(self.events.IsoTrack[track_mask]) >= 1
+            )
+        self.events["SignalAcceptanceCommon"] = ak.zip(common_diagnostics)
+
+        layer_entry_diagnostics = {}
+        layer_entry_mask = generic_track_masks["track_layers4plus"]
+        for layer in (*PVETO_LAYERS, "combinedBins"):
+            selected_tracks = layer_entry_mask & layer_mask(self.events.IsoTrack, layer)
+            layer_entry_diagnostics[layer] = basic_event_mask & (
+                ak.num(self.events.IsoTrack[selected_tracks]) >= 1
+            )
+        self.events["SignalAcceptanceLayerEntry"] = ak.zip(
+            layer_entry_diagnostics
+        )
 
     def _store_fake_track_diagnostics(self):
         event_search_kinematics = search_event_cutflow_masks(

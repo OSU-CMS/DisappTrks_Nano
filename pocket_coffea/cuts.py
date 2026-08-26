@@ -13,7 +13,11 @@ from pocket_coffea.lib.cut_definition import Cut
 from pocket_coffea.lib.cut_functions import apply_golden_json, get_JetVetoMap_Mask
 
 from disapptrks.triggers import ISO_MUON_REFERENCE_TRIGGER, tau_cross_trigger_for_year
-from disapptrks.selections import invariant_mass, single_electron_trigger_mask
+from disapptrks.selections import (
+    invariant_mass,
+    layer_mask,
+    single_electron_trigger_mask,
+)
 
 
 EVENT_DIAGNOSTIC_FIELDS = [
@@ -50,8 +54,14 @@ TRACK_DIAGNOSTIC_FIELDS = [
     "track_tauVeto",
 ]
 
-SIGNAL_ACCEPTANCE_CUTFLOW_FIELDS = tuple(
-    EVENT_DIAGNOSTIC_FIELDS + TRACK_DIAGNOSTIC_FIELDS
+SIGNAL_ACCEPTANCE_PRE_LAYER_FIELDS = tuple(
+    EVENT_DIAGNOSTIC_FIELDS
+    + TRACK_DIAGNOSTIC_FIELDS[: TRACK_DIAGNOSTIC_FIELDS.index("track_layers4plus")]
+)
+SIGNAL_ACCEPTANCE_CARTESIAN_FIELDS = tuple(
+    TRACK_DIAGNOSTIC_FIELDS[
+        TRACK_DIAGNOSTIC_FIELDS.index("track_highPurity4Layer"):
+    ]
 )
 
 FAKE_TRACK_DIAGNOSTIC_FIELDS = [
@@ -686,8 +696,29 @@ def _search_diagnostic(events, params, **kwargs):
     return events.SearchDiag[params["field"]]
 
 
-def _signal_acceptance_cutflow(events, params, **kwargs):
-    return events[params["collection"]][params["field"]]
+def _signal_acceptance_common_cutflow(events, params, **kwargs):
+    return events.SignalAcceptanceCommon[params["field"]]
+
+
+def _signal_acceptance_track_stage(events, params, **kwargs):
+    return (
+        events.SignalAcceptanceBasicEvent
+        & events.SignalAcceptanceTrackStages[params["field"]]
+    )
+
+
+def _signal_acceptance_layer_entry(events, params, **kwargs):
+    return events.SignalAcceptanceLayerEntry[params["layer"]]
+
+
+def _signal_acceptance_layer(events, params, **kwargs):
+    return layer_mask(events.IsoTrack, params["layer"])
+
+
+def _signal_acceptance_variant(events, params, **kwargs):
+    if not params["require_high_purity"]:
+        return ak.ones_like(events.IsoTrack.pt, dtype=bool)
+    return ~layer_mask(events.IsoTrack, "NLayers4") | events.IsoTrack.isHighPurityTrack
 
 
 def _fake_track_diagnostic(events, params, **kwargs):
@@ -867,22 +898,54 @@ for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
         function=_has_count,
     )
 
-signal_acceptance_cutflow_cuts = {}
-for _variant_key, _collection_prefix in (
-    ("without_high_purity", "SignalAcceptanceWithoutHighPurity"),
-    ("with_high_purity", "SignalAcceptanceWithHighPurity"),
-):
-    for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
-        for _field in SIGNAL_ACCEPTANCE_CUTFLOW_FIELDS:
-            _name = f"signal_cutflow_{_variant_key}_{_layer}_{_field}"
-            signal_acceptance_cutflow_cuts[_name] = Cut(
-                name=_name,
-                params={
-                    "collection": f"{_collection_prefix}_{_layer}",
-                    "field": _field,
-                },
-                function=_signal_acceptance_cutflow,
-            )
+signal_acceptance_common_cutflow_cuts = {}
+for _field in SIGNAL_ACCEPTANCE_PRE_LAYER_FIELDS:
+    _name = f"signal_cutflow_common_{_field}"
+    signal_acceptance_common_cutflow_cuts[_name] = Cut(
+        name=_name,
+        params={"field": _field},
+        function=_signal_acceptance_common_cutflow,
+    )
+
+signal_acceptance_layer_entry_cuts = {}
+for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+    _name = f"signal_cutflow_layer_{_layer}_track_layers4plus"
+    signal_acceptance_layer_entry_cuts[_name] = Cut(
+        name=_name,
+        params={"layer": _layer},
+        function=_signal_acceptance_layer_entry,
+    )
+
+signal_acceptance_stage_cuts = [
+    Cut(
+        name=f"signal_stage_{_field}",
+        params={"field": _field},
+        function=_signal_acceptance_track_stage,
+        collection="IsoTrack",
+    )
+    for _field in SIGNAL_ACCEPTANCE_CARTESIAN_FIELDS
+]
+signal_acceptance_layer_axis_cuts = [
+    Cut(
+        name=f"signal_layer_{_layer}",
+        params={"layer": _layer},
+        function=_signal_acceptance_layer,
+        collection="IsoTrack",
+    )
+    for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins")
+]
+signal_acceptance_variant_axis_cuts = [
+    Cut(
+        name=f"signal_variant_{_variant}",
+        params={"require_high_purity": _require_high_purity},
+        function=_signal_acceptance_variant,
+        collection="IsoTrack",
+    )
+    for _variant, _require_high_purity in (
+        ("without_high_purity", False),
+        ("with_high_purity", True),
+    )
+]
 
 golden_json_lumi = Cut(
     name="golden_json_lumi",

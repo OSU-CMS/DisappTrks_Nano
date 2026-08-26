@@ -1980,17 +1980,34 @@ def _summarize_signal_high_purity_command(args: argparse.Namespace) -> int:
                 variation=args.variation,
             )
             print(f"{label:<42} {count:14.6g} {count:14.6g} {1.0:11.2%}")
+        reached_high_purity_split = False
         for field, label in stages:
+            if field == "track_highPurity4Layer":
+                reached_high_purity_split = True
+            if reached_high_purity_split:
+                without_category = (
+                    f"signal_cutflow_without_high_purity_{layer}_{field}"
+                )
+                with_category = f"signal_cutflow_with_high_purity_{layer}_{field}"
+            elif field == "track_layers4plus":
+                without_category = with_category = (
+                    f"signal_cutflow_layer_{layer}_track_layers4plus"
+                )
+            else:
+                # Before the layer-bin split, the two variants and all layer
+                # bins are identical. PocketCoffea stores these once as common
+                # StandardSelection categories.
+                without_category = with_category = f"signal_cutflow_common_{field}"
             without = cutflow_count(
                 cutflow,
-                f"signal_cutflow_without_high_purity_{layer}_{field}",
+                without_category,
                 dataset=args.dataset,
                 sample=args.sample,
                 variation=args.variation,
             )
             with_hp = cutflow_count(
                 cutflow,
-                f"signal_cutflow_with_high_purity_{layer}_{field}",
+                with_category,
                 dataset=args.dataset,
                 sample=args.sample,
                 variation=args.variation,
