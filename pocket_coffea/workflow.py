@@ -2033,8 +2033,27 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["IsoTrackSearchPreLeptonVeto"] = self.events.IsoTrack[
             search_diagnostic_masks["track_missingOuter3"]
         ]
-        self.events["IsoTrackSearch"] = self.events.IsoTrack[
-            search_track_mask(self.events.IsoTrack)
+        search_mask = search_track_mask(self.events.IsoTrack)
+        search_no_high_purity_mask = search_track_mask(
+            self.events.IsoTrack,
+            require_four_layer_high_purity=False,
+        )
+        if self._category_mode() == "signal_acceptance":
+            fiducial_hot_spots = self._lepton_fiducial_hot_spots(
+                "electron", "muon"
+            )
+            if fiducial_hot_spots:
+                fiducial_mask = _outside_fiducial_hot_spots(
+                    self.events.IsoTrack,
+                    fiducial_hot_spots,
+                )
+                search_mask = search_mask & fiducial_mask
+                search_no_high_purity_mask = (
+                    search_no_high_purity_mask & fiducial_mask
+                )
+        self.events["IsoTrackSearch"] = self.events.IsoTrack[search_mask]
+        self.events["IsoTrackSearchNoHighPurity"] = self.events.IsoTrack[
+            search_no_high_purity_mask
         ]
         self.events["IsoTrackSearchHighPurity"] = self.events.IsoTrackSearch[
             self.events.IsoTrackSearch.isHighPurityTrack
@@ -2085,10 +2104,18 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events.IsoTrackSearchPreLeptonVeto
         )
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
+        self.events["nIsoTrackSearchNoHighPurity"] = ak.num(
+            self.events.IsoTrackSearchNoHighPurity
+        )
         self.events["nIsoTrackSearchHighPurity"] = ak.num(
             self.events.IsoTrackSearchHighPurity
         )
         for layer in ("NLayers4", "NLayers5", "NLayers6plus"):
+            self.events[f"nIsoTrackSearchNoHighPurity_{layer}"] = ak.num(
+                self.events.IsoTrackSearchNoHighPurity[
+                    layer_mask(self.events.IsoTrackSearchNoHighPurity, layer)
+                ]
+            )
             self.events[f"nIsoTrackSearch_{layer}"] = ak.num(
                 self.events.IsoTrackSearch[layer_mask(self.events.IsoTrackSearch, layer)]
             )
@@ -2097,6 +2124,10 @@ class DisappTrksProcessor(BaseProcessorABC):
                     layer_mask(self.events.IsoTrackSearchHighPurity, layer)
                 ]
             )
+        self.events["nIsoTrackSearchNoHighPurity_combinedBins"] = (
+            self.events.nIsoTrackSearchNoHighPurity
+        )
+        self.events["nIsoTrackSearch_combinedBins"] = self.events.nIsoTrackSearch
 
     def _has_eta_leg(self, collection_name, eta_max=2.1):
         if collection_name not in self.events.fields:
@@ -2948,6 +2979,24 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events.IsoTrackSearchPreLeptonVeto
         )
         self.events["nIsoTrackSearch"] = ak.num(self.events.IsoTrackSearch)
+        self.events["nIsoTrackSearchNoHighPurity"] = ak.num(
+            self.events.IsoTrackSearchNoHighPurity
+        )
+        for layer in PVETO_LAYERS:
+            self.events[f"nIsoTrackSearchNoHighPurity_{layer}"] = ak.num(
+                self.events.IsoTrackSearchNoHighPurity[
+                    layer_mask(self.events.IsoTrackSearchNoHighPurity, layer)
+                ]
+            )
+            self.events[f"nIsoTrackSearch_{layer}"] = ak.num(
+                self.events.IsoTrackSearch[
+                    layer_mask(self.events.IsoTrackSearch, layer)
+                ]
+            )
+        self.events["nIsoTrackSearchNoHighPurity_combinedBins"] = (
+            self.events.nIsoTrackSearchNoHighPurity
+        )
+        self.events["nIsoTrackSearch_combinedBins"] = self.events.nIsoTrackSearch
 
         fake_fiducial_hot_spots = self._lepton_fiducial_hot_spots("electron", "muon")
         fake_basic3hits_d0_signal = self.events.IsoTrack[

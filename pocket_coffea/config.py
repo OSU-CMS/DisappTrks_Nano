@@ -315,6 +315,8 @@ def _skim_cuts_for_mode(mode, sample):
             return [single_electron_hlt]
         if sample in ("DATA_JetMET", "DATA_MET"):
             return [met_hlt]
+    if mode == "signal_acceptance":
+        return [met_hlt]
     return []
 
 
@@ -440,8 +442,6 @@ common_categories = {
 for _name, _cut in signal_acceptance_layer_cuts.items():
     common_categories[_name] = [
         basic_event_selection,
-        isolated_track_selection,
-        candidate_track_selection,
         _cut,
     ]
 muon_pveto_categories = {
@@ -607,7 +607,14 @@ elif category_mode == "fiducial_maps":
         "inclusive": common_categories["inclusive"],
     }
 elif category_mode == "signal_acceptance":
-    selected_categories = common_categories
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        **{
+            name: category_cut_list
+            for name, category_cut_list in common_categories.items()
+            if name.startswith("signal_selection_")
+        },
+    }
 elif category_mode == "all":
     selected_categories = {
         **common_categories,

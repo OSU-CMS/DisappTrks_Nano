@@ -1813,6 +1813,42 @@ def _plot_high_purity_study_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _summarize_signal_high_purity_command(args: argparse.Namespace) -> int:
+    cutflow = _load_merged_cutflow(args.files)
+    rows = (
+        ("combined", "combinedBins"),
+        ("4 layers", "NLayers4"),
+        ("5 layers", "NLayers5"),
+        (">=6 layers", "NLayers6plus"),
+    )
+    print(
+        f"{'category':<12} {'without HP':>14} {'with HP':>14} "
+        f"{'retained':>12} {'lost':>12}"
+    )
+    for label, layer in rows:
+        without = cutflow_count(
+            cutflow,
+            f"signal_selection_without_high_purity_{layer}",
+            dataset=args.dataset,
+            sample=args.sample,
+            variation=args.variation,
+        )
+        with_hp = cutflow_count(
+            cutflow,
+            f"signal_selection_with_high_purity_{layer}",
+            dataset=args.dataset,
+            sample=args.sample,
+            variation=args.variation,
+        )
+        retained = with_hp / without if without else float("nan")
+        lost = 1.0 - retained
+        print(
+            f"{label:<12} {without:14.6g} {with_hp:14.6g} "
+            f"{retained:11.2%} {lost:11.2%}"
+        )
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(prog="disapptrks")
     subparsers = parser.add_subparsers(dest="command")
@@ -2700,6 +2736,19 @@ def main():
     high_purity_study.add_argument("--output-dir", type=Path, default=Path("plots/high_purity_study"))
     high_purity_study.add_argument("--title-prefix", default="")
     high_purity_study.set_defaults(func=_plot_high_purity_study_command)
+
+    signal_high_purity = subparsers.add_parser(
+        "summarize-signal-high-purity",
+        help=(
+            "Compare the full signal selection before and after the nominal "
+            "four-layer highPurity requirement."
+        ),
+    )
+    signal_high_purity.add_argument("files", nargs="+", type=Path)
+    signal_high_purity.add_argument("--dataset", help="Restrict to one dataset key.")
+    signal_high_purity.add_argument("--sample", help="Restrict to one sample key.")
+    signal_high_purity.add_argument("--variation", default="nominal")
+    signal_high_purity.set_defaults(func=_summarize_signal_high_purity_command)
 
     fake_tracks = subparsers.add_parser(
         "estimate-fake-tracks",

@@ -842,17 +842,19 @@ has_high_purity_disappearing_track = Cut(
 )
 
 signal_acceptance_layer_cuts = {}
-for _layer in ("NLayers4", "NLayers5", "NLayers6plus"):
-    signal_acceptance_layer_cuts[f"disappearing_track_selection_{_layer}"] = Cut(
-        name=f"has_disappearing_track_{_layer}",
-        params={"field": f"nIsoTrackSearch_{_layer}", "minimum": 1},
+for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+    signal_acceptance_layer_cuts[
+        f"signal_selection_without_high_purity_{_layer}"
+    ] = Cut(
+        name=f"has_signal_track_without_high_purity_{_layer}",
+        params={"field": f"nIsoTrackSearchNoHighPurity_{_layer}", "minimum": 1},
         function=_has_count,
     )
     signal_acceptance_layer_cuts[
-        f"disappearing_track_selection_high_purity_{_layer}"
+        f"signal_selection_with_high_purity_{_layer}"
     ] = Cut(
-        name=f"has_high_purity_disappearing_track_{_layer}",
-        params={"field": f"nIsoTrackSearchHighPurity_{_layer}", "minimum": 1},
+        name=f"has_signal_track_with_high_purity_{_layer}",
+        params={"field": f"nIsoTrackSearch_{_layer}", "minimum": 1},
         function=_has_count,
     )
 

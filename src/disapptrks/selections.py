@@ -571,6 +571,7 @@ def base_probe_track_mask(
     apply_jet_cut: bool = True,
     apply_calo_cut: bool = True,
     apply_outer_hits_cut: bool = False,
+    require_four_layer_high_purity: bool = True,
 ):
     mask = (
         (tracks.pt > pt_min)
@@ -587,7 +588,11 @@ def base_probe_track_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dxy) < 0.02)
         & (abs(tracks.dz) < 0.5)
-        & analysis_layer_mask(tracks, layer)
+        & (
+            analysis_layer_mask(tracks, layer)
+            if require_four_layer_high_purity
+            else layer_mask(tracks, layer)
+        )
     )
     if apply_jet_cut:
         mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
@@ -1186,13 +1191,19 @@ def muon_probe_pair_layer_mask(pairs, layer: str):
     raise ValueError(f"unknown layer bin: {layer}")
 
 
-def search_track_mask(tracks, *, layer: str = "combinedBins"):
+def search_track_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_four_layer_high_purity: bool = True,
+):
     return base_probe_track_mask(
         tracks,
         pt_min=55.0,
         layer=layer,
         apply_calo_cut=True,
         apply_outer_hits_cut=True,
+        require_four_layer_high_purity=require_four_layer_high_purity,
     ) & (
         ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
         & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
