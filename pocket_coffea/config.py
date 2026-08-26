@@ -278,6 +278,10 @@ parameters["disapptrks"] = {
     "search_diagnostics": enable_search_diagnostics,
     "pveto_diagnostics": enable_pveto_diagnostics,
     "lepton_background_categories": enable_lepton_background_categories,
+    # These rows are accumulated directly by DisappTrksProcessor rather than
+    # registered as categories.  Registering all 232 masks would exceed
+    # Coffea PackedSelection's uint64 capacity.
+    "signal_acceptance_cutflow_names": list(signal_acceptance_cutflow_cuts),
 }
 data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 
@@ -614,10 +618,6 @@ elif category_mode == "signal_acceptance":
             name: category_cut_list
             for name, category_cut_list in common_categories.items()
             if name.startswith("signal_selection_")
-        },
-        **{
-            name: [cut]
-            for name, cut in signal_acceptance_cutflow_cuts.items()
         },
     }
 elif category_mode == "all":

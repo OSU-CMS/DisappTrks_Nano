@@ -964,6 +964,17 @@ def _jet_veto_map_mask(
 
 
 class DisappTrksProcessor(BaseProcessorABC):
+    def __init__(self, cfg):
+        super().__init__(cfg)
+        if self._category_mode() != "signal_acceptance":
+            return
+        try:
+            cutflow_names = self.params.disapptrks.signal_acceptance_cutflow_names
+        except Exception:
+            cutflow_names = ()
+        for name in cutflow_names:
+            self.output_format["cutflow"].setdefault(str(name), {})
+
     def process(self, events):
         """Run a chunk from a stable working directory.
 
@@ -978,6 +989,33 @@ class DisappTrksProcessor(BaseProcessorABC):
         except OSError:
             os.chdir(tempfile.gettempdir())
         return super().process(events)
+
+    def count_events(self, variation):
+        """Count standard categories plus the expanded signal cutflow rows.
+
+        PocketCoffea stores every category cut in one uint64 PackedSelection,
+        so the 232 diagnostic rows cannot safely be modeled as categories.
+        Their already-computed event masks are instead summed directly into
+        the ordinary cutflow accumulator.
+        """
+
+        super().count_events(variation)
+        if self._category_mode() != "signal_acceptance":
+            return
+
+        for variant_key, collection_prefix in (
+            ("without_high_purity", "SignalAcceptanceWithoutHighPurity"),
+            ("with_high_purity", "SignalAcceptanceWithHighPurity"),
+        ):
+            for layer in (*PVETO_LAYERS, "combinedBins"):
+                diagnostics = self.events[f"{collection_prefix}_{layer}"]
+                for field in diagnostics.fields:
+                    category = f"signal_cutflow_{variant_key}_{layer}_{field}"
+                    self.output["cutflow"].setdefault(category, {}).setdefault(
+                        self._dataset, {}
+                    ).setdefault(self._sample, {})[variation] = ak.sum(
+                        diagnostics[field]
+                    )
 
     def export_skimmed_chunk(self):
         """Export a skim through stable worker-local scratch.
