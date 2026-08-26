@@ -89,12 +89,14 @@ SingleElectron/EGamma skim.
 ### High-purity input study
 
 This mode keeps the nominal Z control-region and fake-track sideband selection,
-but deliberately forms its track collection before the four-layer
-`isHighPurityTrack` requirement. It books only the requested input-variable
-histograms and the inclusive category. The default is the four-layer bin. An
-inclusive raw-Nano Z-pair plus broad four-layer d0-sideband skim is applied
-first, so expensive derived-object construction runs only on potentially
-relevant events; the exact downstream selection is unchanged.
+but deliberately forms one track collection before the `isHighPurityTrack`
+requirement. A native PocketCoffea `CartesianSelection` applies the
+before/with-high-purity and requested-layer axes to that collection. Each input
+feature is booked once and filled in those track-level categories. The default
+is the four-layer bin. An inclusive raw-Nano Z-pair plus broad four-layer
+d0-sideband skim is applied first, so expensive derived-object construction
+runs only on potentially relevant events; the exact downstream selection is
+unchanged.
 
 ```bash
 DISAPPTRKS_CATEGORY_MODE=high_purity_study \

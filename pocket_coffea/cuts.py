@@ -721,6 +721,17 @@ def _signal_acceptance_variant(events, params, **kwargs):
     return ~layer_mask(events.IsoTrack, "NLayers4") | events.IsoTrack.isHighPurityTrack
 
 
+def _high_purity_study_selection(events, params, **kwargs):
+    tracks = events.HighPurityStudyTrack
+    if params["require_high_purity"]:
+        return tracks.isHighPurityTrack
+    return ak.ones_like(tracks.pt, dtype=bool)
+
+
+def _high_purity_study_layer(events, params, **kwargs):
+    return layer_mask(events.HighPurityStudyTrack, params["layer"])
+
+
 def _fake_track_diagnostic(events, params, **kwargs):
     return events.FakeTrackDiag[params["field"]]
 
@@ -946,6 +957,28 @@ signal_acceptance_variant_axis_cuts = [
         ("with_high_purity", True),
     )
 ]
+
+high_purity_study_selection_axis_cuts = [
+    Cut(
+        name=f"high_purity_study_{_selection}",
+        params={"require_high_purity": _require_high_purity},
+        function=_high_purity_study_selection,
+        collection="HighPurityStudyTrack",
+    )
+    for _selection, _require_high_purity in (
+        ("before", False),
+        ("pass", True),
+    )
+]
+high_purity_study_layer_axis_cuts = {
+    _layer: Cut(
+        name=f"high_purity_study_layer_{_layer}",
+        params={"layer": _layer},
+        function=_high_purity_study_layer,
+        collection="HighPurityStudyTrack",
+    )
+    for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins")
+}
 
 golden_json_lumi = Cut(
     name="golden_json_lumi",

@@ -1008,9 +1008,30 @@ def plot_high_purity_input_distributions(
         path = output_dir / f"{control}_high_purity_inputs_{layer}.pdf"
         with PdfPages(path) as pdf:
             for field, xlabel in features.items():
-                prefix = f"highPurityStudy{control_key}_{layer}"
-                all_counts, edges = summed_hist_counts_edges(outputs, f"{prefix}_All_{field}", sample=sample)
-                pass_counts, pass_edges = summed_hist_counts_edges(outputs, f"{prefix}_Pass_{field}", sample=sample)
+                variable = f"highPurityStudy{control_key}_{field}"
+                try:
+                    all_counts, edges = summed_hist_counts_edges(
+                        outputs,
+                        variable,
+                        sample=sample,
+                        category=f"high_purity_before_{layer}",
+                    )
+                    pass_counts, pass_edges = summed_hist_counts_edges(
+                        outputs,
+                        variable,
+                        sample=sample,
+                        category=f"high_purity_pass_{layer}",
+                    )
+                except KeyError:
+                    # Read outputs made before the native Cartesian category
+                    # layout was introduced.
+                    prefix = f"highPurityStudy{control_key}_{layer}"
+                    all_counts, edges = summed_hist_counts_edges(
+                        outputs, f"{prefix}_All_{field}", sample=sample
+                    )
+                    pass_counts, pass_edges = summed_hist_counts_edges(
+                        outputs, f"{prefix}_Pass_{field}", sample=sample
+                    )
                 if not np.allclose(edges, pass_edges):
                     raise ValueError(f"before/after binning differs for {field}")
                 n_all, n_pass = float(all_counts.sum()), float(pass_counts.sum())

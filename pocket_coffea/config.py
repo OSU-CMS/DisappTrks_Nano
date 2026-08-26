@@ -40,6 +40,8 @@ from cuts import (
     golden_json_lumi,
     has_disappearing_track,
     has_high_purity_disappearing_track,
+    high_purity_study_layer_axis_cuts,
+    high_purity_study_selection_axis_cuts,
     jet_veto_map,
     lepton_background_cuts,
     lepton_pveto_cuts,
@@ -1159,9 +1161,8 @@ for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to e
 
 
 # Dedicated, sparse sideband study of the variables entering the CMS track
-# high-purity decision.  The workflow fills two nested collections: all tracks
-# before the high-purity requirement and the subset carrying the bit.  Book
-# only requested layer bins (four layers by default) to keep production small.
+# high-purity decision. The workflow builds one pre-highPurity track collection;
+# native CartesianSelection categories apply the before/pass and layer masks.
 high_purity_study_variables = {}
 _high_purity_features = {
     "pt": (100, 50.0, 550.0, r"track $p_T$ [GeV]"),
@@ -1201,17 +1202,27 @@ _high_purity_features = {
 }
 if category_mode == "high_purity_study":
     _study_control_key = "ZMuMu" if fake_track_control_mode == "zmumu" else "Zee"
-    for _study_layer in high_purity_study_layers:
-        for _selection, _selection_label in (("All", "before highPurity"), ("Pass", "with highPurity")):
-            _collection = f"HighPurityStudy{_study_control_key}{_selection}_{_study_layer}"
-            for _field, (_bins, _start, _stop, _label) in _high_purity_features.items():
-                high_purity_study_variables[
-                    f"highPurityStudy{_study_control_key}_{_study_layer}_{_selection}_{_field}"
-                ] = HistConf(
-                    [Axis(coll=_collection, field=_field, bins=_bins, start=_start, stop=_stop,
-                          label=f"{_label} ({_selection_label})")],
-                    only_categories=["inclusive"],
+    _study_categories = [
+        f"high_purity_{selection}_{layer}"
+        for selection in ("before", "pass")
+        for layer in high_purity_study_layers
+    ]
+    for _field, (_bins, _start, _stop, _label) in _high_purity_features.items():
+        high_purity_study_variables[
+            f"highPurityStudy{_study_control_key}_{_field}"
+        ] = HistConf(
+            [
+                Axis(
+                    coll="HighPurityStudyTrack",
+                    field=_field,
+                    bins=_bins,
+                    start=_start,
+                    stop=_stop,
+                    label=_label,
                 )
+            ],
+            only_categories=_study_categories,
+        )
 
 
 sideband_event_columns = {
@@ -1287,6 +1298,25 @@ if category_mode == "signal_acceptance":
                 name="cutflow_stage",
                 cuts=signal_acceptance_stage_cuts,
                 cuts_names=list(SIGNAL_ACCEPTANCE_CARTESIAN_FIELDS),
+            ),
+        ],
+        common_cats=StandardSelection(selected_categories),
+    )
+elif category_mode == "high_purity_study":
+    category_selection = CartesianSelection(
+        multicuts=[
+            MultiCut(
+                name="high_purity_selection",
+                cuts=high_purity_study_selection_axis_cuts,
+                cuts_names=["high_purity_before", "high_purity_pass"],
+            ),
+            MultiCut(
+                name="layer_bin",
+                cuts=[
+                    high_purity_study_layer_axis_cuts[layer]
+                    for layer in high_purity_study_layers
+                ],
+                cuts_names=list(high_purity_study_layers),
             ),
         ],
         common_cats=StandardSelection(selected_categories),

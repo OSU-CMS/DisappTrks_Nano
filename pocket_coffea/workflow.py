@@ -556,7 +556,7 @@ def _fake_track_mask(
 
 
 def _high_purity_study_tracks_for_control(
-    events, control_mask, *, layer, fiducial_hot_spots=()
+    events, control_mask, *, fiducial_hot_spots=()
 ):
     """Sideband candidates before the analysis high-purity requirement.
 
@@ -568,15 +568,14 @@ def _high_purity_study_tracks_for_control(
     tracks = events.IsoTrack[
         _fake_track_mask(
             events.IsoTrack,
-            layer=layer,
+            layer="combinedBins",
             d0_region="sideband",
             fiducial_hot_spots=fiducial_hot_spots,
             require_four_layer_high_purity=False,
         )
     ]
     control_track_mask, _ = ak.broadcast_arrays(control_mask, tracks.pt)
-    tracks = tracks[control_track_mask]
-    return tracks, tracks[tracks.isHighPurityTrack]
+    return tracks[control_track_mask]
 
 
 def _fake_track_count_for_control(
@@ -1066,18 +1065,6 @@ class DisappTrksProcessor(BaseProcessorABC):
             return os.environ.get(
                 "DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS", "1"
             ).lower() in ("1", "true", "yes", "on")
-
-    def _high_purity_study_layers(self):
-        try:
-            return tuple(self.params.disapptrks.high_purity_study_layers)
-        except Exception:
-            return tuple(
-                item.strip()
-                for item in os.environ.get(
-                    "DISAPPTRKS_HIGH_PURITY_STUDY_LAYERS", "NLayers4"
-                ).split(",")
-                if item.strip()
-            )
 
     def _mode_enabled(self, *modes):
         mode = self._category_mode()
@@ -1576,10 +1563,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             and not self._full_workflow_enabled()
         ):
             return
-        if (
-            self._category_mode() == "high_purity_study"
-            and not self._full_workflow_enabled()
-        ):
+        if self._category_mode() == "high_purity_study":
             control = self._fake_track_controls()[0]
             if control == "zmumu":
                 self.events["Muon"] = add_muon_derived_fields(self.events)
@@ -1617,17 +1601,14 @@ class DisappTrksProcessor(BaseProcessorABC):
                 if control == "zmumu"
                 else _z_to_ee_control_mask(self.events, self.events.Electron)
             )
-            control_key = "ZMuMu" if control == "zmumu" else "Zee"
             hot_spots = self._lepton_fiducial_hot_spots("electron", "muon")
-            for layer in self._high_purity_study_layers():
-                all_tracks, passing_tracks = _high_purity_study_tracks_for_control(
+            self.events["HighPurityStudyTrack"] = (
+                _high_purity_study_tracks_for_control(
                     self.events,
                     control_mask,
-                    layer=layer,
                     fiducial_hot_spots=hot_spots,
                 )
-                self.events[f"HighPurityStudy{control_key}All_{layer}"] = all_tracks
-                self.events[f"HighPurityStudy{control_key}Pass_{layer}"] = passing_tracks
+            )
             return
         if (
             "Electron" in self.events.fields
