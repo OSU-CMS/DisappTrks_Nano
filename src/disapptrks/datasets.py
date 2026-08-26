@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Callable
+from urllib.parse import urlsplit
 
 
 def root_files_from_lines(lines: list[str]) -> list[str]:
@@ -41,6 +44,83 @@ def list_eos_root_files(
         text=True,
     )
     return root_files_from_lines(result.stdout.splitlines())
+
+
+def count_root_events(
+    files: list[str],
+    *,
+    tree_name: str = "Events",
+    max_workers: int = 12,
+    timeout: int = 120,
+    progress: Callable[[int, int, str, int], None] | None = None,
+) -> tuple[int, dict[str, int]]:
+    """Count tree entries using only each ROOT file's metadata.
+
+    Files are opened concurrently because XRootD connection latency dominates
+    this operation.  No event branches are read.
+    """
+
+    if max_workers <= 0:
+        raise ValueError("max_workers must be positive")
+
+    try:
+        import uproot
+    except ImportError as exc:
+        raise RuntimeError(
+            "uproot is required for --count-events; install the analysis dependencies"
+        ) from exc
+
+    def count_one(path: str) -> tuple[str, int]:
+        with uproot.open(path, timeout=timeout) as root_file:
+            return path, int(root_file[tree_name].num_entries)
+
+    counts: dict[str, int] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(count_one, path): path for path in files}
+        for completed, future in enumerate(as_completed(futures), 1):
+            path = futures[future]
+            try:
+                _, count = future.result()
+            except Exception as exc:
+                raise RuntimeError(f"failed to count {tree_name} entries in {path}") from exc
+            counts[path] = count
+            if progress is not None:
+                progress(completed, len(files), path, count)
+
+    return sum(counts.values()), counts
+
+
+def signal_point_from_path(path: str, *, marker: str = "SignalSim") -> str | None:
+    """Return the signal-point directory immediately below ``marker``.
+
+    This works for both ``/store/...`` paths and full XRootD URLs.  For example,
+    ``.../SignalSim/AMSB_Wino_M700GeV_ctau1000cm_TuneCP5/...`` maps to
+    ``AMSB_Wino_M700GeV_ctau1000cm_TuneCP5``.
+    """
+
+    url_path = urlsplit(path).path
+    parts = PurePosixPath(url_path).parts
+    try:
+        marker_index = parts.index(marker)
+    except ValueError:
+        return None
+    if marker_index + 1 >= len(parts):
+        return None
+    return parts[marker_index + 1]
+
+
+def group_signal_files(
+    files: list[str], *, marker: str = "SignalSim"
+) -> dict[str, list[str]]:
+    """Group ROOT files by their signal-point directory below ``marker``."""
+
+    grouped: dict[str, list[str]] = {}
+    for path in files:
+        point = signal_point_from_path(path, marker=marker)
+        if point is None:
+            continue
+        grouped.setdefault(point, []).append(path)
+    return {point: sorted(paths) for point, paths in sorted(grouped.items())}
 
 
 @dataclass(frozen=True)

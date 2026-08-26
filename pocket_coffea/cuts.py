@@ -42,12 +42,17 @@ TRACK_DIAGNOSTIC_FIELDS = [
     "track_dz0p5",
     "track_dRJet0p5",
     "track_layers4plus",
+    "track_highPurity4Layer",
     "track_calo10",
     "track_missingOuter3",
     "track_electronVeto",
     "track_muonVeto",
     "track_tauVeto",
 ]
+
+SIGNAL_ACCEPTANCE_CUTFLOW_FIELDS = tuple(
+    EVENT_DIAGNOSTIC_FIELDS + TRACK_DIAGNOSTIC_FIELDS
+)
 
 FAKE_TRACK_DIAGNOSTIC_FIELDS = [
     "track_pt55",
@@ -681,6 +686,10 @@ def _search_diagnostic(events, params, **kwargs):
     return events.SearchDiag[params["field"]]
 
 
+def _signal_acceptance_cutflow(events, params, **kwargs):
+    return events[params["collection"]][params["field"]]
+
+
 def _fake_track_diagnostic(events, params, **kwargs):
     return events.FakeTrackDiag[params["field"]]
 
@@ -857,6 +866,23 @@ for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
         params={"field": f"nIsoTrackSearch_{_layer}", "minimum": 1},
         function=_has_count,
     )
+
+signal_acceptance_cutflow_cuts = {}
+for _variant_key, _collection_prefix in (
+    ("without_high_purity", "SignalAcceptanceWithoutHighPurity"),
+    ("with_high_purity", "SignalAcceptanceWithHighPurity"),
+):
+    for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+        for _field in SIGNAL_ACCEPTANCE_CUTFLOW_FIELDS:
+            _name = f"signal_cutflow_{_variant_key}_{_layer}_{_field}"
+            signal_acceptance_cutflow_cuts[_name] = Cut(
+                name=_name,
+                params={
+                    "collection": f"{_collection_prefix}_{_layer}",
+                    "field": _field,
+                },
+                function=_signal_acceptance_cutflow,
+            )
 
 golden_json_lumi = Cut(
     name="golden_json_lumi",

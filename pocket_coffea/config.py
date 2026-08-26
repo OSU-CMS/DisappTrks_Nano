@@ -49,6 +49,7 @@ from cuts import (
     search_diagnostic_cuts,
     tau_background_diagnostic_cuts,
     search_kinematics,
+    signal_acceptance_cutflow_cuts,
     signal_acceptance_layer_cuts,
     single_electron_hlt,
     single_muon_hlt,
@@ -613,6 +614,10 @@ elif category_mode == "signal_acceptance":
             name: category_cut_list
             for name, category_cut_list in common_categories.items()
             if name.startswith("signal_selection_")
+        },
+        **{
+            name: [cut]
+            for name, cut in signal_acceptance_cutflow_cuts.items()
         },
     }
 elif category_mode == "all":

@@ -8,6 +8,8 @@ from typing import Union
 from . import greet
 from .datasets import (
     build_dataset_definition,
+    count_root_events,
+    group_signal_files,
     group_osunano_files,
     list_eos_root_files,
     root_files_from_lines,
@@ -1027,20 +1029,98 @@ def _make_dataset_json_command(args: argparse.Namespace) -> int:
             recursive=args.recursive,
         )
 
-    dataset = build_dataset_definition(
-        dataset_name=args.dataset_name,
-        files=files,
-        sample=args.sample,
-        year=args.year,
-        era=args.era,
-        primary_dataset=args.primary_dataset,
-        is_mc=args.is_mc,
-        nevents=args.nevents,
-        nano_version=args.nano_version,
-    )
+    if args.is_mc and args.xsec is None:
+        raise SystemExit(
+            "error: --is-mc requires --xsec "
+            "(use --xsec 1.0 for an acceptance-only job)"
+        )
+    if not args.is_mc and args.xsec is not None:
+        raise SystemExit("error: --xsec is only valid together with --is-mc")
+    if args.count_events and str(args.nevents) != "0":
+        raise SystemExit("error: use either --count-events or --nevents, not both")
+    if args.group_signal_points:
+        if args.dataset_name:
+            raise SystemExit(
+                "error: --dataset-name is not used with --group-signal-points; "
+                "dataset names come from the directories below SignalSim"
+            )
+        if not args.is_mc:
+            raise SystemExit("error: --group-signal-points requires --is-mc")
+        if not args.count_events:
+            raise SystemExit(
+                "error: --group-signal-points requires --count-events so every "
+                "signal point gets its own nevents value"
+            )
+    elif not args.dataset_name:
+        raise SystemExit(
+            "error: --dataset-name is required unless --group-signal-points is used"
+        )
+
+    nevents = str(args.nevents)
+    event_counts: dict[str, int] = {}
+    if args.count_events:
+        print(f"Counting Events entries in {len(files)} ROOT file(s)...")
+
+        def report(completed, total, path, count):
+            print(f"[{completed}/{total}] {count:10d}  {path}")
+
+        total_events, event_counts = count_root_events(
+            files,
+            max_workers=args.event_count_workers,
+            timeout=args.event_count_timeout,
+            progress=report,
+        )
+        nevents = str(total_events)
+        print(f"Total Events entries: {nevents}")
+
+    extra_metadata = {"xsec": str(args.xsec)} if args.xsec is not None else None
+    if args.group_signal_points:
+        grouped = group_signal_files(files)
+        classified = {path for paths in grouped.values() for path in paths}
+        unclassified = [path for path in files if path not in classified]
+        if unclassified:
+            raise SystemExit(
+                "error: could not identify SignalSim/<signal-point> for "
+                f"{len(unclassified)} file(s), including {unclassified[0]}"
+            )
+        if not grouped:
+            raise SystemExit("error: no signal points were found below SignalSim")
+
+        dataset = {}
+        for point, point_files in grouped.items():
+            point_nevents = sum(event_counts[path] for path in point_files)
+            dataset.update(
+                build_dataset_definition(
+                    dataset_name=point,
+                    files=point_files,
+                    sample=args.sample,
+                    year=args.year,
+                    era=args.era,
+                    primary_dataset=args.primary_dataset,
+                    is_mc=True,
+                    nevents=str(point_nevents),
+                    nano_version=args.nano_version,
+                    extra_metadata=extra_metadata,
+                )
+            )
+            print(f"{point}: {len(point_files)} file(s), {point_nevents} events")
+    else:
+        dataset = build_dataset_definition(
+            dataset_name=args.dataset_name,
+            files=files,
+            sample=args.sample,
+            year=args.year,
+            era=args.era,
+            primary_dataset=args.primary_dataset,
+            is_mc=args.is_mc,
+            nevents=nevents,
+            nano_version=args.nano_version,
+            extra_metadata=extra_metadata,
+        )
     write_dataset_definition(dataset, args.output)
 
-    print(f"Wrote {len(files)} ROOT files to {args.output}")
+    point_summary = f" in {len(dataset)} dataset(s)" if args.group_signal_points else ""
+    print(f"Wrote {len(files)} ROOT files{point_summary} to {args.output}")
     if not files:
         print("Warning: no ROOT files found")
         return 2
@@ -1846,6 +1926,80 @@ def _summarize_signal_high_purity_command(args: argparse.Namespace) -> int:
             f"{label:<12} {without:14.6g} {with_hp:14.6g} "
             f"{retained:11.2%} {lost:11.2%}"
         )
+
+    if not args.full_cutflow:
+        return 0
+
+    stages = (
+        ("event_metNoMu120", "MET-no-muon >= 120"),
+        ("event_leadingJet110", "leading jet pT > 110"),
+        ("event_leadingJetEta2p4", "leading jet |eta| < 2.4"),
+        ("event_leadingJetTightLepVeto", "leading jet tight-lepton-veto ID"),
+        ("event_dijetDphi2p5", "dijet max delta-phi < 2.5"),
+        ("event_jetMetDphi0p5", "leading jet/MET delta-phi >= 0.5"),
+        ("track_pt55", "track pT > 55"),
+        ("track_eta2p1", "track |eta| < 2.1"),
+        ("track_noECALCrack", "ECAL crack veto"),
+        ("track_noDTWheelGap", "DT wheel-gap veto"),
+        ("track_noCSCTransition", "CSC transition veto"),
+        ("track_noTOBCrack", "TOB crack veto"),
+        ("track_fiducialECAL", "ECAL/electron/muon fiducial vetoes"),
+        ("track_pixelHits4", ">= 4 valid pixel hits"),
+        ("track_validHits4", ">= 4 valid hits"),
+        ("track_noMissingInner", "no missing inner hits"),
+        ("track_noMissingMiddle", "no missing middle hits"),
+        ("track_chargedIso0p05", "charged isolation < 0.05"),
+        ("track_dxy0p02", "|d0| < 0.02"),
+        ("track_dz0p5", "|dz| < 0.5"),
+        ("track_dRJet0p5", "track/jet delta-R > 0.5"),
+        ("track_layers4plus", "layer-bin requirement"),
+        ("track_highPurity4Layer", "highPurity for 4-layer tracks"),
+        ("track_calo10", "calorimeter energy < 10"),
+        ("track_missingOuter3", ">= 3 missing outer hits"),
+        ("track_electronVeto", "electron veto"),
+        ("track_muonVeto", "muon veto"),
+        ("track_tauVeto", "tau veto"),
+    )
+    for layer in args.layers:
+        print(f"\n{layer} cumulative cutflow")
+        print(
+            f"{'selection':<42} {'without HP':>14} {'with HP':>14} "
+            f"{'retained':>12}"
+        )
+        for category, label in (
+            ("initial", "initial events"),
+            ("skim", "MET-trigger skim"),
+            ("presel", "event-quality preselections"),
+        ):
+            if category not in cutflow:
+                continue
+            count = cutflow_count(
+                cutflow,
+                category,
+                dataset=args.dataset,
+                variation=args.variation,
+            )
+            print(f"{label:<42} {count:14.6g} {count:14.6g} {1.0:11.2%}")
+        for field, label in stages:
+            without = cutflow_count(
+                cutflow,
+                f"signal_cutflow_without_high_purity_{layer}_{field}",
+                dataset=args.dataset,
+                sample=args.sample,
+                variation=args.variation,
+            )
+            with_hp = cutflow_count(
+                cutflow,
+                f"signal_cutflow_with_high_purity_{layer}_{field}",
+                dataset=args.dataset,
+                sample=args.sample,
+                variation=args.variation,
+            )
+            retained = with_hp / without if without else float("nan")
+            print(
+                f"{label:<42} {without:14.6g} {with_hp:14.6g} "
+                f"{retained:11.2%}"
+            )
     return 0
 
 
@@ -2748,6 +2902,18 @@ def main():
     signal_high_purity.add_argument("--dataset", help="Restrict to one dataset key.")
     signal_high_purity.add_argument("--sample", help="Restrict to one sample key.")
     signal_high_purity.add_argument("--variation", default="nominal")
+    signal_high_purity.add_argument(
+        "--full-cutflow",
+        action="store_true",
+        help="Print every cumulative event and track selection row.",
+    )
+    signal_high_purity.add_argument(
+        "--layers",
+        nargs="+",
+        default=["NLayers4", "NLayers5", "NLayers6plus", "combinedBins"],
+        choices=("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"),
+        help="Layer-bin cutflows to print with --full-cutflow.",
+    )
     signal_high_purity.set_defaults(func=_summarize_signal_high_purity_command)
 
     fake_tracks = subparsers.add_parser(
@@ -2967,7 +3133,10 @@ def main():
     )
     dataset_json.add_argument("eos_path", nargs="?", help="EOS directory, e.g. /store/user/...")
     dataset_json.add_argument("-o", "--output", type=Path, required=True)
-    dataset_json.add_argument("--dataset-name", required=True)
+    dataset_json.add_argument(
+        "--dataset-name",
+        help="Dataset key (required unless --group-signal-points is used).",
+    )
     dataset_json.add_argument("--sample", default="DATA_Muon")
     dataset_json.add_argument("--year", required=True)
     dataset_json.add_argument("--era", required=True)
@@ -2975,6 +3144,38 @@ def main():
     dataset_json.add_argument("--nevents", default="0")
     dataset_json.add_argument("--nano-version", type=int, default=15)
     dataset_json.add_argument("--is-mc", action="store_true")
+    dataset_json.add_argument(
+        "--xsec",
+        help=(
+            "MC cross section written to metadata. Required with --is-mc; "
+            "use 1.0 when only within-sample acceptance ratios are needed."
+        ),
+    )
+    dataset_json.add_argument(
+        "--count-events",
+        action="store_true",
+        help="Open each ROOT file and set nevents to the exact total Events entries.",
+    )
+    dataset_json.add_argument(
+        "--group-signal-points",
+        action="store_true",
+        help=(
+            "Create one dataset entry per SignalSim/<signal-point> directory. "
+            "Requires --is-mc and --count-events."
+        ),
+    )
+    dataset_json.add_argument(
+        "--event-count-workers",
+        type=int,
+        default=12,
+        help="Concurrent ROOT metadata reads for --count-events. Default: 12.",
+    )
+    dataset_json.add_argument(
+        "--event-count-timeout",
+        type=int,
+        default=120,
+        help="Per-file XRootD open timeout in seconds. Default: 120.",
+    )
     dataset_json.add_argument(
         "--xrootd",
         default="root://cmseos.fnal.gov",

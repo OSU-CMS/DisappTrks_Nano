@@ -77,6 +77,7 @@ Supported modes are:
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
 | `high_purity_study` | `DATA_Muon` or `DATA_EGamma` | Lightweight Z-sideband comparison of track-quality inputs before and after the `highPurity` bit. |
 | `z_sideband_skim` | `DATA_Muon` or `DATA_EGamma` | Writes reusable ROOT skims with an inclusive raw-Nano Z control preselection and a broad four-layer d0-sideband track, without cutting high-purity inputs. |
+| `signal_acceptance` | Signal MC | Full signal-region event and disappearing-track selection before and after the nominal four-layer `highPurity` requirement. |
 | `muon_backgrounds` | `DATA_Muon` | Combined muon plus tau-mu categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
 | `egamma_backgrounds` | `DATA_EGamma` | Combined electron plus tau-ele categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
 | `all` | Diagnostic only | Builds every category; generally too heavy for production. |
@@ -113,6 +114,47 @@ After the job finishes, make one multipage PDF per requested layer bin:
 disapptrks plot-high-purity-study output_all.coffea \
   --control zmumu --sample DATA_Muon --title-prefix 2025
 ```
+
+### Signal acceptance of the high-purity requirement
+
+The `signal_acceptance` mode applies the MET trigger, data-quality machinery
+(with the golden JSON automatically skipped for MC), full basic event
+selection, and full disappearing-track selection. It creates paired final
+categories that are identical except that the nominal category requires the
+`highPurity` bit for four-layer tracks. The five- and six-or-more-layer rows are
+included as closure checks and should not change.
+
+Run with both electron and muon fiducial maps required so the tested selection
+matches the production search selection:
+
+```bash
+DISAPPTRKS_CATEGORY_MODE=signal_acceptance \
+DISAPPTRKS_OUTPUT_VARIANT=chargino700_high_purity \
+DISAPPTRKS_DATASET_JSON=datasets/local_chargino_700.json \
+DISAPPTRKS_DATASET_SAMPLE=SIGNAL_Chargino \
+DISAPPTRKS_DATASET_YEAR=2022_postEE \
+DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS=1 \
+DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON=data/fiducial_maps/electron_fiducial_map_2022EFG_v2.json \
+DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON=data/fiducial_maps/muon_fiducial_map_2022EFG_v2.json \
+python -m pocket_coffea.scripts.runner run \
+  --cfg config.py \
+  --outputdir analysis_output/2022EFG/signal_acceptance/chargino700_high_purity \
+  --executor iterative
+```
+
+Then print the event-level retention:
+
+```bash
+disapptrks summarize-signal-high-purity \
+  analysis_output/2022EFG/signal_acceptance/chargino700_high_purity/output_all.coffea \
+  --sample SIGNAL_Chargino \
+  --full-cutflow
+```
+
+The detailed output contains two parallel cumulative columns for every basic
+event and disappearing-track cut. The explicit `highPurity for 4-layer tracks`
+row is the only definition that differs between them; subsequent rows retain
+that difference. Use `--layers NLayers4` to print only the affected bin.
 
 ### Reusable Z-sideband ROOT skims
 

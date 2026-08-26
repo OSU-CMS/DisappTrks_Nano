@@ -43,6 +43,53 @@ The command uses `xrdfs root://cmseos.fnal.gov ls -u` so the output JSON gets
 full XRootD file URLs. If you already have a text filelist, pass it with
 `--filelist` instead of an EOS path.
 
+For a signal-MC directory, the same command can write all required MC metadata
+and calculate the exact event count directly from the ROOT `Events` trees:
+
+```bash
+disapptrks make-dataset-json /store/user/YOUR_SIGNAL_PATH \
+  --recursive \
+  --dataset-name Chargino700_EOS \
+  --sample SIGNAL_Chargino \
+  --year 2022_postEE \
+  --era EFG \
+  --primary-dataset Signal \
+  --is-mc \
+  --xsec 1.0 \
+  --count-events \
+  --nano-version 12 \
+  -o pocket_coffea/datasets/eos_chargino_700.json
+```
+
+Run it once per independent mass/lifetime point so each point has its own
+dataset key and acceptance result. A physical cross section may replace 1.0
+when normalized yields are also needed.
+
+When all points live below one `SignalSim` directory, make the complete JSON in
+one invocation. The directory immediately below `SignalSim` becomes the dataset
+key, and `nevents` is counted separately for every point:
+
+```bash
+disapptrks make-dataset-json \
+  /store/group/lpcdisapptrks/nano/dev/SignalSim \
+  --recursive \
+  --group-signal-points \
+  --sample SIGNAL_Chargino \
+  --year 2022_postEE \
+  --era EFG \
+  --primary-dataset Signal \
+  --is-mc \
+  --xsec 1.0 \
+  --count-events \
+  --event-count-workers 12 \
+  --nano-version 12 \
+  --xrootd root://cmseosmgm01.fnal.gov:1094 \
+  -o pocket_coffea/datasets/eos_signal_2022_postEE.json
+```
+
+The shared `xsec=1.0` is appropriate for acceptance comparisons. Use physical,
+point-dependent cross sections before interpreting normalized signal yields.
+
 ## PocketCoffea setup
 
 Install this analysis and the recommended PocketCoffea release in one

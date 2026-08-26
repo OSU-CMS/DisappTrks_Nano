@@ -1,14 +1,70 @@
+import sys
+from types import SimpleNamespace
+
 from disapptrks.datasets import (
     build_dataset_definition,
+    count_root_events,
     filter_latest_prod_versions,
+    group_signal_files,
     group_osunano_files,
     is_allowed_osunano_path,
     osunano_area_and_top_dir,
     primary_dataset_from_path,
     root_files_from_lines,
     run_year_era_from_path,
+    signal_point_from_path,
     write_grouped_filelists,
 )
+
+
+def test_signal_files_are_grouped_by_directory_below_signal_sim():
+    point_700 = "AMSB_Wino_M700GeV_ctau1000cm_TuneCP5_13p6TeV_madgraph-pythia8"
+    point_800 = "AMSB_Wino_M800GeV_ctau1000cm_TuneCP5_13p6TeV_madgraph-pythia8"
+    files = [
+        f"root://cmseosmgm01.fnal.gov:1094//store/group/nano/dev/SignalSim/{point_700}/production/date/0000/file_2.root",
+        f"root://cmseosmgm01.fnal.gov:1094//store/group/nano/dev/SignalSim/{point_800}/production/date/0000/file_1.root",
+        f"root://cmseosmgm01.fnal.gov:1094//store/group/nano/dev/SignalSim/{point_700}/production/date/0000/file_1.root",
+    ]
+
+    assert signal_point_from_path(files[0]) == point_700
+    assert group_signal_files(files) == {
+        point_700: sorted((files[0], files[2])),
+        point_800: [files[1]],
+    }
+
+
+def test_signal_point_returns_none_without_signal_sim_directory():
+    assert signal_point_from_path("root://host//store/group/nano/file.root") is None
+
+
+def test_count_root_events_sums_tree_metadata_concurrently(monkeypatch):
+    entries = {"file1.root": 10, "file2.root": 25, "file3.root": 7}
+
+    class FakeRootFile:
+        def __init__(self, path):
+            self.path = path
+
+        def __enter__(self):
+            return {"Events": SimpleNamespace(num_entries=entries[self.path])}
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+    fake_uproot = SimpleNamespace(
+        open=lambda path, timeout: FakeRootFile(path)
+    )
+    monkeypatch.setitem(sys.modules, "uproot", fake_uproot)
+    reports = []
+
+    total, counts = count_root_events(
+        list(entries),
+        max_workers=2,
+        progress=lambda *report: reports.append(report),
+    )
+
+    assert total == 42
+    assert counts == entries
+    assert len(reports) == 3
 
 
 def test_root_files_from_lines_filters_comments_and_non_root_files():

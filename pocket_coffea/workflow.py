@@ -2784,6 +2784,47 @@ class DisappTrksProcessor(BaseProcessorABC):
             diagnostics[f"eventKinematics_{name}"] = event_search_kinematics & mask
         self.events["SearchDiag"] = ak.zip(diagnostics)
 
+    def _store_signal_acceptance_cutflows(self):
+        """Store paired cumulative signal cutflows before/after high purity."""
+
+        event_masks = search_event_cutflow_masks(self.events.AnalysisEvent)
+        basic_event_mask = event_masks["event_jetMetDphi0p5"]
+        fiducial_hot_spots = self._lepton_fiducial_hot_spots(
+            "electron", "muon"
+        )
+        fiducial_mask = (
+            _outside_fiducial_hot_spots(
+                self.events.IsoTrack,
+                fiducial_hot_spots,
+            )
+            if fiducial_hot_spots
+            else None
+        )
+
+        for variant, require_high_purity in (
+            ("WithoutHighPurity", False),
+            ("WithHighPurity", True),
+        ):
+            for layer in (*PVETO_LAYERS, "combinedBins"):
+                track_masks = search_track_cutflow_masks(
+                    self.events.IsoTrack,
+                    layer=layer,
+                    require_four_layer_high_purity=require_high_purity,
+                )
+                diagnostics = dict(event_masks)
+                after_fiducial_selection = False
+                for name, track_mask in track_masks.items():
+                    if name == "track_fiducialECAL":
+                        after_fiducial_selection = True
+                    if after_fiducial_selection and fiducial_mask is not None:
+                        track_mask = track_mask & fiducial_mask
+                    diagnostics[name] = basic_event_mask & (
+                        ak.num(self.events.IsoTrack[track_mask]) >= 1
+                    )
+                self.events[f"SignalAcceptance{variant}_{layer}"] = ak.zip(
+                    diagnostics
+                )
+
     def _store_fake_track_diagnostics(self):
         event_search_kinematics = search_event_cutflow_masks(
             self.events.AnalysisEvent
@@ -2807,7 +2848,9 @@ class DisappTrksProcessor(BaseProcessorABC):
         if mode != "tau_trigger_probability":
             self._count_common_search_fields()
 
-        if mode == "muon_pveto":
+        if mode == "signal_acceptance":
+            self._store_signal_acceptance_cutflows()
+        elif mode == "muon_pveto":
             self._count_muon_pveto_fields()
             self._store_muon_pveto_diagnostics()
         elif mode == "electron_pveto":

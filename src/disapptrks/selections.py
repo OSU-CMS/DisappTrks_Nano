@@ -469,6 +469,7 @@ ISOLATED_TRACK_SELECTION_FIELDS = (
     "track_dz0p5",
     "track_dRJet0p5",
     "track_layers4plus",
+    "track_highPurity4Layer",
 )
 
 
@@ -620,7 +621,7 @@ def isolated_track_selection_mask(
 
     if pt_min == 55.0:
         return isolated_track_selection_cutflow_masks(tracks, layer=layer)[
-            "track_layers4plus"
+            "track_highPurity4Layer"
         ]
 
     return base_probe_track_mask(
@@ -633,21 +634,41 @@ def isolated_track_selection_mask(
     )
 
 
-def isolated_track_selection_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+def isolated_track_selection_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_four_layer_high_purity: bool = True,
+):
     """Cumulative masks through the AN Table-18 isolated-track endpoint."""
 
-    search_masks = search_track_cutflow_masks(tracks, layer=layer)
+    search_masks = search_track_cutflow_masks(
+        tracks,
+        layer=layer,
+        require_four_layer_high_purity=require_four_layer_high_purity,
+    )
     return {
         field: search_masks[field]
         for field in ISOLATED_TRACK_SELECTION_FIELDS
     }
 
 
-def candidate_track_selection_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+def candidate_track_selection_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_four_layer_high_purity: bool = True,
+):
     """Cumulative masks through the AN Table-19 candidate-track endpoint."""
 
-    masks = dict(isolated_track_selection_cutflow_masks(tracks, layer=layer))
-    mask = masks["track_layers4plus"]
+    masks = dict(
+        isolated_track_selection_cutflow_masks(
+            tracks,
+            layer=layer,
+            require_four_layer_high_purity=require_four_layer_high_purity,
+        )
+    )
+    mask = masks["track_highPurity4Layer"]
 
     mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
     masks["track_electronVeto"] = mask
@@ -667,10 +688,21 @@ def candidate_track_selection_mask(tracks, *, layer: str = "combinedBins"):
     return candidate_track_selection_cutflow_masks(tracks, layer=layer)["track_tauVeto"]
 
 
-def disappearing_track_selection_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+def disappearing_track_selection_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_four_layer_high_purity: bool = True,
+):
     """Cumulative masks through the AN Table-20 disappearing-track endpoint."""
 
-    masks = dict(candidate_track_selection_cutflow_masks(tracks, layer=layer))
+    masks = dict(
+        candidate_track_selection_cutflow_masks(
+            tracks,
+            layer=layer,
+            require_four_layer_high_purity=require_four_layer_high_purity,
+        )
+    )
     mask = masks["track_tauVeto"]
 
     mask = mask & (tracks.caloEnergy < 10.0)
@@ -1358,7 +1390,12 @@ def fake_track_sideband_cutflow_masks(
     return masks
 
 
-def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+def search_track_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_four_layer_high_purity: bool = True,
+):
     """Return cumulative track masks for debugging the search-track selection."""
     masks = {}
     mask = tracks.pt > 55.0
@@ -1406,8 +1443,14 @@ def search_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     masks["track_dRJet0p5"] = mask
 
-    mask = mask & analysis_layer_mask(tracks, layer)
+    mask = mask & layer_mask(tracks, layer)
     masks["track_layers4plus"] = mask
+
+    if require_four_layer_high_purity:
+        mask = mask & (
+            ~layer_mask(tracks, "NLayers4") | tracks.isHighPurityTrack
+        )
+    masks["track_highPurity4Layer"] = mask
 
     mask = mask & (tracks.caloEnergy < 10.0)
     masks["track_calo10"] = mask

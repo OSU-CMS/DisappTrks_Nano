@@ -11,6 +11,8 @@ from disapptrks.selections import (
     hadronic_tau_control_object_mask,
     met_no_mu_minus_lepton,
     muon_veto_probe_track_mask,
+    search_track_cutflow_masks,
+    search_track_mask,
 )
 
 
@@ -60,6 +62,49 @@ def test_high_purity_study_can_retain_non_high_purity_four_layer_track():
     )
     assert ak.to_list(nominal) == [[False, True]]
     assert ak.to_list(study) == [[True, True]]
+
+
+def test_signal_track_comparison_changes_only_four_layer_high_purity():
+    base = {
+        "pt": 100.0, "eta": 0.8, "dxy": 0.01, "dz": 0.1,
+        "inECALCrack": False, "inDTWheelGap": False,
+        "inCSCTransition": False, "inTOBCrack": False,
+        "isFiducialECALTrack": True, "hp_nValidPixelHits": 4,
+        "hp_nValidHits": 4, "missingInnerHits": 0, "missingMiddleHits": 0,
+        "missingOuterHits": 3, "pfRelIso03_chg": 0.01, "dRMinJet": 1.0,
+        "dRMinElectron": 1.0, "dRMinMuon": 1.0, "dRMinTauHad": 1.0,
+        "caloEnergy": 1.0,
+    }
+    tracks = ak.Array([[
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 4,
+            "isHighPurityTrack": False,
+        },
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 5,
+            "isHighPurityTrack": False,
+        },
+    ]])
+
+    nominal = search_track_mask(tracks)
+    without_high_purity = search_track_mask(
+        tracks,
+        require_four_layer_high_purity=False,
+    )
+
+    assert ak.to_list(nominal) == [[False, True]]
+    assert ak.to_list(without_high_purity) == [[True, True]]
+
+    nominal_cutflow = search_track_cutflow_masks(tracks)
+    comparison_cutflow = search_track_cutflow_masks(
+        tracks,
+        require_four_layer_high_purity=False,
+    )
+    assert ak.to_list(nominal_cutflow["track_layers4plus"]) == [[True, True]]
+    assert ak.to_list(nominal_cutflow["track_highPurity4Layer"]) == [[False, True]]
+    assert ak.to_list(comparison_cutflow["track_highPurity4Layer"]) == [[True, True]]
 
 
 def test_met_no_mu_minus_muon_does_not_add_muon_twice():
