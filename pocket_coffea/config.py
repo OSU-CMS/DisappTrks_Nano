@@ -314,6 +314,16 @@ def _skim_cuts_for_mode(mode, sample):
 
 skim_cuts = _skim_cuts_for_mode(category_mode, dataset_sample)
 skim_output = None
+if category_mode == "high_purity_study":
+    if fake_track_control_mode not in ("zmumu", "zee"):
+        raise ValueError(
+            "high_purity_study requires DISAPPTRKS_FAKE_TRACK_CONTROL=zmumu or zee"
+        )
+    # This raw-Nano preselection is deliberately inclusive with respect to the
+    # exact downstream Z control and fake-sideband selection.  Applying it at
+    # the framework skim stage avoids constructing expensive derived track
+    # quantities for the overwhelming majority of irrelevant data events.
+    skim_cuts = [z_sideband_skim_cuts[fake_track_control_mode]]
 if category_mode == "z_sideband_skim":
     if fake_track_control_mode not in ("zmumu", "zee"):
         raise ValueError(
