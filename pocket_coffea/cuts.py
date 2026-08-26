@@ -368,8 +368,17 @@ def _local_golden_json_path(mapped_year):
     if env_dir:
         search_dirs.append(Path(env_dir))
     search_dirs.append(Path(__file__).resolve().parent / "data" / "golden_jsons")
-    search_dirs.append(Path.cwd() / "data" / "golden_jsons")
-    search_dirs.append(Path.cwd() / "golden_jsons")
+    # A distributed worker can outlive the temporary directory that was its
+    # cwd when it started.  In that case os.getcwd()/Path.cwd() raises
+    # FileNotFoundError; the module-relative and embedded-payload lookups are
+    # still valid and should be allowed to proceed.
+    try:
+        cwd = Path.cwd()
+    except OSError:
+        cwd = None
+    if cwd is not None:
+        search_dirs.append(cwd / "data" / "golden_jsons")
+        search_dirs.append(cwd / "golden_jsons")
 
     for directory in search_dirs:
         candidates = []

@@ -103,8 +103,13 @@ def _local_golden_json_path_for_config(year: str) -> Path | None:
     if env_dir:
         search_dirs.append(Path(env_dir))
     search_dirs.append(Path(localdir) / "data" / "golden_jsons")
-    search_dirs.append(Path.cwd() / "data" / "golden_jsons")
-    search_dirs.append(Path.cwd() / "golden_jsons")
+    try:
+        cwd = Path.cwd()
+    except OSError:
+        cwd = None
+    if cwd is not None:
+        search_dirs.append(cwd / "data" / "golden_jsons")
+        search_dirs.append(cwd / "golden_jsons")
 
     for directory in search_dirs:
         candidates = [directory / filename for filename in filenames]
