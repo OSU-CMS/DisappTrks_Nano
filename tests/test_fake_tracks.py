@@ -4,12 +4,26 @@ import numpy as np
 import pytest
 
 from disapptrks.fake_tracks import (
+    _hist_counts_edges_with_flow,
     estimate_fake_track_background,
     fit_dxy_transfer_factor,
     fixed_an_transfer_factor_fit,
     write_combined_fake_track_table34_latex,
     write_fake_track_latex,
 )
+
+
+def test_hist_counts_edges_with_flow_keeps_out_of_range_entries():
+    hist = pytest.importorskip("hist")
+    histogram = hist.Hist(hist.axis.Regular(2, 0.0, 2.0, name="value"))
+    histogram.fill(value=[-1.0, 0.25, 1.25, 3.0])
+
+    counts, edges, underflow, overflow = _hist_counts_edges_with_flow(histogram)
+
+    assert counts.tolist() == [1.0, 1.0]
+    assert edges.tolist() == [0.0, 1.0, 2.0]
+    assert underflow == 1.0
+    assert overflow == 1.0
 
 
 def test_folded_dxy_poisson_likelihood_fit_recovers_shape():

@@ -1164,11 +1164,28 @@ for control_key, control_label in (("ZMuMu", r"Z$\to\mu\mu$"), ("Zee", r"Z$\to e
 # high-purity decision. The workflow builds one pre-highPurity track collection;
 # native CartesianSelection categories apply the before/pass and layer masks.
 high_purity_study_variables = {}
+
+# Fake-track candidates have long momentum and fit-quality tails.  Variable
+# binning preserves useful resolution in the core without silently collapsing
+# most candidates into overflow.  Underflow and overflow are still retained
+# and reported by the plotting command.
+_high_purity_pt_edges = (
+    [float(value) for value in range(50, 601, 5)]
+    + [float(value) for value in range(620, 1201, 20)]
+    + [float(value) for value in range(1300, 3001, 100)]
+    + [float(value) for value in range(3500, 10001, 500)]
+)
+_high_purity_pt_err_edges = (
+    [float(value) for value in range(0, 101)]
+    + [float(value) for value in range(105, 501, 5)]
+    + [float(value) for value in range(520, 2001, 20)]
+    + [float(value) for value in range(2100, 10001, 100)]
+)
 _high_purity_features = {
-    "pt": (100, 50.0, 550.0, r"track $p_T$ [GeV]"),
+    "pt": (_high_purity_pt_edges, None, None, r"track $p_T$ [GeV]"),
     "eta": (84, -2.1, 2.1, r"track $\eta$"),
     "phi": (64, -3.2, 3.2, r"track $\phi$"),
-    "trackPtErr": (100, 0.0, 50.0, r"$\delta p_T$ [GeV]"),
+    "trackPtErr": (_high_purity_pt_err_edges, None, None, r"$\delta p_T$ [GeV]"),
     "trackEtaErr": (100, 0.0, 0.05, r"$\delta\eta$"),
     "trackPhiErr": (100, 0.0, 0.05, r"$\delta\phi$ [rad]"),
     "innerPx": (120, -600.0, 600.0, r"inner-state $p_x$ [GeV]"),
@@ -1179,17 +1196,17 @@ _high_purity_features = {
     "outerPy": (120, -600.0, 600.0, r"outer-state $p_y$ [GeV]"),
     "outerPz": (160, -1600.0, 1600.0, r"outer-state $p_z$ [GeV]"),
     "outerPt": (100, 0.0, 550.0, r"outer-state $p_T$ [GeV]"),
-    "dxyBS": (100, -0.5, 0.5, r"$d_0$ (beamspot) [cm]"),
-    "dzBS": (100, -0.5, 0.5, r"$d_z$ (beamspot) [cm]"),
+    "dxyBS": (200, -1.0, 1.0, r"$d_0$ (beamspot) [cm]"),
+    "dzBS": (240, -30.0, 30.0, r"$d_z$ (beamspot) [cm]"),
     "dxyClosestPV": (100, -0.5, 0.5, r"$d_0$ (closest PV) [cm]"),
     "dzClosestPV": (100, -0.5, 0.5, r"$d_z$ (closest PV) [cm]"),
     "dxyBSErr": (100, 0.0, 0.1, r"$\delta d_0$ (beamspot) [cm]"),
     "dzBSErr": (100, 0.0, 0.1, r"$\delta d_z$ (beamspot) [cm]"),
     "dxyClosestPVErr": (100, 0.0, 0.1, r"$\delta d_0$ (closest PV) [cm]"),
     "dzClosestPVErr": (100, 0.0, 0.1, r"$\delta d_z$ (closest PV) [cm]"),
-    "trackChi2": (120, 0.0, 120.0, r"track $\chi^2$"),
+    "trackChi2": (500, 0.0, 500.0, r"track $\chi^2$"),
     "trackNdof": (81, -0.5, 80.5, r"track ndof"),
-    "trackNormalizedChi2": (100, 0.0, 25.0, r"track $\chi^2$/ndof"),
+    "trackNormalizedChi2": (400, 0.0, 100.0, r"track $\chi^2$/ndof"),
     "hp_nValidPixelHits": (16, -0.5, 15.5, "valid pixel hits"),
     "hp_nValidStripHits": (31, -0.5, 30.5, "valid strip hits"),
     "hp_nLostHitsInner": (11, -0.5, 10.5, "missing hits before innermost hit"),

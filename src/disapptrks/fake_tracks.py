@@ -335,6 +335,48 @@ def _hist_counts_edges(hist_obj: Any, *, category: str = "inclusive") -> tuple[A
     return counts, edges
 
 
+def _hist_counts_edges_with_flow(
+    hist_obj: Any, *, category: str = "inclusive"
+) -> tuple[Any, Any, float, float] | None:
+    """Return regular-bin counts, edges, underflow, and overflow."""
+
+    try:
+        axis_names = [axis.name for axis in hist_obj.axes]
+    except AttributeError:
+        return None
+
+    if "cat" in axis_names:
+        try:
+            hist_obj = hist_obj[{"cat": category}]
+        except Exception:
+            return None
+
+    axis = _find_hist_axis(hist_obj)
+    if axis is None:
+        return None
+
+    try:
+        import numpy as np
+
+        values = hist_obj.values(flow=True)
+        counts_with_flow = np.asarray(values, dtype=float)
+        edges = np.asarray(axis.edges, dtype=float)
+    except Exception:
+        return None
+
+    while counts_with_flow.ndim > 1:
+        counts_with_flow = counts_with_flow.sum(axis=0)
+
+    if counts_with_flow.ndim != 1 or len(counts_with_flow) != len(edges) + 1:
+        return None
+    return (
+        counts_with_flow[1:-1],
+        edges,
+        float(counts_with_flow[0]),
+        float(counts_with_flow[-1]),
+    )
+
+
 def _walk_hists(value: Any):
     if hasattr(value, "axes") and hasattr(value, "values"):
         yield value
@@ -388,6 +430,57 @@ def summed_hist_counts_edges(
     if total_counts is None or total_edges is None:
         raise KeyError(f"histogram variable {variable!r} not found")
     return total_counts, total_edges
+
+
+def summed_hist_counts_edges_with_flow(
+    outputs: Sequence[Mapping[str, Any]],
+    variable: str,
+    *,
+    dataset: str | None = None,
+    sample: str | None = None,
+    category: str = "inclusive",
+) -> tuple[Any, Any, float, float]:
+    """Sum a one-dimensional histogram, retaining flow-bin counts."""
+
+    import numpy as np
+
+    total_counts = None
+    total_edges = None
+    total_underflow = 0.0
+    total_overflow = 0.0
+    for output in outputs:
+        variables = output.get("variables", {})
+        if variable not in variables:
+            continue
+        value: Any = variables[variable]
+        if sample is not None and isinstance(value, Mapping):
+            value = value.get(sample, {})
+        if dataset is not None and sample is None and isinstance(value, Mapping):
+            nested_values = value.values()
+        elif dataset is not None and isinstance(value, Mapping):
+            nested_values = [value.get(dataset, {})]
+        else:
+            nested_values = [value]
+
+        for nested in nested_values:
+            for hist_obj in _walk_hists(nested):
+                result = _hist_counts_edges_with_flow(hist_obj, category=category)
+                if result is None:
+                    continue
+                counts, edges, underflow, overflow = result
+                if total_counts is None:
+                    total_counts = counts.copy()
+                    total_edges = edges.copy()
+                else:
+                    if len(edges) != len(total_edges) or not np.allclose(edges, total_edges):
+                        raise ValueError(f"histogram {variable!r} has inconsistent binning")
+                    total_counts += counts
+                total_underflow += underflow
+                total_overflow += overflow
+
+    if total_counts is None or total_edges is None:
+        raise KeyError(f"histogram variable {variable!r} not found")
+    return total_counts, total_edges, total_underflow, total_overflow
 
 
 def summed_hist_counts_edges_2d(
@@ -1010,13 +1103,13 @@ def plot_high_purity_input_distributions(
             for field, xlabel in features.items():
                 variable = f"highPurityStudy{control_key}_{field}"
                 try:
-                    all_counts, edges = summed_hist_counts_edges(
+                    all_counts, edges, all_underflow, all_overflow = summed_hist_counts_edges_with_flow(
                         outputs,
                         variable,
                         sample=sample,
                         category=f"high_purity_before_{layer}",
                     )
-                    pass_counts, pass_edges = summed_hist_counts_edges(
+                    pass_counts, pass_edges, pass_underflow, pass_overflow = summed_hist_counts_edges_with_flow(
                         outputs,
                         variable,
                         sample=sample,
@@ -1026,22 +1119,59 @@ def plot_high_purity_input_distributions(
                     # Read outputs made before the native Cartesian category
                     # layout was introduced.
                     prefix = f"highPurityStudy{control_key}_{layer}"
-                    all_counts, edges = summed_hist_counts_edges(
+                    all_counts, edges, all_underflow, all_overflow = summed_hist_counts_edges_with_flow(
                         outputs, f"{prefix}_All_{field}", sample=sample
                     )
-                    pass_counts, pass_edges = summed_hist_counts_edges(
+                    pass_counts, pass_edges, pass_underflow, pass_overflow = summed_hist_counts_edges_with_flow(
                         outputs, f"{prefix}_Pass_{field}", sample=sample
                     )
                 if not np.allclose(edges, pass_edges):
                     raise ValueError(f"before/after binning differs for {field}")
-                n_all, n_pass = float(all_counts.sum()), float(pass_counts.sum())
+                n_all_in_range = float(all_counts.sum())
+                n_pass_in_range = float(pass_counts.sum())
+                n_all = n_all_in_range + all_underflow + all_overflow
+                n_pass = n_pass_in_range + pass_underflow + pass_overflow
+
+                def legend_label(name, total, underflow, overflow):
+                    label = f"{name} (N={total:g}"
+                    if underflow or overflow:
+                        label += f", UF={underflow:g}, OF={overflow:g}"
+                    return label + ")"
+
                 fig, ax = plt.subplots(figsize=(7.2, 5.0))
                 if n_all:
-                    ax.stairs(all_counts / n_all, edges, linewidth=1.7, label=f"Before highPurity (N={n_all:g})")
+                    ax.stairs(
+                        all_counts / n_all,
+                        edges,
+                        linewidth=1.7,
+                        label=legend_label(
+                            "Before highPurity", n_all, all_underflow, all_overflow
+                        ),
+                    )
                 if n_pass:
-                    ax.stairs(pass_counts / n_pass, edges, linewidth=1.7, label=f"With highPurity (N={n_pass:g})")
+                    ax.stairs(
+                        pass_counts / n_pass,
+                        edges,
+                        linewidth=1.7,
+                        label=legend_label(
+                            "With highPurity", n_pass, pass_underflow, pass_overflow
+                        ),
+                    )
                 if not n_all:
                     ax.text(0.5, 0.5, "Variable unavailable or no selected tracks", transform=ax.transAxes, ha="center", va="center")
+                elif not n_all_in_range:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No entries inside the plotted range; see flow counts",
+                        transform=ax.transAxes,
+                        ha="center",
+                        va="center",
+                    )
+                if field == "pt":
+                    ax.set_xscale("log")
+                elif field == "trackPtErr":
+                    ax.set_xscale("symlog", linthresh=10.0)
                 ax.set(xlabel=xlabel, ylabel="Fraction of sideband candidates")
                 ax.set_title(f"{title_prefix} {control_label} fake-track sideband, {layer_labels.get(layer, layer)}".strip())
                 if n_all or n_pass:
