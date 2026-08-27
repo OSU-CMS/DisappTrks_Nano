@@ -5,6 +5,7 @@ import pytest
 
 from disapptrks.fake_tracks import (
     _hist_counts_edges_with_flow,
+    _hist_has_non_sentinel_entries,
     estimate_fake_track_background,
     fit_dxy_transfer_factor,
     fixed_an_transfer_factor_fit,
@@ -24,6 +25,35 @@ def test_hist_counts_edges_with_flow_keeps_out_of_range_entries():
     assert edges.tolist() == [0.0, 1.0, 2.0]
     assert underflow == 1.0
     assert overflow == 1.0
+
+
+@pytest.mark.parametrize(
+    ("counts", "underflow", "expected"),
+    [
+        ([0.0, 0.0], 4.0, False),
+        ([1.0, 0.0], 4.0, True),
+    ],
+)
+def test_hist_sentinel_availability_when_sentinel_is_underflow(
+    counts, underflow, expected
+):
+    assert _hist_has_non_sentinel_entries(
+        np.asarray(counts),
+        np.asarray([-600.0, 0.0, 600.0]),
+        underflow,
+        0.0,
+        sentinel=-999.0,
+    ) is expected
+
+
+def test_hist_sentinel_availability_when_sentinel_is_in_range():
+    assert not _hist_has_non_sentinel_entries(
+        np.asarray([0.0, 7.0, 0.0]),
+        np.asarray([-1600.0, -1200.0, -800.0, 0.0]),
+        0.0,
+        0.0,
+        sentinel=-999.0,
+    )
 
 
 def test_folded_dxy_poisson_likelihood_fit_recovers_shape():

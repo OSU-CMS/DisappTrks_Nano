@@ -483,6 +483,31 @@ def summed_hist_counts_edges_with_flow(
     return total_counts, total_edges, total_underflow, total_overflow
 
 
+def _hist_has_non_sentinel_entries(
+    counts: Any,
+    edges: Any,
+    underflow: float,
+    overflow: float,
+    *,
+    sentinel: float,
+) -> bool:
+    """Whether a histogram contains anything beyond one missing-value sentinel."""
+
+    import numpy as np
+
+    total = float(np.asarray(counts, dtype=float).sum()) + underflow + overflow
+    if not total:
+        return False
+    if sentinel < edges[0]:
+        sentinel_count = underflow
+    elif sentinel >= edges[-1]:
+        sentinel_count = overflow
+    else:
+        index = int(np.searchsorted(edges, sentinel, side="right") - 1)
+        sentinel_count = float(counts[index])
+    return total > sentinel_count
+
+
 def summed_hist_counts_edges_2d(
     outputs: Sequence[Mapping[str, Any]],
     variable: str,
@@ -1095,6 +1120,10 @@ def plot_high_purity_input_distributions(
         "trackOriginalAlgo": "original track algorithm / iteration flag",
     }
     layer_labels = {"NLayers4": "4 layers", "NLayers5": "5 layers", "NLayers6plus": r"$\geq6$ layers", "combinedBins": r"$\geq4$ layers"}
+    state_fields = {
+        "innerPx", "innerPy", "innerPz", "innerPt",
+        "outerPx", "outerPy", "outerPz", "outerPt",
+    }
     output_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for layer in layers:
@@ -1132,6 +1161,21 @@ def plot_high_purity_input_distributions(
                 n_all = n_all_in_range + all_underflow + all_overflow
                 n_pass = n_pass_in_range + pass_underflow + pass_overflow
 
+                # Older custom NanoAOD schemas represent unavailable fitted
+                # inner/outer states with -999.  Do not create a PDF page when
+                # that sentinel is the entire population, even if it happens
+                # to lie inside the configured histogram range.
+                if field in state_fields and not _hist_has_non_sentinel_entries(
+                    all_counts,
+                    edges,
+                    all_underflow,
+                    all_overflow,
+                    sentinel=-999.0,
+                ):
+                    continue
+                if not n_all:
+                    continue
+
                 def legend_label(name, total, underflow, overflow):
                     label = f"{name} (N={total:g}"
                     if underflow or overflow:
@@ -1157,9 +1201,7 @@ def plot_high_purity_input_distributions(
                             "With highPurity", n_pass, pass_underflow, pass_overflow
                         ),
                     )
-                if not n_all:
-                    ax.text(0.5, 0.5, "Variable unavailable or no selected tracks", transform=ax.transAxes, ha="center", va="center")
-                elif not n_all_in_range:
+                if not n_all_in_range:
                     ax.text(
                         0.5,
                         0.5,
