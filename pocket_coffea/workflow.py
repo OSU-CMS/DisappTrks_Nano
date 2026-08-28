@@ -565,17 +565,61 @@ def _high_purity_study_tracks_for_control(
     estimate's nominal four-layer selection.
     """
 
-    tracks = events.IsoTrack[
-        _fake_track_mask(
-            events.IsoTrack,
-            layer="combinedBins",
-            d0_region="sideband",
-            fiducial_hot_spots=fiducial_hot_spots,
-            require_four_layer_high_purity=False,
-        )
-    ]
+    candidate_mask = _fake_track_mask(
+        events.IsoTrack,
+        layer="combinedBins",
+        d0_region="sideband",
+        fiducial_hot_spots=fiducial_hot_spots,
+        require_four_layer_high_purity=False,
+    )
+    source_indices = ak.local_index(events.IsoTrack, axis=1)[candidate_mask]
+    tracks = events.IsoTrack[candidate_mask]
     control_track_mask, _ = ak.broadcast_arrays(control_mask, tracks.pt)
-    return tracks[control_track_mask]
+    tracks = tracks[control_track_mask]
+    source_indices = source_indices[control_track_mask]
+    return ak.with_field(tracks, source_indices, "sourceIsoTrackIdx")
+
+
+def _dedx_hits_for_high_purity_tracks(events, tracks):
+    """Select DeDxHitInfo rows associated with a jagged IsoTrack collection."""
+
+    if "IsoTrackDeDxHit" not in events.fields:
+        raise AttributeError(
+            "high-purity dE/dx hit histograms require the IsoTrackDeDxHit table"
+        )
+    hits = events.IsoTrackDeDxHit
+    pairs = ak.cartesian(
+        {
+            "hitTrackIdx": hits.isoTrackIdx,
+            "selectedTrackIdx": tracks.sourceIsoTrackIdx,
+        },
+        axis=1,
+        nested=True,
+    )
+    associated = ak.any(
+        pairs.hitTrackIdx == pairs.selectedTrackIdx,
+        axis=-1,
+    )
+    selected = hits[associated]
+    selected = ak.with_field(
+        selected,
+        10 * selected.subdet + selected.layer,
+        "detectorLayer",
+    )
+    # Pixel cluster sizes are encoded as -1 for strip hits.  Mask them rather
+    # than letting the sentinel dominate the physical pixel distributions.
+    for field in ("pixelSize", "pixelSizeX", "pixelSizeY"):
+        selected = ak.with_field(
+            selected,
+            ak.mask(selected[field], selected.isPixel != 0),
+            field,
+        )
+    selected = ak.with_field(
+        selected,
+        ak.mask(selected.passesStripShapeSelection, selected.isPixel == 0),
+        "stripPassesShapeSelection",
+    )
+    return selected
 
 
 def _fake_track_count_for_control(
@@ -1064,6 +1108,14 @@ class DisappTrksProcessor(BaseProcessorABC):
         except Exception:
             return os.environ.get(
                 "DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS", "1"
+            ).lower() in ("1", "true", "yes", "on")
+
+    def _high_purity_dedx_histograms_enabled(self):
+        try:
+            return bool(self.params.disapptrks.high_purity_dedx_histograms)
+        except Exception:
+            return os.environ.get(
+                "DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS", "0"
             ).lower() in ("1", "true", "yes", "on")
 
     def _mode_enabled(self, *modes):
@@ -1609,6 +1661,34 @@ class DisappTrksProcessor(BaseProcessorABC):
                     fiducial_hot_spots=hot_spots,
                 )
             )
+            if self._high_purity_dedx_histograms_enabled():
+                if "IsoTrackDeDxHit" not in self.events.fields:
+                    raise AttributeError(
+                        "high-purity dE/dx hit histograms require the "
+                        "IsoTrackDeDxHit table"
+                    )
+                self.events["nIsoTrackDeDxHit"] = ak.mask(
+                    ak.num(self.events.IsoTrackDeDxHit),
+                    ak.num(self.events.HighPurityStudyTrack) > 0,
+                )
+                for layer in self.params.disapptrks.high_purity_study_layers:
+                    layer_tracks = self.events.HighPurityStudyTrack[
+                        layer_mask(self.events.HighPurityStudyTrack, layer)
+                    ]
+                    for selection, selected_tracks in (
+                        ("before", layer_tracks),
+                        ("pass", layer_tracks[layer_tracks.isHighPurityTrack]),
+                    ):
+                        collection = (
+                            f"HighPurityStudyDeDxHit_{selection}_{layer}"
+                        )
+                        hits = _dedx_hits_for_high_purity_tracks(
+                            self.events, selected_tracks
+                        )
+                        self.events[collection] = hits
+                        self.events[f"n{collection}"] = ak.mask(
+                            ak.num(hits), ak.num(selected_tracks) > 0
+                        )
             return
         if (
             "Electron" in self.events.fields

@@ -508,6 +508,10 @@ def _hist_has_non_sentinel_entries(
     return total > sentinel_count
 
 
+def _outputs_have_histogram(outputs: Sequence[Mapping[str, Any]], variable: str) -> bool:
+    return any(variable in output.get("variables", {}) for output in outputs)
+
+
 def summed_hist_counts_edges_2d(
     outputs: Sequence[Mapping[str, Any]],
     variable: str,
@@ -1219,6 +1223,269 @@ def plot_high_purity_input_distributions(
                 if n_all or n_pass:
                     ax.legend(fontsize=9)
                 fig.tight_layout(); pdf.savefig(fig); plt.close(fig)
+        paths.append(path)
+    paths.extend(
+        _plot_high_purity_dedx_hit_distributions(
+            outputs,
+            output_dir,
+            control=control,
+            layers=layers,
+            sample=sample,
+            title_prefix=title_prefix,
+        )
+    )
+    return paths
+
+
+def _plot_high_purity_dedx_hit_distributions(
+    outputs: Sequence[Mapping[str, Any]],
+    output_dir: Path,
+    *,
+    control: str,
+    layers: Sequence[str],
+    sample: str | None,
+    title_prefix: str,
+) -> list[Path]:
+    """Write optional per-hit dE/dx diagnostics for the high-purity study."""
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+    from matplotlib.colors import LogNorm
+
+    control_key = {"zmumu": "ZMuMu", "zee": "Zee"}[control]
+    control_label = {"zmumu": r"$Z\to\mu\mu$", "zee": r"$Z\to ee$"}[control]
+    base = f"highPurityStudy{control_key}DeDxHit"
+    if not _outputs_have_histogram(
+        outputs, f"{base}_nIsoTrackDeDxHit"
+    ):
+        return []
+
+    one_dimensional = {
+        "nHits": "associated retained dE/dx hits per event",
+        "isoTrackIdx": "source IsoTrack row index",
+        "hitIdx": "index in DeDxHitInfo payload",
+        "detId": "raw tracker detector ID",
+        "subdet": "tracker subdetector code",
+        "layer": "barrel layer or endcap disk/wheel",
+        "side": "tracker side code",
+        "isPixel": "is pixel hit",
+        "type": "DeDxHitInfo hit type",
+        "passesStripShapeSelection": "passes strip-shape selection (pixel=true)",
+        "charge": "cluster charge",
+        "pathLength": "path length through active material",
+        "dEdx": r"per-hit dE/dx [MeV/mm]",
+        "localX": "hit local x",
+        "localY": "hit local y",
+        "pixelSize": "pixel cluster size",
+        "pixelSizeX": "pixel cluster size in local x",
+        "pixelSizeY": "pixel cluster size in local y",
+    }
+    two_dimensional = {
+        "subdet_vs_layer": (
+            "tracker subdetector code",
+            "layer/disk/wheel number",
+        ),
+        "type_vs_detectorLayer": (
+            "detector layer",
+            "DeDxHitInfo hit type",
+        ),
+        "stripPassesShapeSelection_vs_detectorLayer": (
+            "detector layer",
+            "strip hit passes shape selection",
+        ),
+        "charge_vs_detectorLayer": ("detector layer", "cluster charge"),
+        "pathLength_vs_detectorLayer": (
+            "detector layer",
+            "path length through active material",
+        ),
+        "dEdx_vs_detectorLayer": (
+            "detector layer",
+            r"per-hit dE/dx [MeV/mm]",
+        ),
+        "localX_vs_detectorLayer": ("detector layer", "hit local x"),
+        "localY_vs_detectorLayer": ("detector layer", "hit local y"),
+        "pixelSize_vs_detectorLayer": ("detector layer", "pixel cluster size"),
+        "pixelSizeX_vs_detectorLayer": (
+            "detector layer",
+            "pixel cluster size in local x",
+        ),
+        "pixelSizeY_vs_detectorLayer": (
+            "detector layer",
+            "pixel cluster size in local y",
+        ),
+    }
+    layer_labels = {
+        "NLayers4": "4 layers",
+        "NLayers5": "5 layers",
+        "NLayers6plus": r"$\geq6$ layers",
+        "combinedBins": r"$\geq4$ layers",
+    }
+    detector_ticks = (
+        [(10 + layer, f"PXB{layer}") for layer in range(1, 5)]
+        + [(20 + layer, f"PXF{layer}") for layer in range(1, 4)]
+        + [(30 + layer, f"TIB{layer}") for layer in range(1, 5)]
+        + [(40 + layer, f"TID{layer}") for layer in range(1, 4)]
+        + [(50 + layer, f"TOB{layer}") for layer in range(1, 7)]
+        + [(60 + layer, f"TEC{layer}") for layer in range(1, 10)]
+    )
+
+    def flow_label(name, total, underflow, overflow):
+        label = f"{name} (N={total:g}"
+        if underflow or overflow:
+            label += f", UF={underflow:g}, OF={overflow:g}"
+        return label + ")"
+
+    paths = []
+    for layer in layers:
+        path = output_dir / f"{control}_high_purity_dedx_hits_{layer}.pdf"
+        with PdfPages(path) as pdf:
+            raw_counts, raw_edges, raw_underflow, raw_overflow = (
+                summed_hist_counts_edges_with_flow(
+                    outputs,
+                    f"{base}_nIsoTrackDeDxHit",
+                    sample=sample,
+                    category="inclusive",
+                )
+            )
+            raw_total = float(raw_counts.sum()) + raw_underflow + raw_overflow
+            if raw_total:
+                fig, ax = plt.subplots(figsize=(7.2, 5.0))
+                ax.stairs(
+                    raw_counts / raw_total,
+                    raw_edges,
+                    linewidth=1.7,
+                    label=flow_label(
+                        "Selected events", raw_total, raw_underflow, raw_overflow
+                    ),
+                )
+                ax.set(
+                    xlabel="N(IsoTrackDeDxHit rows in sideband event)",
+                    ylabel="Fraction of selected events",
+                )
+                ax.set_title(
+                    f"{title_prefix} {control_label} sideband raw dE/dx-hit multiplicity".strip()
+                )
+                ax.legend(fontsize=9)
+                fig.tight_layout()
+                pdf.savefig(fig)
+                plt.close(fig)
+
+            for field, xlabel in one_dimensional.items():
+                before_var = f"{base}_before_{layer}_{field}"
+                pass_var = f"{base}_pass_{layer}_{field}"
+                if not _outputs_have_histogram(outputs, before_var):
+                    continue
+                before, edges, before_uf, before_of = summed_hist_counts_edges_with_flow(
+                    outputs, before_var, sample=sample, category="inclusive"
+                )
+                passed, pass_edges, pass_uf, pass_of = summed_hist_counts_edges_with_flow(
+                    outputs, pass_var, sample=sample, category="inclusive"
+                )
+                if not np.allclose(edges, pass_edges):
+                    raise ValueError(f"before/after dE/dx-hit binning differs for {field}")
+                before_total = float(before.sum()) + before_uf + before_of
+                pass_total = float(passed.sum()) + pass_uf + pass_of
+                if not before_total:
+                    continue
+                fig, ax = plt.subplots(figsize=(7.2, 5.0))
+                ax.stairs(
+                    before / before_total,
+                    edges,
+                    linewidth=1.7,
+                    label=flow_label("Before highPurity", before_total, before_uf, before_of),
+                )
+                if pass_total:
+                    ax.stairs(
+                        passed / pass_total,
+                        edges,
+                        linewidth=1.7,
+                        label=flow_label("With highPurity", pass_total, pass_uf, pass_of),
+                    )
+                ax.set(xlabel=xlabel, ylabel="Fraction")
+                if field == "subdet":
+                    ax.set_xticks(range(1, 7))
+                    ax.set_xticklabels(["PXB", "PXF", "TIB", "TID", "TOB", "TEC"])
+                elif field == "side":
+                    ax.set_xticks((0, 1, 2))
+                    ax.set_xticklabels(("barrel", "-z", "+z"))
+                elif field == "isPixel":
+                    ax.set_xticks((0, 1))
+                    ax.set_xticklabels(("strip", "pixel"))
+                elif field == "passesStripShapeSelection":
+                    ax.set_xticks((0, 1))
+                    ax.set_xticklabels(("fail", "pass"))
+                ax.set_title(
+                    f"{title_prefix} {control_label} dE/dx hits, "
+                    f"{layer_labels.get(layer, layer)}".strip()
+                )
+                ax.legend(fontsize=8)
+                fig.tight_layout()
+                pdf.savefig(fig)
+                plt.close(fig)
+
+            for field, (xlabel, ylabel) in two_dimensional.items():
+                before_var = f"{base}_before_{layer}_{field}"
+                pass_var = f"{base}_pass_{layer}_{field}"
+                if not _outputs_have_histogram(outputs, before_var):
+                    continue
+                before, xedges, yedges = summed_hist_counts_edges_2d(
+                    outputs, before_var, sample=sample, category="inclusive"
+                )
+                passed, pass_xedges, pass_yedges = summed_hist_counts_edges_2d(
+                    outputs, pass_var, sample=sample, category="inclusive"
+                )
+                if not (
+                    np.allclose(xedges, pass_xedges)
+                    and np.allclose(yedges, pass_yedges)
+                ):
+                    raise ValueError(f"before/after dE/dx-hit binning differs for {field}")
+                before_total = float(before.sum())
+                pass_total = float(passed.sum())
+                if not before_total:
+                    continue
+                before_fraction = before / before_total
+                pass_fraction = passed / pass_total if pass_total else passed
+                positive = np.concatenate(
+                    [
+                        before_fraction[before_fraction > 0],
+                        pass_fraction[pass_fraction > 0],
+                    ]
+                )
+                norm = None
+                if positive.size:
+                    vmin = float(positive.min())
+                    vmax = float(positive.max())
+                    if vmax > vmin:
+                        norm = LogNorm(vmin=vmin, vmax=vmax)
+                fig, axes = plt.subplots(1, 2, figsize=(12.0, 4.8), sharex=True, sharey=True)
+                meshes = []
+                for ax, values, label, total in (
+                    (axes[0], before_fraction, "Before highPurity", before_total),
+                    (axes[1], pass_fraction, "With highPurity", pass_total),
+                ):
+                    mesh = ax.pcolormesh(xedges, yedges, values.T, shading="auto", norm=norm)
+                    meshes.append(mesh)
+                    ax.set_title(f"{label} (in-range hits={total:g})")
+                    ax.set(xlabel=xlabel, ylabel=ylabel)
+                    if "detectorLayer" in field:
+                        ax.set_xticks([item[0] for item in detector_ticks])
+                        ax.set_xticklabels(
+                            [item[1] for item in detector_ticks], rotation=90, fontsize=6
+                        )
+                    elif field == "subdet_vs_layer":
+                        ax.set_xticks(range(1, 7))
+                        ax.set_xticklabels(
+                            ["PXB", "PXF", "TIB", "TID", "TOB", "TEC"]
+                        )
+                fig.suptitle(
+                    f"{title_prefix} {control_label} dE/dx hits, "
+                    f"{layer_labels.get(layer, layer)}".strip()
+                )
+                fig.colorbar(meshes[0], ax=axes, label="Fraction of retained hits")
+                fig.subplots_adjust(bottom=0.24, top=0.84, wspace=0.14, right=0.90)
+                pdf.savefig(fig)
+                plt.close(fig)
         paths.append(path)
     return paths
 

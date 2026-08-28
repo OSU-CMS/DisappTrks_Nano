@@ -101,6 +101,7 @@ unchanged.
 ```bash
 DISAPPTRKS_CATEGORY_MODE=high_purity_study \
 DISAPPTRKS_FAKE_TRACK_CONTROL=zmumu \
+DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS=1 \
 DISAPPTRKS_DATASET_JSON=datasets/eos_2025_Muon.json \
 DISAPPTRKS_DATASET_SAMPLE=DATA_Muon \
 DISAPPTRKS_DATASET_YEAR=2025 \
@@ -116,6 +117,18 @@ After the job finishes, make one multipage PDF per requested layer bin:
 disapptrks plot-high-purity-study output_all.coffea \
   --control zmumu --sample DATA_Muon --title-prefix 2025
 ```
+
+With `DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS=1`, the same plotting
+command also writes `zmumu_high_purity_dedx_hits_NLayers4.pdf` (or the
+corresponding `zee` file).  The hit rows are linked through `isoTrackIdx` and
+restricted to hits belonging to the selected sideband tracks before or after
+the high-purity requirement.  One-dimensional pages cover the raw
+`IsoTrackDeDxHit` fields.  Two-dimensional pages show detector occupancy and
+hit charge, path length, dE/dx, local position, hit type, strip-shape status,
+and pixel cluster sizes versus the encoded detector layer.  Pixel cluster-size
+plots exclude strip rows, whose source value is the `-1` sentinel.  The option
+defaults to off so ordinary high-purity jobs do not read or histogram the much
+larger per-hit table.
 
 ### Signal acceptance of the high-purity requirement
 
@@ -637,6 +650,7 @@ relationship remains obvious.
 | `DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON` | Explicit muon fiducial-map JSON path. |
 | `DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS` | Set to `0` for production fake-track jobs to skip exploratory sideband hit-pattern and dE/dx histograms and event manifests while retaining estimate counts and transfer-factor fits. Defaults to `1`. |
 | `DISAPPTRKS_HIGH_PURITY_STUDY_LAYERS` | Comma-separated layer bins for `high_purity_study`; defaults to `NLayers4`. |
+| `DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS` | Set to `1` to add linked `IsoTrackDeDxHit` one- and two-dimensional histograms to `high_purity_study`; defaults to `0`. |
 | `DISAPPTRKS_SKIM_OUTPUT` | Required output directory for `z_sideband_skim`; may be a worker-visible local path or XRootD EOS URL. |
 | `DISAPPTRKS_JET_VETO_MAP_DIR` | Directory containing JME jet-veto-map payloads. |
 | `DISAPPTRKS_ALLOW_MISSING_JET_VETO_MAP` | Set only for non-production diagnostics when jet-veto-map payloads are unavailable. |

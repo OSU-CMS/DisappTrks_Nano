@@ -270,6 +270,9 @@ if any(layer not in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins") for
 enable_fake_sideband_histograms = os.environ.get(
     "DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS", "1"
 ).lower() in ("1", "true", "yes", "on")
+enable_high_purity_dedx_histograms = os.environ.get(
+    "DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS", "0"
+).lower() in ("1", "true", "yes", "on")
 if fake_track_control_mode in ("jetmet", "basic_selection"):
     fake_track_control_mode = "basic"
 if fake_track_control_mode not in ("basic", "zmumu", "zee"):
@@ -282,6 +285,7 @@ parameters["disapptrks"] = {
     "fake_track_control": fake_track_control_mode,
     "fake_sideband_histograms": enable_fake_sideband_histograms,
     "high_purity_study_layers": high_purity_study_layers,
+    "high_purity_dedx_histograms": enable_high_purity_dedx_histograms,
     "full_workflow": os.environ.get("DISAPPTRKS_FULL_WORKFLOW", "").lower()
     in ("1", "true", "yes", "on"),
     "full_variables": os.environ.get("DISAPPTRKS_FULL_VARIABLES", "").lower()
@@ -1242,6 +1246,148 @@ if category_mode == "high_purity_study":
         )
 
 
+# Optional hit-level companion to the track-level high-purity study.  Each
+# collection contains only DeDxHitInfo rows associated with the requested
+# sideband-track population, so the ordinary inclusive event category can fill
+# it without mixing track-shaped and hit-shaped Cartesian masks.
+high_purity_dedx_hit_variables = {}
+_high_purity_dedx_hit_features = {
+    "isoTrackIdx": (51, -0.5, 50.5, "source IsoTrack row index"),
+    "hitIdx": (51, -0.5, 50.5, "index in DeDxHitInfo payload"),
+    "detId": (500, 2.5e8, 5.0e8, "raw tracker detector ID"),
+    "subdet": (6, 0.5, 6.5, "tracker subdetector code"),
+    "layer": (10, 0.5, 10.5, "barrel layer or endcap disk/wheel"),
+    "side": (3, -0.5, 2.5, "tracker side code"),
+    "isPixel": (2, -0.5, 1.5, "is pixel hit"),
+    "type": (11, -0.5, 10.5, "DeDxHitInfo hit type"),
+    "passesStripShapeSelection": (2, -0.5, 1.5, "passes strip-shape selection"),
+    "charge": (400, 0.0, 2.0e5, "cluster charge"),
+    "pathLength": (300, 0.0, 0.30, "path length through active material"),
+    "dEdx": (250, 0.0, 50.0, r"per-hit dE/dx [MeV/mm]"),
+    "localX": (300, -15.0, 15.0, "hit local x"),
+    "localY": (300, -15.0, 15.0, "hit local y"),
+    "pixelSize": (31, -0.5, 30.5, "pixel cluster size"),
+    "pixelSizeX": (21, -0.5, 20.5, "pixel cluster size in local x"),
+    "pixelSizeY": (31, -0.5, 30.5, "pixel cluster size in local y"),
+}
+_high_purity_dedx_hit_2d_features = {
+    "type": _high_purity_dedx_hit_features["type"],
+    "stripPassesShapeSelection": (
+        2, -0.5, 1.5, "strip hit passes shape selection"
+    ),
+    "charge": _high_purity_dedx_hit_features["charge"],
+    "pathLength": _high_purity_dedx_hit_features["pathLength"],
+    "dEdx": _high_purity_dedx_hit_features["dEdx"],
+    "localX": _high_purity_dedx_hit_features["localX"],
+    "localY": _high_purity_dedx_hit_features["localY"],
+    "pixelSize": _high_purity_dedx_hit_features["pixelSize"],
+    "pixelSizeX": _high_purity_dedx_hit_features["pixelSizeX"],
+    "pixelSizeY": _high_purity_dedx_hit_features["pixelSizeY"],
+}
+if category_mode == "high_purity_study" and enable_high_purity_dedx_histograms:
+    _study_control_key = "ZMuMu" if fake_track_control_mode == "zmumu" else "Zee"
+    high_purity_dedx_hit_variables[
+        f"highPurityStudy{_study_control_key}DeDxHit_nIsoTrackDeDxHit"
+    ] = HistConf(
+        [
+            Axis(
+                coll="events",
+                field="nIsoTrackDeDxHit",
+                bins=101,
+                start=-0.5,
+                stop=100.5,
+                label="N(IsoTrackDeDxHit rows in sideband event)",
+            )
+        ],
+        only_categories=["inclusive"],
+    )
+    for _layer in high_purity_study_layers:
+        for _selection in ("before", "pass"):
+            _collection = f"HighPurityStudyDeDxHit_{_selection}_{_layer}"
+            _prefix = (
+                f"highPurityStudy{_study_control_key}DeDxHit_"
+                f"{_selection}_{_layer}"
+            )
+            high_purity_dedx_hit_variables[f"{_prefix}_nHits"] = HistConf(
+                [
+                    Axis(
+                        coll="events",
+                        field=f"n{_collection}",
+                        bins=101,
+                        start=-0.5,
+                        stop=100.5,
+                        label="N(associated retained dE/dx hits in event)",
+                    )
+                ],
+                only_categories=["inclusive"],
+            )
+            for _field, (_bins, _start, _stop, _label) in (
+                _high_purity_dedx_hit_features.items()
+            ):
+                high_purity_dedx_hit_variables[f"{_prefix}_{_field}"] = HistConf(
+                    [
+                        Axis(
+                            coll=_collection,
+                            field=_field,
+                            bins=_bins,
+                            start=_start,
+                            stop=_stop,
+                            label=_label,
+                        )
+                    ],
+                    only_categories=["inclusive"],
+                )
+            high_purity_dedx_hit_variables[
+                f"{_prefix}_subdet_vs_layer"
+            ] = HistConf(
+                [
+                    Axis(
+                        coll=_collection,
+                        field="subdet",
+                        bins=6,
+                        start=0.5,
+                        stop=6.5,
+                        label="tracker subdetector code",
+                    ),
+                    Axis(
+                        coll=_collection,
+                        field="layer",
+                        bins=10,
+                        start=0.5,
+                        stop=10.5,
+                        label="layer/disk/wheel number",
+                    ),
+                ],
+                only_categories=["inclusive"],
+            )
+            for _field, (_bins, _start, _stop, _label) in (
+                _high_purity_dedx_hit_2d_features.items()
+            ):
+                high_purity_dedx_hit_variables[
+                    f"{_prefix}_{_field}_vs_detectorLayer"
+                ] = HistConf(
+                    [
+                        Axis(
+                            coll=_collection,
+                            field="detectorLayer",
+                            bins=60,
+                            start=9.5,
+                            stop=69.5,
+                            label="encoded detector layer (10*subdet + layer)",
+                        ),
+                        Axis(
+                            coll=_collection,
+                            field=_field,
+                            bins=_bins,
+                            start=_start,
+                            stop=_stop,
+                            label=_label,
+                        ),
+                    ],
+                    only_categories=["inclusive"],
+                )
+
+
 sideband_event_columns = {
     "common": {"inclusive": [], "bycategory": {}},
     "bysample": {},
@@ -1358,6 +1504,7 @@ cfg = Configurator(
     variations={"weights": {"common": {"inclusive": []}}},
     variables=_variables_for_mode(category_mode, {
         **high_purity_study_variables,
+        **high_purity_dedx_hit_variables,
         **(fake_sideband_track_variables if enable_fake_sideband_histograms else {}),
         "nIsoTrack": HistConf(
             [
