@@ -1333,21 +1333,23 @@ class DisappTrksProcessor(BaseProcessorABC):
             & pveto_pass_mask
         ]
         for layer in PVETO_LAYERS:
-            layer_mask = generic_probe_pair_layer_mask(pairs, layer)
+            pair_layer_mask = generic_probe_pair_layer_mask(pairs, layer)
             self.events[f"{prefix}TagProbePairMassWindow_{layer}"] = pairs[
-                os_mass_window_pair_mask(pairs, window_low, window_high) & layer_mask
+                os_mass_window_pair_mask(pairs, window_low, window_high)
+                & pair_layer_mask
             ]
             self.events[f"{prefix}PVetoTagProbePairMassWindowPass_{layer}"] = pairs[
                 os_mass_window_pair_mask(pairs, window_low, window_high)
-                & layer_mask
+                & pair_layer_mask
                 & pveto_pass_mask
             ]
             self.events[f"{prefix}TagProbePairSSMassWindow_{layer}"] = pairs[
-                ss_mass_window_pair_mask(pairs, window_low, window_high) & layer_mask
+                ss_mass_window_pair_mask(pairs, window_low, window_high)
+                & pair_layer_mask
             ]
             self.events[f"{prefix}PVetoTagProbePairSSMassWindowPass_{layer}"] = pairs[
                 ss_mass_window_pair_mask(pairs, window_low, window_high)
-                & layer_mask
+                & pair_layer_mask
                 & pveto_pass_mask
             ]
 
@@ -1847,21 +1849,23 @@ class DisappTrksProcessor(BaseProcessorABC):
                 ]
             )
             for layer in PVETO_LAYERS:
-                layer_mask = muon_probe_pair_layer_mask(muon_veto_pairs, layer)
+                pair_layer_mask = muon_probe_pair_layer_mask(muon_veto_pairs, layer)
                 self.events[f"MuonVetoTagProbePairZWindow_{layer}"] = muon_veto_pairs[
-                    os_z_window_muon_probe_pair_mask(muon_veto_pairs) & layer_mask
+                    os_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                    & pair_layer_mask
                 ]
                 self.events[f"MuonPVetoTagProbePairZWindowPass_{layer}"] = muon_veto_pairs[
                     os_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                    & layer_mask
+                    & pair_layer_mask
                     & muon_pveto_pass_mask
                 ]
                 self.events[f"MuonVetoTagProbePairSSZWindow_{layer}"] = muon_veto_pairs[
-                    ss_z_window_muon_probe_pair_mask(muon_veto_pairs) & layer_mask
+                    ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                    & pair_layer_mask
                 ]
                 self.events[f"MuonPVetoTagProbePairSSZWindowPass_{layer}"] = muon_veto_pairs[
                     ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                    & layer_mask
+                    & pair_layer_mask
                     & muon_pveto_pass_mask
                 ]
 
@@ -2758,17 +2762,20 @@ class DisappTrksProcessor(BaseProcessorABC):
             ss_mass_window = ss_mass_window_pair_mask(
                 pairs, 91.1876 - 50.0, 91.1876 - 15.0
             )
-            layer_mask = generic_probe_pair_layer_mask(pairs, "combinedBins")
+            combined_layer_mask = generic_probe_pair_layer_mask(
+                pairs, "combinedBins"
+            )
             diagnostics.update(
                 {
                     "pair_masswindow": ak.num(pairs[mass_window]) >= 1,
                     "pair_os": ak.num(pairs[os_mass_window]) >= 1,
-                    "layer_combinedBins": ak.num(pairs[os_mass_window & layer_mask])
-                    >= 1,
+                    "layer_combinedBins": ak.num(
+                        pairs[os_mass_window & combined_layer_mask]
+                    ) >= 1,
                     "pair_pass_tau_pveto": ak.num(
                         pairs[
                             os_mass_window
-                            & layer_mask
+                            & combined_layer_mask
                             & tau_pveto_pair_pass_mask(pairs)
                         ]
                     )
@@ -3560,17 +3567,20 @@ class DisappTrksProcessor(BaseProcessorABC):
             ss_mass_window = ss_mass_window_pair_mask(
                 pairs, 91.1876 - 50.0, 91.1876 - 15.0
             )
-            layer_mask = generic_probe_pair_layer_mask(pairs, "combinedBins")
+            combined_layer_mask = generic_probe_pair_layer_mask(
+                pairs, "combinedBins"
+            )
             diagnostics.update(
                 {
                     "pair_masswindow": ak.num(pairs[mass_window]) >= 1,
                     "pair_os": ak.num(pairs[os_mass_window]) >= 1,
-                    "layer_combinedBins": ak.num(pairs[os_mass_window & layer_mask])
-                    >= 1,
+                    "layer_combinedBins": ak.num(
+                        pairs[os_mass_window & combined_layer_mask]
+                    ) >= 1,
                     "pair_pass_tau_pveto": ak.num(
                         pairs[
                             os_mass_window
-                            & layer_mask
+                            & combined_layer_mask
                             & tau_pveto_pair_pass_mask(pairs)
                         ]
                     )
@@ -3579,7 +3589,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     "pair_ss_pass_tau_pveto": ak.num(
                         pairs[
                             ss_mass_window
-                            & layer_mask
+                            & combined_layer_mask
                             & tau_pveto_pair_pass_mask(pairs)
                         ]
                     )
