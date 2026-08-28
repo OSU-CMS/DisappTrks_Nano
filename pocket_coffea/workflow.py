@@ -540,7 +540,7 @@ def _fake_track_mask(
     fiducial_hot_spots=(),
     sideband_min: float = 0.05,
     sideband_max: float = 0.50,
-    require_four_layer_high_purity: bool = True,
+    require_high_purity: bool = True,
 ):
     mask = fake_track_no_d0_mask(
         tracks,
@@ -548,7 +548,7 @@ def _fake_track_mask(
         d0_region=d0_region,
         sideband_min=sideband_min,
         sideband_max=sideband_max,
-        require_four_layer_high_purity=require_four_layer_high_purity,
+        require_high_purity=require_high_purity,
     )
     if fiducial_hot_spots:
         mask = mask & _outside_fiducial_hot_spots(tracks, fiducial_hot_spots)
@@ -562,7 +562,7 @@ def _high_purity_study_tracks_for_control(
 
     All other nominal fake-track sideband requirements are retained.  Keeping
     this collection separate prevents the study from changing the background
-    estimate's nominal four-layer selection.
+    estimate's nominal high-purity selection.
     """
 
     candidate_mask = _fake_track_mask(
@@ -570,7 +570,7 @@ def _high_purity_study_tracks_for_control(
         layer="combinedBins",
         d0_region="sideband",
         fiducial_hot_spots=fiducial_hot_spots,
-        require_four_layer_high_purity=False,
+        require_high_purity=False,
     )
     source_indices = ak.local_index(events.IsoTrack, axis=1)[candidate_mask]
     tracks = events.IsoTrack[candidate_mask]
@@ -2097,7 +2097,7 @@ class DisappTrksProcessor(BaseProcessorABC):
         search_mask = search_track_mask(self.events.IsoTrack)
         search_no_high_purity_mask = search_track_mask(
             self.events.IsoTrack,
-            require_four_layer_high_purity=False,
+            require_high_purity=False,
         )
         if self._category_mode() == "signal_acceptance":
             fiducial_hot_spots = self._lepton_fiducial_hot_spots(
@@ -2880,7 +2880,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             search_track_cutflow_masks(
                 self.events.IsoTrack,
                 layer="combinedBins",
-                require_four_layer_high_purity=False,
+                require_high_purity=False,
             )
         )
         self.events["SignalAcceptanceBasicEvent"] = basic_event_mask

@@ -17,31 +17,33 @@ from disapptrks.selections import (
 )
 
 
-def test_analysis_layer_mask_requires_high_purity_only_for_four_layers():
+def test_analysis_layer_mask_requires_high_purity_for_every_layer_bin():
     tracks = ak.Array(
         [[
             {"hp_trackerLayersWithMeasurement": 4, "isHighPurityTrack": False},
             {"hp_trackerLayersWithMeasurement": 4, "isHighPurityTrack": True},
             {"hp_trackerLayersWithMeasurement": 5, "isHighPurityTrack": False},
             {"hp_trackerLayersWithMeasurement": 6, "isHighPurityTrack": False},
+            {"hp_trackerLayersWithMeasurement": 5, "isHighPurityTrack": True},
+            {"hp_trackerLayersWithMeasurement": 6, "isHighPurityTrack": True},
         ]]
     )
 
     assert ak.to_list(analysis_layer_mask(tracks, "combinedBins")) == [
-        [False, True, True, True]
+        [False, True, False, False, True, True]
     ]
     assert ak.to_list(analysis_layer_mask(tracks, "NLayers4")) == [
-        [False, True, False, False]
+        [False, True, False, False, False, False]
     ]
     assert ak.to_list(analysis_layer_mask(tracks, "NLayers5")) == [
-        [False, False, True, False]
+        [False, False, False, False, True, False]
     ]
     assert ak.to_list(analysis_layer_mask(tracks, "NLayers6plus")) == [
-        [False, False, False, True]
+        [False, False, False, False, False, True]
     ]
 
 
-def test_high_purity_study_can_retain_non_high_purity_four_layer_track():
+def test_high_purity_study_can_retain_non_high_purity_tracks():
     base = {
         "pt": 100.0, "eta": 0.8, "dxy": 0.1, "dz": 0.1,
         "inECALCrack": False, "inDTWheelGap": False,
@@ -55,17 +57,22 @@ def test_high_purity_study_can_retain_non_high_purity_four_layer_track():
     tracks = ak.Array([[
         {**base, "isHighPurityTrack": False},
         {**base, "isHighPurityTrack": True},
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 5,
+            "isHighPurityTrack": False,
+        },
     ]])
 
     nominal = fake_track_no_d0_mask(tracks, layer="NLayers4")
     study = fake_track_no_d0_mask(
-        tracks, layer="NLayers4", require_four_layer_high_purity=False
+        tracks, layer="combinedBins", require_high_purity=False
     )
-    assert ak.to_list(nominal) == [[False, True]]
-    assert ak.to_list(study) == [[True, True]]
+    assert ak.to_list(nominal) == [[False, True, False]]
+    assert ak.to_list(study) == [[True, True, True]]
 
 
-def test_signal_track_comparison_changes_only_four_layer_high_purity():
+def test_signal_track_comparison_applies_high_purity_to_every_layer_bin():
     base = {
         "pt": 100.0, "eta": 0.8, "dxy": 0.01, "dz": 0.1,
         "inECALCrack": False, "inDTWheelGap": False,
@@ -92,20 +99,20 @@ def test_signal_track_comparison_changes_only_four_layer_high_purity():
     nominal = search_track_mask(tracks)
     without_high_purity = search_track_mask(
         tracks,
-        require_four_layer_high_purity=False,
+        require_high_purity=False,
     )
 
-    assert ak.to_list(nominal) == [[False, True]]
+    assert ak.to_list(nominal) == [[False, False]]
     assert ak.to_list(without_high_purity) == [[True, True]]
 
     nominal_cutflow = search_track_cutflow_masks(tracks)
     comparison_cutflow = search_track_cutflow_masks(
         tracks,
-        require_four_layer_high_purity=False,
+        require_high_purity=False,
     )
     assert ak.to_list(nominal_cutflow["track_layers4plus"]) == [[True, True]]
-    assert ak.to_list(nominal_cutflow["track_highPurity4Layer"]) == [[False, True]]
-    assert ak.to_list(comparison_cutflow["track_highPurity4Layer"]) == [[True, True]]
+    assert ak.to_list(nominal_cutflow["track_highPurity"]) == [[False, False]]
+    assert ak.to_list(comparison_cutflow["track_highPurity"]) == [[True, True]]
 
 
 def test_signal_cartesian_axes_reproduce_post_high_purity_cutflows():
@@ -128,24 +135,24 @@ def test_signal_cartesian_axes_reproduce_post_high_purity_cutflows():
     generic = search_track_cutflow_masks(
         tracks,
         layer="combinedBins",
-        require_four_layer_high_purity=False,
+        require_high_purity=False,
     )
     post_high_purity_fields = list(generic)[
-        list(generic).index("track_highPurity4Layer"):
+        list(generic).index("track_highPurity"):
     ]
 
     for layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
         layer_axis = layer_mask(tracks, layer)
         for require_high_purity in (False, True):
             variant_axis = (
-                (~layer_mask(tracks, "NLayers4") | tracks.isHighPurityTrack)
+                tracks.isHighPurityTrack
                 if require_high_purity
                 else ak.ones_like(tracks.pt, dtype=bool)
             )
             expected = search_track_cutflow_masks(
                 tracks,
                 layer=layer,
-                require_four_layer_high_purity=require_high_purity,
+                require_high_purity=require_high_purity,
             )
             for field in post_high_purity_fields:
                 factored = generic[field] & layer_axis & variant_axis

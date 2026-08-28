@@ -439,17 +439,14 @@ def layer_mask(tracks, layer: str):
 
 
 def analysis_layer_mask(tracks, layer: str):
-    """Layer-bin selection including the 4-layer high-purity requirement.
+    """Layer-bin selection including the nominal high-purity requirement.
 
-    Four-layer tracks have the least hit redundancy and must carry the CMS
-    high-purity track-quality bit.  The 5- and >=6-layer bins are unchanged.
-    Keep this separate from :func:`layer_mask` so detector hit-pattern plots
-    can still classify rejected tracks by their measured layer count.
+    Every analysis layer bin requires the CMS high-purity track-quality bit.
+    Keep this separate from :func:`layer_mask` so diagnostic studies can still
+    classify rejected tracks by their measured layer count.
     """
 
-    return layer_mask(tracks, layer) & (
-        ~layer_mask(tracks, "NLayers4") | tracks.isHighPurityTrack
-    )
+    return layer_mask(tracks, layer) & tracks.isHighPurityTrack
 
 
 ISOLATED_TRACK_SELECTION_FIELDS = (
@@ -469,7 +466,7 @@ ISOLATED_TRACK_SELECTION_FIELDS = (
     "track_dz0p5",
     "track_dRJet0p5",
     "track_layers4plus",
-    "track_highPurity4Layer",
+    "track_highPurity",
 )
 
 
@@ -572,7 +569,7 @@ def base_probe_track_mask(
     apply_jet_cut: bool = True,
     apply_calo_cut: bool = True,
     apply_outer_hits_cut: bool = False,
-    require_four_layer_high_purity: bool = True,
+    require_high_purity: bool = True,
 ):
     mask = (
         (tracks.pt > pt_min)
@@ -591,7 +588,7 @@ def base_probe_track_mask(
         & (abs(tracks.dz) < 0.5)
         & (
             analysis_layer_mask(tracks, layer)
-            if require_four_layer_high_purity
+            if require_high_purity
             else layer_mask(tracks, layer)
         )
     )
@@ -621,7 +618,7 @@ def isolated_track_selection_mask(
 
     if pt_min == 55.0:
         return isolated_track_selection_cutflow_masks(tracks, layer=layer)[
-            "track_highPurity4Layer"
+            "track_highPurity"
         ]
 
     return base_probe_track_mask(
@@ -638,14 +635,14 @@ def isolated_track_selection_cutflow_masks(
     tracks,
     *,
     layer: str = "combinedBins",
-    require_four_layer_high_purity: bool = True,
+    require_high_purity: bool = True,
 ):
     """Cumulative masks through the AN Table-18 isolated-track endpoint."""
 
     search_masks = search_track_cutflow_masks(
         tracks,
         layer=layer,
-        require_four_layer_high_purity=require_four_layer_high_purity,
+        require_high_purity=require_high_purity,
     )
     return {
         field: search_masks[field]
@@ -657,7 +654,7 @@ def candidate_track_selection_cutflow_masks(
     tracks,
     *,
     layer: str = "combinedBins",
-    require_four_layer_high_purity: bool = True,
+    require_high_purity: bool = True,
 ):
     """Cumulative masks through the AN Table-19 candidate-track endpoint."""
 
@@ -665,10 +662,10 @@ def candidate_track_selection_cutflow_masks(
         isolated_track_selection_cutflow_masks(
             tracks,
             layer=layer,
-            require_four_layer_high_purity=require_four_layer_high_purity,
+            require_high_purity=require_high_purity,
         )
     )
-    mask = masks["track_highPurity4Layer"]
+    mask = masks["track_highPurity"]
 
     mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
     masks["track_electronVeto"] = mask
@@ -692,7 +689,7 @@ def disappearing_track_selection_cutflow_masks(
     tracks,
     *,
     layer: str = "combinedBins",
-    require_four_layer_high_purity: bool = True,
+    require_high_purity: bool = True,
 ):
     """Cumulative masks through the AN Table-20 disappearing-track endpoint."""
 
@@ -700,7 +697,7 @@ def disappearing_track_selection_cutflow_masks(
         candidate_track_selection_cutflow_masks(
             tracks,
             layer=layer,
-            require_four_layer_high_purity=require_four_layer_high_purity,
+            require_high_purity=require_high_purity,
         )
     )
     mask = masks["track_tauVeto"]
@@ -1227,7 +1224,7 @@ def search_track_mask(
     tracks,
     *,
     layer: str = "combinedBins",
-    require_four_layer_high_purity: bool = True,
+    require_high_purity: bool = True,
 ):
     return base_probe_track_mask(
         tracks,
@@ -1235,7 +1232,7 @@ def search_track_mask(
         layer=layer,
         apply_calo_cut=True,
         apply_outer_hits_cut=True,
-        require_four_layer_high_purity=require_four_layer_high_purity,
+        require_high_purity=require_high_purity,
     ) & (
         ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
         & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
@@ -1259,7 +1256,7 @@ def fake_track_no_d0_mask(
     pt_min: float = 55.0,
     sideband_min: float = 0.05,
     sideband_max: float = 0.50,
-    require_four_layer_high_purity: bool = True,
+    require_high_purity: bool = True,
 ):
     """Fake-track control selection with the d0 requirement replaced.
 
@@ -1294,7 +1291,7 @@ def fake_track_no_d0_mask(
         & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
         & (
             analysis_layer_mask(tracks, layer)
-            if require_four_layer_high_purity
+            if require_high_purity
             else layer_mask(tracks, layer)
         )
         & (tracks.caloEnergy < 10.0)
@@ -1394,7 +1391,7 @@ def search_track_cutflow_masks(
     tracks,
     *,
     layer: str = "combinedBins",
-    require_four_layer_high_purity: bool = True,
+    require_high_purity: bool = True,
 ):
     """Return cumulative track masks for debugging the search-track selection."""
     masks = {}
@@ -1446,11 +1443,9 @@ def search_track_cutflow_masks(
     mask = mask & layer_mask(tracks, layer)
     masks["track_layers4plus"] = mask
 
-    if require_four_layer_high_purity:
-        mask = mask & (
-            ~layer_mask(tracks, "NLayers4") | tracks.isHighPurityTrack
-        )
-    masks["track_highPurity4Layer"] = mask
+    if require_high_purity:
+        mask = mask & tracks.isHighPurityTrack
+    masks["track_highPurity"] = mask
 
     mask = mask & (tracks.caloEnergy < 10.0)
     masks["track_calo10"] = mask

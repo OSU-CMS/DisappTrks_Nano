@@ -1953,7 +1953,7 @@ def _summarize_signal_high_purity_command(args: argparse.Namespace) -> int:
         ("track_dz0p5", "|dz| < 0.5"),
         ("track_dRJet0p5", "track/jet delta-R > 0.5"),
         ("track_layers4plus", "layer-bin requirement"),
-        ("track_highPurity4Layer", "highPurity for 4-layer tracks"),
+        ("track_highPurity", "highPurity track ID"),
         ("track_calo10", "calorimeter energy < 10"),
         ("track_missingOuter3", ">= 3 missing outer hits"),
         ("track_electronVeto", "electron veto"),
@@ -1982,7 +1982,7 @@ def _summarize_signal_high_purity_command(args: argparse.Namespace) -> int:
             print(f"{label:<42} {count:14.6g} {count:14.6g} {1.0:11.2%}")
         reached_high_purity_split = False
         for field, label in stages:
-            if field == "track_highPurity4Layer":
+            if field == "track_highPurity":
                 reached_high_purity_split = True
             if reached_high_purity_split:
                 without_category = (
@@ -2912,7 +2912,7 @@ def main():
         "summarize-signal-high-purity",
         help=(
             "Compare the full signal selection before and after the nominal "
-            "four-layer highPurity requirement."
+            "highPurity requirement in every layer bin."
         ),
     )
     signal_high_purity.add_argument("files", nargs="+", type=Path)

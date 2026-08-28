@@ -46,7 +46,7 @@ TRACK_DIAGNOSTIC_FIELDS = [
     "track_dz0p5",
     "track_dRJet0p5",
     "track_layers4plus",
-    "track_highPurity4Layer",
+    "track_highPurity",
     "track_calo10",
     "track_missingOuter3",
     "track_electronVeto",
@@ -60,7 +60,7 @@ SIGNAL_ACCEPTANCE_PRE_LAYER_FIELDS = tuple(
 )
 SIGNAL_ACCEPTANCE_CARTESIAN_FIELDS = tuple(
     TRACK_DIAGNOSTIC_FIELDS[
-        TRACK_DIAGNOSTIC_FIELDS.index("track_highPurity4Layer"):
+        TRACK_DIAGNOSTIC_FIELDS.index("track_highPurity"):
     ]
 )
 
@@ -718,7 +718,7 @@ def _signal_acceptance_layer(events, params, **kwargs):
 def _signal_acceptance_variant(events, params, **kwargs):
     if not params["require_high_purity"]:
         return ak.ones_like(events.IsoTrack.pt, dtype=bool)
-    return ~layer_mask(events.IsoTrack, "NLayers4") | events.IsoTrack.isHighPurityTrack
+    return events.IsoTrack.isHighPurityTrack
 
 
 def _high_purity_study_selection(events, params, **kwargs):
@@ -811,7 +811,7 @@ def _single_electron_hlt(events, params, **kwargs):
 
 
 def _z_sideband_skim(events, params, **kwargs):
-    """Loose raw-Nano skim for repeated four-layer fake-sideband studies.
+    """Loose raw-Nano skim for repeated fake-sideband layer-bin studies.
 
     The Z control matches the analysis definition.  The track leg intentionally
     applies only kinematics, the d0 sideband, and measured-layer count; none of
@@ -829,7 +829,7 @@ def _z_sideband_skim(events, params, **kwargs):
         & (abs(tracks.eta) < 2.1)
         & (abs(tracks.dxy) >= 0.05)
         & (abs(tracks.dxy) < 0.50)
-        & (layers == 4)
+        & (layers >= 4)
     )
     has_broad_track = ak.any(broad_track, axis=1)
 
@@ -1030,7 +1030,7 @@ single_electron_hlt = Cut(
 
 z_sideband_skim_cuts = {
     control: Cut(
-        name=f"{control}_four_layer_sideband_skim",
+        name=f"{control}_combined_layer_sideband_skim",
         params={"control": control},
         function=_z_sideband_skim,
     )

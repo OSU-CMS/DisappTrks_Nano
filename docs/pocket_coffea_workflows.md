@@ -76,8 +76,8 @@ Supported modes are:
 | `fiducial_maps` | `DATA_Muon` or `DATA_EGamma` | Before/after eta-phi histograms used to make electron and muon fiducial-map JSON/NPZ files. |
 | `fake_tracks` | `DATA_JetMET`, `DATA_MET`, `DATA_Muon`, or `DATA_EGamma` | Fake-track control regions. Use `DISAPPTRKS_FAKE_TRACK_CONTROL=basic`, `zmumu`, or `zee`. |
 | `high_purity_study` | `DATA_Muon` or `DATA_EGamma` | Lightweight Z-sideband comparison of track-quality inputs before and after the `highPurity` bit. |
-| `z_sideband_skim` | `DATA_Muon` or `DATA_EGamma` | Writes reusable ROOT skims with an inclusive raw-Nano Z control preselection and a broad four-layer d0-sideband track, without cutting high-purity inputs. |
-| `signal_acceptance` | Signal MC | Full signal-region event and disappearing-track selection before and after the nominal four-layer `highPurity` requirement. |
+| `z_sideband_skim` | `DATA_Muon` or `DATA_EGamma` | Writes reusable ROOT skims with an inclusive raw-Nano Z control preselection and a broad ≥4-layer d0-sideband track, without cutting high-purity inputs. |
+| `signal_acceptance` | Signal MC | Full signal-region event and disappearing-track selection before and after the nominal `highPurity` requirement in every layer bin. |
 | `muon_backgrounds` | `DATA_Muon` | Combined muon plus tau-mu categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
 | `egamma_backgrounds` | `DATA_EGamma` | Combined electron plus tau-ele categories. Heavy mode; useful for postprocessing inputs, but can be expensive. |
 | `all` | Diagnostic only | Builds every category; generally too heavy for production. |
@@ -93,7 +93,7 @@ but deliberately forms one track collection before the `isHighPurityTrack`
 requirement. A native PocketCoffea `CartesianSelection` applies the
 before/with-high-purity and requested-layer axes to that collection. Each input
 feature is booked once and filled in those track-level categories. The default
-is the four-layer bin. An inclusive raw-Nano Z-pair plus broad four-layer
+is the four-layer bin. An inclusive raw-Nano Z-pair plus broad ≥4-layer
 d0-sideband skim is applied first, so expensive derived-object construction
 runs only on potentially relevant events; the exact downstream selection is
 unchanged.
@@ -136,8 +136,8 @@ The `signal_acceptance` mode applies the MET trigger, data-quality machinery
 (with the golden JSON automatically skipped for MC), full basic event
 selection, and full disappearing-track selection. It creates paired final
 categories that are identical except that the nominal category requires the
-`highPurity` bit for four-layer tracks. The five- and six-or-more-layer rows are
-included as closure checks and should not change.
+`highPurity` bit in every layer bin. The 4-, 5-, and six-or-more-layer rows
+therefore each measure the corresponding signal-efficiency change.
 
 Run with both electron and muon fiducial maps required so the tested selection
 matches the production search selection:
@@ -167,9 +167,9 @@ disapptrks summarize-signal-high-purity \
 ```
 
 The detailed output contains two parallel cumulative columns for every basic
-event and disappearing-track cut. The explicit `highPurity for 4-layer tracks`
-row is the only definition that differs between them; subsequent rows retain
-that difference. Use `--layers NLayers4` to print only the affected bin.
+event and disappearing-track cut. The explicit `highPurity track ID` row is
+the only definition that differs between them; subsequent rows retain that
+difference. Use `--layers` to restrict the printed comparison to selected bins.
 
 The cutflow uses PocketCoffea's native categorization and event counting. The
 event and pre-layer rows are `StandardSelection` categories. After the layer
