@@ -126,12 +126,16 @@ per-hit pages show only the with-high-purity population because MiniAOD retains
 `DeDxHitInfo` only for tracks satisfying its retention selection; a nominal
 before/after overlay would therefore not measure the effect of the high-purity
 requirement. One-dimensional pages cover the raw `IsoTrackDeDxHit` fields.
-Two-dimensional pages show detector occupancy and
-hit charge, path length, dE/dx, local position, hit type, strip-shape status,
+Two-dimensional pages show detector occupancy and hit charge, path length,
+dE/dx, local position, hit type, strip-shape status,
 and pixel cluster sizes versus the encoded detector layer.  Pixel cluster-size
-plots exclude strip rows, whose source value is the `-1` sentinel.  The option
-defaults to off so ordinary high-purity jobs do not read or histogram the much
-larger per-hit table.
+plots exclude strip rows, whose source value is the `-1` sentinel. Track-aligned
+pages summarize the retained-hit count and its difference from the
+measured-layer count, median dE/dx, a mean after dropping the maximum hit,
+maximum, standard deviation, range, maximum-to-median ratio, counts above 10
+and 20 MeV/mm, and the number and fraction of strip hits failing the
+strip-shape selection. The option defaults to off so ordinary high-purity jobs
+do not read or histogram the much larger per-hit table.
 
 ### Signal acceptance of the high-purity requirement
 

@@ -1256,6 +1256,7 @@ def _plot_high_purity_dedx_hit_distributions(
     control_key = {"zmumu": "ZMuMu", "zee": "Zee"}[control]
     control_label = {"zmumu": r"$Z\to\mu\mu$", "zee": r"$Z\to ee$"}[control]
     base = f"highPurityStudy{control_key}DeDxHit"
+    track_base = f"highPurityStudy{control_key}DeDxTrack"
     if not _outputs_have_histogram(
         outputs, f"{base}_nIsoTrackDeDxHit"
     ):
@@ -1280,6 +1281,27 @@ def _plot_high_purity_dedx_hit_distributions(
         "pixelSize": "pixel cluster size",
         "pixelSizeX": "pixel cluster size in local x",
         "pixelSizeY": "pixel cluster size in local y",
+    }
+    per_track = {
+        "nRetainedDeDxHits": "retained dE/dx hits on track",
+        "nRetainedDeDxHitsMinusLayers": (
+            "retained dE/dx hits minus measured layers"
+        ),
+        "dEdxMedian": r"median per-hit dE/dx [MeV/mm]",
+        "dEdxTruncatedMeanDropMaximum": (
+            r"mean per-hit dE/dx after dropping maximum [MeV/mm]"
+        ),
+        "dEdxMaximum": r"maximum per-hit dE/dx [MeV/mm]",
+        "dEdxStdDev": r"per-track dE/dx standard deviation [MeV/mm]",
+        "dEdxRange": r"per-track dE/dx range [MeV/mm]",
+        "dEdxMaximumOverMedian": "maximum / median per-hit dE/dx",
+        "nDeDxHitsAbove10": r"dE/dx hits $\geq10$ MeV/mm",
+        "nDeDxHitsAbove20": r"dE/dx hits $\geq20$ MeV/mm",
+        "nStripDeDxHits": "retained strip dE/dx hits",
+        "nStripShapeFailures": "strip hits failing shape selection",
+        "stripShapeFailureFraction": (
+            "fraction of strip hits failing shape selection"
+        ),
     }
     two_dimensional = {
         "subdet_vs_layer": (
@@ -1367,6 +1389,43 @@ def _plot_high_purity_dedx_hit_distributions(
                     f"{title_prefix} {control_label} sideband raw dE/dx-hit multiplicity".strip()
                 )
                 ax.legend(fontsize=9)
+                fig.tight_layout()
+                pdf.savefig(fig)
+                plt.close(fig)
+
+            for field, xlabel in per_track.items():
+                variable = f"{track_base}_pass_{layer}_{field}"
+                if not _outputs_have_histogram(outputs, variable):
+                    continue
+                counts, edges, underflow, overflow = (
+                    summed_hist_counts_edges_with_flow(
+                        outputs,
+                        variable,
+                        sample=sample,
+                        category="inclusive",
+                    )
+                )
+                total = float(counts.sum()) + underflow + overflow
+                if not total:
+                    continue
+                fig, ax = plt.subplots(figsize=(7.2, 5.0))
+                ax.stairs(
+                    counts / total,
+                    edges,
+                    linewidth=1.7,
+                    label=flow_label(
+                        "With highPurity", total, underflow, overflow
+                    ),
+                )
+                ax.set(
+                    xlabel=xlabel,
+                    ylabel="Fraction of sideband candidates",
+                )
+                ax.set_title(
+                    f"{title_prefix} {control_label} per-track dE/dx, "
+                    f"{layer_labels.get(layer, layer)}".strip()
+                )
+                ax.legend(fontsize=8)
                 fig.tight_layout()
                 pdf.savefig(fig)
                 plt.close(fig)

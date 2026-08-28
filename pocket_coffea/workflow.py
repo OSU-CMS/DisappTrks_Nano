@@ -580,9 +580,8 @@ def _high_purity_study_tracks_for_control(
     return ak.with_field(tracks, source_indices, "sourceIsoTrackIdx")
 
 
-def _dedx_hits_for_high_purity_tracks(events, tracks):
-    """Select DeDxHitInfo rows associated with a jagged IsoTrack collection."""
-
+def _dedx_hits_grouped_by_track(events, tracks):
+    """Group DeDxHitInfo rows under each selected IsoTrack row."""
     if "IsoTrackDeDxHit" not in events.fields:
         raise AttributeError(
             "high-purity dE/dx hit histograms require the IsoTrackDeDxHit table"
@@ -590,17 +589,20 @@ def _dedx_hits_for_high_purity_tracks(events, tracks):
     hits = events.IsoTrackDeDxHit
     pairs = ak.cartesian(
         {
-            "hitTrackIdx": hits.isoTrackIdx,
             "selectedTrackIdx": tracks.sourceIsoTrackIdx,
+            "hit": hits,
         },
         axis=1,
         nested=True,
     )
-    associated = ak.any(
-        pairs.hitTrackIdx == pairs.selectedTrackIdx,
-        axis=-1,
-    )
-    selected = hits[associated]
+    return pairs.hit[
+        pairs.hit.isoTrackIdx == pairs.selectedTrackIdx
+    ]
+
+
+def _prepare_dedx_hits_for_histograms(selected):
+    """Add detector fields and mask nonphysical hit-level sentinels."""
+
     selected = ak.with_field(
         selected,
         10 * selected.subdet + selected.layer,
@@ -620,6 +622,80 @@ def _dedx_hits_for_high_purity_tracks(events, tracks):
         "stripPassesShapeSelection",
     )
     return selected
+
+
+def _dedx_hits_for_high_purity_tracks(events, tracks):
+    """Select DeDxHitInfo rows associated with a jagged IsoTrack collection."""
+
+    grouped_hits = _dedx_hits_grouped_by_track(events, tracks)
+    return _prepare_dedx_hits_for_histograms(
+        ak.flatten(grouped_hits, axis=2)
+    )
+
+
+def _dedx_track_summaries(tracks, grouped_hits):
+    """Attach per-track summaries of associated retained dE/dx hits."""
+
+    dedx = grouped_hits.dEdx
+    n_hits = ak.num(dedx, axis=-1)
+    layers = tracks.hp_nValidTrackerHits
+    if "hp_trackerLayersWithMeasurement" in tracks.fields:
+        layers = tracks.hp_trackerLayersWithMeasurement
+
+    sorted_dedx = ak.sort(dedx, axis=-1)
+    positions = ak.local_index(sorted_dedx, axis=-1)
+    lower_middle = (n_hits - 1) // 2
+    upper_middle = n_hits // 2
+    middle_values = sorted_dedx[
+        (positions == lower_middle) | (positions == upper_middle)
+    ]
+    median = ak.mean(middle_values, axis=-1, mask_identity=True)
+    maximum = ak.max(dedx, axis=-1, mask_identity=True)
+    minimum = ak.min(dedx, axis=-1, mask_identity=True)
+    dedx_sum = ak.sum(dedx, axis=-1)
+    truncated_denominator = ak.where(n_hits > 1, n_hits - 1, 1)
+    truncated_mean = ak.where(
+        n_hits > 1,
+        (dedx_sum - maximum) / truncated_denominator,
+        maximum,
+    )
+    safe_median = ak.where(median > 0, median, 1.0)
+    maximum_over_median = ak.mask(
+        maximum / safe_median,
+        median > 0,
+    )
+
+    strip_hits = grouped_hits[grouped_hits.isPixel == 0]
+    n_strip_hits = ak.num(strip_hits, axis=-1)
+    n_strip_shape_failures = ak.sum(
+        strip_hits.passesStripShapeSelection == 0,
+        axis=-1,
+    )
+    strip_denominator = ak.where(n_strip_hits > 0, n_strip_hits, 1)
+    strip_failure_fraction = ak.mask(
+        n_strip_shape_failures / strip_denominator,
+        n_strip_hits > 0,
+    )
+
+    summaries = tracks
+    fields = {
+        "nRetainedDeDxHits": n_hits,
+        "nRetainedDeDxHitsMinusLayers": n_hits - layers,
+        "dEdxMedian": median,
+        "dEdxTruncatedMeanDropMaximum": truncated_mean,
+        "dEdxMaximum": maximum,
+        "dEdxStdDev": ak.std(dedx, axis=-1, mask_identity=True),
+        "dEdxRange": maximum - minimum,
+        "dEdxMaximumOverMedian": maximum_over_median,
+        "nDeDxHitsAbove10": ak.sum(dedx >= 10.0, axis=-1),
+        "nDeDxHitsAbove20": ak.sum(dedx >= 20.0, axis=-1),
+        "nStripDeDxHits": n_strip_hits,
+        "nStripShapeFailures": n_strip_shape_failures,
+        "stripShapeFailureFraction": strip_failure_fraction,
+    }
+    for field, values in fields.items():
+        summaries = ak.with_field(summaries, values, field)
+    return summaries
 
 
 def _fake_track_count_for_control(
@@ -1681,13 +1757,20 @@ class DisappTrksProcessor(BaseProcessorABC):
                         layer_tracks.isHighPurityTrack
                     ]
                     collection = f"HighPurityStudyDeDxHit_pass_{layer}"
-                    hits = _dedx_hits_for_high_purity_tracks(
-                        self.events, selected_tracks
+                    grouped_hits = _dedx_hits_grouped_by_track(
+                        self.events,
+                        selected_tracks,
+                    )
+                    hits = _prepare_dedx_hits_for_histograms(
+                        ak.flatten(grouped_hits, axis=2)
                     )
                     self.events[collection] = hits
                     self.events[f"n{collection}"] = ak.mask(
                         ak.num(hits), ak.num(selected_tracks) > 0
                     )
+                    self.events[
+                        f"HighPurityStudyDeDxTrack_pass_{layer}"
+                    ] = _dedx_track_summaries(selected_tracks, grouped_hits)
             return
         if (
             "Electron" in self.events.fields

@@ -1284,6 +1284,34 @@ _high_purity_dedx_hit_2d_features = {
     "pixelSizeX": _high_purity_dedx_hit_features["pixelSizeX"],
     "pixelSizeY": _high_purity_dedx_hit_features["pixelSizeY"],
 }
+_high_purity_dedx_track_features = {
+    "nRetainedDeDxHits": (
+        31, -0.5, 30.5, "retained dE/dx hits on track"
+    ),
+    "nRetainedDeDxHitsMinusLayers": (
+        31, -10.5, 20.5, "retained dE/dx hits minus measured layers"
+    ),
+    "dEdxMedian": (100, 0.0, 50.0, r"median per-hit dE/dx [MeV/mm]"),
+    "dEdxTruncatedMeanDropMaximum": (
+        100, 0.0, 50.0,
+        r"mean per-hit dE/dx after dropping maximum [MeV/mm]",
+    ),
+    "dEdxMaximum": (100, 0.0, 50.0, r"maximum per-hit dE/dx [MeV/mm]"),
+    "dEdxStdDev": (100, 0.0, 25.0, r"per-track dE/dx standard deviation [MeV/mm]"),
+    "dEdxRange": (100, 0.0, 50.0, r"per-track dE/dx range [MeV/mm]"),
+    "dEdxMaximumOverMedian": (
+        100, 0.0, 20.0, "maximum / median per-hit dE/dx"
+    ),
+    "nDeDxHitsAbove10": (16, -0.5, 15.5, r"dE/dx hits $\geq10$ MeV/mm"),
+    "nDeDxHitsAbove20": (16, -0.5, 15.5, r"dE/dx hits $\geq20$ MeV/mm"),
+    "nStripDeDxHits": (16, -0.5, 15.5, "retained strip dE/dx hits"),
+    "nStripShapeFailures": (
+        16, -0.5, 15.5, "strip hits failing shape selection"
+    ),
+    "stripShapeFailureFraction": (
+        21, -0.025, 1.025, "fraction of strip hits failing shape selection"
+    ),
+}
 if category_mode == "high_purity_study" and enable_high_purity_dedx_histograms:
     _study_control_key = "ZMuMu" if fake_track_control_mode == "zmumu" else "Zee"
     high_purity_dedx_hit_variables[
@@ -1304,10 +1332,35 @@ if category_mode == "high_purity_study" and enable_high_purity_dedx_histograms:
     for _layer in high_purity_study_layers:
         for _selection in ("pass",):
             _collection = f"HighPurityStudyDeDxHit_{_selection}_{_layer}"
+            _track_collection = (
+                f"HighPurityStudyDeDxTrack_{_selection}_{_layer}"
+            )
             _prefix = (
                 f"highPurityStudy{_study_control_key}DeDxHit_"
                 f"{_selection}_{_layer}"
             )
+            _track_prefix = (
+                f"highPurityStudy{_study_control_key}DeDxTrack_"
+                f"{_selection}_{_layer}"
+            )
+            for _field, (_bins, _start, _stop, _label) in (
+                _high_purity_dedx_track_features.items()
+            ):
+                high_purity_dedx_hit_variables[
+                    f"{_track_prefix}_{_field}"
+                ] = HistConf(
+                    [
+                        Axis(
+                            coll=_track_collection,
+                            field=_field,
+                            bins=_bins,
+                            start=_start,
+                            stop=_stop,
+                            label=_label,
+                        )
+                    ],
+                    only_categories=["inclusive"],
+                )
             high_purity_dedx_hit_variables[f"{_prefix}_nHits"] = HistConf(
                 [
                     Axis(
