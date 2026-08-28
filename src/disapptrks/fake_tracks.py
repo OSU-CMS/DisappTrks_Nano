@@ -1539,6 +1539,102 @@ def _plot_high_purity_dedx_hit_distributions(
     return paths
 
 
+def plot_signal_dedx_track_distributions(
+    outputs: Sequence[Mapping[str, Any]],
+    output_dir: Path,
+    *,
+    layers: Sequence[str] = ("NLayers4", "NLayers5", "NLayers6plus"),
+    sample: str | None = None,
+    title_prefix: str = "",
+) -> list[Path]:
+    """Plot dE/dx summaries for tracks passing the full signal selection."""
+
+    try:
+        import matplotlib.pyplot as plt
+        from matplotlib.backends.backend_pdf import PdfPages
+    except ImportError as exc:
+        raise RuntimeError("matplotlib is required for signal dE/dx plots") from exc
+
+    features = {
+        "nRetainedDeDxHits": "retained dE/dx hits on track",
+        "nRetainedDeDxHitsMinusLayers": (
+            "retained dE/dx hits minus measured layers"
+        ),
+        "dEdxMedian": r"median per-hit dE/dx [MeV/mm]",
+        "dEdxTruncatedMeanDropMaximum": (
+            r"mean per-hit dE/dx after dropping maximum [MeV/mm]"
+        ),
+        "dEdxMaximum": r"maximum per-hit dE/dx [MeV/mm]",
+        "dEdxStdDev": r"per-track dE/dx standard deviation [MeV/mm]",
+        "dEdxRange": r"per-track dE/dx range [MeV/mm]",
+        "dEdxMaximumOverMedian": "maximum / median per-hit dE/dx",
+        "nDeDxHitsAbove10": r"dE/dx hits $\geq10$ MeV/mm",
+        "nDeDxHitsAbove20": r"dE/dx hits $\geq20$ MeV/mm",
+        "nStripDeDxHits": "retained strip dE/dx hits",
+        "nStripShapeFailures": "strip hits failing shape selection",
+        "stripShapeFailureFraction": (
+            "fraction of strip hits failing shape selection"
+        ),
+    }
+    layer_labels = {
+        "NLayers4": "4 layers",
+        "NLayers5": "5 layers",
+        "NLayers6plus": r"$\geq6$ layers",
+        "combinedBins": r"$\geq4$ layers",
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for layer in layers:
+        first_variable = f"signalDeDxTrack_{layer}_nRetainedDeDxHits"
+        if not _outputs_have_histogram(outputs, first_variable):
+            continue
+        path = output_dir / f"signal_dedx_track_summary_{layer}.pdf"
+        with PdfPages(path) as pdf:
+            for field, xlabel in features.items():
+                variable = f"signalDeDxTrack_{layer}_{field}"
+                counts, edges, underflow, overflow = (
+                    summed_hist_counts_edges_with_flow(
+                        outputs,
+                        variable,
+                        sample=sample,
+                        category="inclusive",
+                    )
+                )
+                total = float(counts.sum()) + underflow + overflow
+                fig, ax = plt.subplots(figsize=(7.2, 5.0))
+                if total:
+                    label = f"Full selection + highPurity (N={total:g}"
+                    if underflow or overflow:
+                        label += f", UF={underflow:g}, OF={overflow:g}"
+                    label += ")"
+                    ax.stairs(counts / total, edges, linewidth=1.7, label=label)
+                    ax.legend(fontsize=9)
+                else:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        "No selected signal tracks",
+                        transform=ax.transAxes,
+                        ha="center",
+                        va="center",
+                    )
+                ax.set(
+                    xlabel=xlabel,
+                    ylabel="Fraction of selected signal tracks",
+                )
+                ax.set_title(
+                    (
+                        f"{title_prefix} signal after full disappearing-track "
+                        f"selection, {layer_labels.get(layer, layer)}"
+                    ).strip()
+                )
+                fig.tight_layout()
+                pdf.savefig(fig)
+                plt.close(fig)
+        paths.append(path)
+    return paths
+
+
 def estimate_fake_track_background_an(
     cutflow: Mapping[str, Any],
     *,

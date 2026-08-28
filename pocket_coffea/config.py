@@ -273,6 +273,22 @@ enable_fake_sideband_histograms = os.environ.get(
 enable_high_purity_dedx_histograms = os.environ.get(
     "DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS", "0"
 ).lower() in ("1", "true", "yes", "on")
+enable_signal_dedx_histograms = os.environ.get(
+    "DISAPPTRKS_ENABLE_SIGNAL_DEDX_HISTOGRAMS", "0"
+).lower() in ("1", "true", "yes", "on")
+signal_dedx_layers = tuple(
+    item.strip()
+    for item in os.environ.get(
+        "DISAPPTRKS_SIGNAL_DEDX_LAYERS",
+        "NLayers4,NLayers5,NLayers6plus",
+    ).split(",")
+    if item.strip()
+)
+if any(
+    layer not in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins")
+    for layer in signal_dedx_layers
+):
+    raise ValueError("DISAPPTRKS_SIGNAL_DEDX_LAYERS contains an unknown layer bin")
 if fake_track_control_mode in ("jetmet", "basic_selection"):
     fake_track_control_mode = "basic"
 if fake_track_control_mode not in ("basic", "zmumu", "zee"):
@@ -286,6 +302,8 @@ parameters["disapptrks"] = {
     "fake_sideband_histograms": enable_fake_sideband_histograms,
     "high_purity_study_layers": high_purity_study_layers,
     "high_purity_dedx_histograms": enable_high_purity_dedx_histograms,
+    "signal_dedx_histograms": enable_signal_dedx_histograms,
+    "signal_dedx_layers": signal_dedx_layers,
     "full_workflow": os.environ.get("DISAPPTRKS_FULL_WORKFLOW", "").lower()
     in ("1", "true", "yes", "on"),
     "full_variables": os.environ.get("DISAPPTRKS_FULL_VARIABLES", "").lower()
@@ -756,9 +774,12 @@ def _variables_for_mode(mode, variables):
             "nFakeZeeSideband",
         ),
         "fiducial_maps": ("electronFiducial", "muonFiducial"),
-        # The acceptance comparison is read directly from category cutflows;
-        # it does not require any histogram variables.
-        "signal_acceptance": (),
+        # The acceptance comparison itself is read directly from category
+        # cutflows. Optional signal dE/dx summaries use a deliberately small
+        # dedicated histogram family.
+        "signal_acceptance": (
+            ("signalDeDxTrack",) if enable_signal_dedx_histograms else ()
+        ),
     }
     prefixes = prefixes_by_mode.get(mode)
     if prefixes is None:
@@ -1312,6 +1333,27 @@ _high_purity_dedx_track_features = {
         21, -0.025, 1.025, "fraction of strip hits failing shape selection"
     ),
 }
+signal_dedx_track_variables = {}
+if category_mode == "signal_acceptance" and enable_signal_dedx_histograms:
+    for _layer in signal_dedx_layers:
+        _collection = f"SignalDeDxTrack_{_layer}"
+        _prefix = f"signalDeDxTrack_{_layer}"
+        for _field, (_bins, _start, _stop, _label) in (
+            _high_purity_dedx_track_features.items()
+        ):
+            signal_dedx_track_variables[f"{_prefix}_{_field}"] = HistConf(
+                [
+                    Axis(
+                        coll=_collection,
+                        field=_field,
+                        bins=_bins,
+                        start=_start,
+                        stop=_stop,
+                        label=_label,
+                    )
+                ],
+                only_categories=["inclusive"],
+            )
 if category_mode == "high_purity_study" and enable_high_purity_dedx_histograms:
     _study_control_key = "ZMuMu" if fake_track_control_mode == "zmumu" else "Zee"
     high_purity_dedx_hit_variables[
@@ -1558,6 +1600,7 @@ cfg = Configurator(
     variables=_variables_for_mode(category_mode, {
         **high_purity_study_variables,
         **high_purity_dedx_hit_variables,
+        **signal_dedx_track_variables,
         **(fake_sideband_track_variables if enable_fake_sideband_histograms else {}),
         "nIsoTrack": HistConf(
             [

@@ -151,6 +151,7 @@ matches the production search selection:
 
 ```bash
 DISAPPTRKS_CATEGORY_MODE=signal_acceptance \
+DISAPPTRKS_ENABLE_SIGNAL_DEDX_HISTOGRAMS=1 \
 DISAPPTRKS_OUTPUT_VARIANT=chargino700_high_purity \
 DISAPPTRKS_DATASET_JSON=datasets/local_chargino_700.json \
 DISAPPTRKS_DATASET_SAMPLE=SIGNAL_Chargino \
@@ -171,6 +172,20 @@ disapptrks summarize-signal-high-purity \
   analysis_output/2022EFG/signal_acceptance/chargino700_high_purity/output_all.coffea \
   --sample SIGNAL_Chargino \
   --full-cutflow
+```
+
+When `DISAPPTRKS_ENABLE_SIGNAL_DEDX_HISTOGRAMS=1`, the workflow also stores
+the compact per-track dE/dx summaries for signal candidates passing the final
+event selection, all disappearing-track requirements, the requested fiducial
+maps, and `highPurity`. It does not histogram the much larger per-hit table.
+The default layer bins are 4, 5, and six-or-more layers; override them with
+`DISAPPTRKS_SIGNAL_DEDX_LAYERS` if needed. Make the PDFs with:
+
+```bash
+disapptrks plot-signal-dedx-study \
+  analysis_output/2022EFG/signal_acceptance/chargino700_high_purity/output_all.coffea \
+  --sample SIGNAL_Chargino \
+  --title-prefix "2022EFG chargino"
 ```
 
 The detailed output contains two parallel cumulative columns for every basic

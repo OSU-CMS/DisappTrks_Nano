@@ -1194,6 +1194,14 @@ class DisappTrksProcessor(BaseProcessorABC):
                 "DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS", "0"
             ).lower() in ("1", "true", "yes", "on")
 
+    def _signal_dedx_histograms_enabled(self):
+        try:
+            return bool(self.params.disapptrks.signal_dedx_histograms)
+        except Exception:
+            return os.environ.get(
+                "DISAPPTRKS_ENABLE_SIGNAL_DEDX_HISTOGRAMS", "0"
+            ).lower() in ("1", "true", "yes", "on")
+
     def _mode_enabled(self, *modes):
         mode = self._category_mode()
         expanded_modes = {
@@ -2203,6 +2211,43 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["IsoTrackSearchHighPurity"] = self.events.IsoTrackSearch[
             self.events.IsoTrackSearch.isHighPurityTrack
         ]
+        if (
+            self._category_mode() == "signal_acceptance"
+            and self._signal_dedx_histograms_enabled()
+        ):
+            if "IsoTrackDeDxHit" not in self.events.fields:
+                raise AttributeError(
+                    "signal dE/dx histograms require the IsoTrackDeDxHit table"
+                )
+
+            source_indices = ak.local_index(self.events.IsoTrack, axis=1)[
+                search_mask
+            ]
+            selected_tracks = ak.with_field(
+                self.events.IsoTrack[search_mask],
+                source_indices,
+                "sourceIsoTrackIdx",
+            )
+            full_event_mask = search_event_cutflow_masks(
+                self.events.AnalysisEvent
+            )["event_jetMetDphi0p5"]
+            selected_event_mask, _ = ak.broadcast_arrays(
+                full_event_mask,
+                selected_tracks.pt,
+            )
+            selected_tracks = selected_tracks[selected_event_mask]
+
+            for layer in self.params.disapptrks.signal_dedx_layers:
+                layer_tracks = selected_tracks[
+                    layer_mask(selected_tracks, layer)
+                ]
+                grouped_hits = _dedx_hits_grouped_by_track(
+                    self.events,
+                    layer_tracks,
+                )
+                self.events[f"SignalDeDxTrack_{layer}"] = (
+                    _dedx_track_summaries(layer_tracks, grouped_hits)
+                )
 
     def _count_lepton_pair_fields(self, prefix):
         self.events[f"n{prefix}TagProbePair"] = ak.num(

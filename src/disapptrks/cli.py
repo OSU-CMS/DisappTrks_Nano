@@ -25,6 +25,7 @@ from .fake_tracks import (
     fixed_an_transfer_factor_fit,
     plot_fake_sideband_track_diagnostics,
     plot_high_purity_input_distributions,
+    plot_signal_dedx_track_distributions,
     plot_dxy_transfer_factor,
     summed_hist_counts_edges,
     write_fake_sideband_event_manifest,
@@ -1893,6 +1894,19 @@ def _plot_high_purity_study_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def _plot_signal_dedx_study_command(args: argparse.Namespace) -> int:
+    outputs = _load_outputs(args.files)
+    for path in plot_signal_dedx_track_distributions(
+        outputs,
+        args.output_dir,
+        layers=args.layers,
+        sample=args.sample,
+        title_prefix=args.title_prefix,
+    ):
+        print(f"Wrote {path}")
+    return 0
+
+
 def _summarize_signal_high_purity_command(args: argparse.Namespace) -> int:
     cutflow = _load_merged_cutflow(args.files)
     rows = (
@@ -2907,6 +2921,29 @@ def main():
     high_purity_study.add_argument("--output-dir", type=Path, default=Path("plots/high_purity_study"))
     high_purity_study.add_argument("--title-prefix", default="")
     high_purity_study.set_defaults(func=_plot_high_purity_study_command)
+
+    signal_dedx_study = subparsers.add_parser(
+        "plot-signal-dedx-study",
+        help=(
+            "Plot per-track dE/dx summaries after the full disappearing-track "
+            "signal selection."
+        ),
+    )
+    signal_dedx_study.add_argument("files", nargs="+", type=Path)
+    signal_dedx_study.add_argument("--sample")
+    signal_dedx_study.add_argument(
+        "--layers",
+        nargs="+",
+        default=["NLayers4", "NLayers5", "NLayers6plus"],
+        choices=("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"),
+    )
+    signal_dedx_study.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("plots/signal_dedx_study"),
+    )
+    signal_dedx_study.add_argument("--title-prefix", default="")
+    signal_dedx_study.set_defaults(func=_plot_signal_dedx_study_command)
 
     signal_high_purity = subparsers.add_parser(
         "summarize-signal-high-purity",
