@@ -1302,7 +1302,7 @@ if category_mode == "high_purity_study" and enable_high_purity_dedx_histograms:
         only_categories=["inclusive"],
     )
     for _layer in high_purity_study_layers:
-        for _selection in ("before", "pass"):
+        for _selection in ("pass",):
             _collection = f"HighPurityStudyDeDxHit_{_selection}_{_layer}"
             _prefix = (
                 f"highPurityStudy{_study_control_key}DeDxHit_"

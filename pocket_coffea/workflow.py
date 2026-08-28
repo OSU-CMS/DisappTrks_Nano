@@ -1677,20 +1677,17 @@ class DisappTrksProcessor(BaseProcessorABC):
                     layer_tracks = self.events.HighPurityStudyTrack[
                         layer_mask(self.events.HighPurityStudyTrack, layer)
                     ]
-                    for selection, selected_tracks in (
-                        ("before", layer_tracks),
-                        ("pass", layer_tracks[layer_tracks.isHighPurityTrack]),
-                    ):
-                        collection = (
-                            f"HighPurityStudyDeDxHit_{selection}_{layer}"
-                        )
-                        hits = _dedx_hits_for_high_purity_tracks(
-                            self.events, selected_tracks
-                        )
-                        self.events[collection] = hits
-                        self.events[f"n{collection}"] = ak.mask(
-                            ak.num(hits), ak.num(selected_tracks) > 0
-                        )
+                    selected_tracks = layer_tracks[
+                        layer_tracks.isHighPurityTrack
+                    ]
+                    collection = f"HighPurityStudyDeDxHit_pass_{layer}"
+                    hits = _dedx_hits_for_high_purity_tracks(
+                        self.events, selected_tracks
+                    )
+                    self.events[collection] = hits
+                    self.events[f"n{collection}"] = ak.mask(
+                        ak.num(hits), ak.num(selected_tracks) > 0
+                    )
             return
         if (
             "Electron" in self.events.fields

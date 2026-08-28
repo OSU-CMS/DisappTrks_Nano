@@ -121,9 +121,12 @@ disapptrks plot-high-purity-study output_all.coffea \
 With `DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS=1`, the same plotting
 command also writes `zmumu_high_purity_dedx_hits_NLayers4.pdf` (or the
 corresponding `zee` file).  The hit rows are linked through `isoTrackIdx` and
-restricted to hits belonging to the selected sideband tracks before or after
-the high-purity requirement.  One-dimensional pages cover the raw
-`IsoTrackDeDxHit` fields.  Two-dimensional pages show detector occupancy and
+restricted to hits belonging to selected high-purity sideband tracks. The
+per-hit pages show only the with-high-purity population because MiniAOD retains
+`DeDxHitInfo` only for tracks satisfying its retention selection; a nominal
+before/after overlay would therefore not measure the effect of the high-purity
+requirement. One-dimensional pages cover the raw `IsoTrackDeDxHit` fields.
+Two-dimensional pages show detector occupancy and
 hit charge, path length, dE/dx, local position, hit type, strip-shape status,
 and pixel cluster sizes versus the encoded detector layer.  Pixel cluster-size
 plots exclude strip rows, whose source value is the `-1` sentinel.  The option
