@@ -87,6 +87,10 @@ disapptrks make-dataset-json \
   -o pocket_coffea/datasets/eos_signal_2022_postEE.json
 ```
 
+If the signal-point directories instead live directly below another parent,
+such as `dev_v2/<signal-point>`, pass `--signal-marker dev_v2` while keeping
+`--group-signal-points`.
+
 The shared `xsec=1.0` is appropriate for acceptance comparisons. Use physical,
 point-dependent cross sections before interpreting normalized signal yields.
 

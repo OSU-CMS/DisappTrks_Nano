@@ -1043,7 +1043,8 @@ def _make_dataset_json_command(args: argparse.Namespace) -> int:
         if args.dataset_name:
             raise SystemExit(
                 "error: --dataset-name is not used with --group-signal-points; "
-                "dataset names come from the directories below SignalSim"
+                "dataset names come from the directories below "
+                f"{args.signal_marker}"
             )
         if not args.is_mc:
             raise SystemExit("error: --group-signal-points requires --is-mc")
@@ -1076,16 +1077,18 @@ def _make_dataset_json_command(args: argparse.Namespace) -> int:
 
     extra_metadata = {"xsec": str(args.xsec)} if args.xsec is not None else None
     if args.group_signal_points:
-        grouped = group_signal_files(files)
+        grouped = group_signal_files(files, marker=args.signal_marker)
         classified = {path for paths in grouped.values() for path in paths}
         unclassified = [path for path in files if path not in classified]
         if unclassified:
             raise SystemExit(
-                "error: could not identify SignalSim/<signal-point> for "
+                f"error: could not identify {args.signal_marker}/<signal-point> for "
                 f"{len(unclassified)} file(s), including {unclassified[0]}"
             )
         if not grouped:
-            raise SystemExit("error: no signal points were found below SignalSim")
+            raise SystemExit(
+                f"error: no signal points were found below {args.signal_marker}"
+            )
 
         dataset = {}
         for point, point_files in grouped.items():
@@ -3214,8 +3217,16 @@ def main():
         "--group-signal-points",
         action="store_true",
         help=(
-            "Create one dataset entry per SignalSim/<signal-point> directory. "
+            "Create one dataset entry per <signal-marker>/<signal-point> directory. "
             "Requires --is-mc and --count-events."
+        ),
+    )
+    dataset_json.add_argument(
+        "--signal-marker",
+        default="SignalSim",
+        help=(
+            "Parent directory whose immediate children define signal points "
+            "for --group-signal-points. Default: SignalSim."
         ),
     )
     dataset_json.add_argument(

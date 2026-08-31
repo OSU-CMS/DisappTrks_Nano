@@ -37,6 +37,17 @@ def test_signal_point_returns_none_without_signal_sim_directory():
     assert signal_point_from_path("root://host//store/group/nano/file.root") is None
 
 
+def test_signal_files_can_be_grouped_below_configurable_parent():
+    point = "AMSB_Wino_M700GeV_ctau1000cm_TuneCP5_13p6TeV_madgraph-pythia8"
+    path = (
+        "root://cmseosmgm01.fnal.gov:1094//store/group/lpcdisapptrks/"
+        f"nano/dev_v2/{point}/production/date/0000/file.root"
+    )
+
+    assert signal_point_from_path(path, marker="dev_v2") == point
+    assert group_signal_files([path], marker="dev_v2") == {point: [path]}
+
+
 def test_count_root_events_sums_tree_metadata_concurrently(monkeypatch):
     entries = {"file1.root": 10, "file2.root": 25, "file3.root": 7}
 
