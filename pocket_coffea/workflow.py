@@ -162,7 +162,94 @@ def _fiducial_map_path(flavor: str) -> Path | None:
     return None
 
 
-def _load_fiducial_hot_spots(flavor: str) -> tuple[dict[str, float], ...]:
+# Group-shared fiducial maps, kept current for every run period. Used automatically
+# when no explicit DISAPPTRKS_*_FIDUCIAL_MAP_JSON/_DIR override is set, so a job
+# doesn't need era-specific paths hand-configured (and can't silently pick up a
+# stale local copy). Override the base location with DISAPPTRKS_FIDUCIAL_MAP_EOS_BASE
+# if the group's shared space ever moves.
+FIDUCIAL_MAP_EOS_BASE_DEFAULT = (
+    "root://cmseos.fnal.gov//store/group/lpcdisapptrks/fiducialmaps"
+)
+
+# self._year -> the era string used in the shared maps' filenames. Mirrors the same
+# 2022/2023 run-period split _jet_veto_map_parameter_year already encodes for the jet
+# veto maps; kept as a separate table here since it's a different auxiliary file with
+# its own naming convention, not because the underlying physics grouping differs.
+FIDUCIAL_MAP_ERAS = {
+    "2022_preEE": "2022CD",
+    "2022_postEE": "2022EFG",
+    "2023_preBPix": "2023C",
+    "2023_postBPix": "2023D",
+    "2024": "2024",
+    "2025": "2025",
+    "2026": "2026",
+}
+
+
+def _fiducial_map_era(year, era) -> str:
+    year = str(year)
+    if year in FIDUCIAL_MAP_ERAS:
+        return FIDUCIAL_MAP_ERAS[year]
+    # Defensive fallback for a bare year without a pre/post suffix, disambiguated
+    # by the era letter -- only expected for an older dataset JSON that predates
+    # the compound year convention confirmed elsewhere in this codebase.
+    if year == "2022":
+        return "2022CD" if str(era) in ("C", "D") else "2022EFG"
+    if year == "2023":
+        return "2023C" if str(era) == "C" else "2023D"
+    return year
+
+
+def _eos_fiducial_map_urls(flavor: str, mapped_era: str) -> list[str]:
+    base = os.environ.get(
+        "DISAPPTRKS_FIDUCIAL_MAP_EOS_BASE", FIDUCIAL_MAP_EOS_BASE_DEFAULT
+    )
+    return [f"{base}/{flavor}_fiducial_map_{mapped_era}_v2.json"]
+
+
+def _read_eos_json(url: str):
+    try:
+        from XRootD import client
+    except ImportError as err:
+        raise ImportError(
+            "Install XRootD python bindings with: conda install -c conda-forge xrootd"
+        ) from err
+
+    xrd_file = client.File()
+    status, _ = xrd_file.open(url)
+    if not status.ok:
+        xrd_file.close()
+        return None
+    try:
+        _, data = xrd_file.read()
+    finally:
+        xrd_file.close()
+    if not data:
+        return None
+    return json.loads(data)
+
+
+def _eos_fiducial_hot_spots(flavor: str, year, era):
+    mapped_era = _fiducial_map_era(year, era)
+    for url in _eos_fiducial_map_urls(flavor, mapped_era):
+        payload = _read_eos_json(url)
+        if payload is None:
+            continue
+        hot_spots = tuple(payload.get("hot_spots", ()))
+        if (
+            not hot_spots
+            and os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower()
+            in ("1", "true", "yes", "on")
+        ):
+            raise ValueError(f"Fiducial map {url} has no hot spots")
+        print(f"Loaded {len(hot_spots)} {flavor} fiducial-map hot spot(s) from {url}")
+        return hot_spots
+    return None
+
+
+def _load_fiducial_hot_spots(
+    flavor: str, year=None, era=None
+) -> tuple[dict[str, float], ...]:
     hot_spot_env_name = f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_HOT_SPOTS_JSON"
     hot_spot_env = os.environ.get(hot_spot_env_name)
     if hot_spot_env:
@@ -177,31 +264,41 @@ def _load_fiducial_hot_spots(flavor: str) -> tuple[dict[str, float], ...]:
         return hot_spots
 
     path = _fiducial_map_path(flavor)
-    if path is None:
-        if os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
+    if path is not None:
+        print(f"Opening {flavor} fiducial map from {path} in {Path.cwd()}")
+        with path.open() as handle:
+            payload = json.load(handle)
+        hot_spots = tuple(payload.get("hot_spots", ()))
+        if (
+            not hot_spots
+            and os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower()
+            in ("1", "true", "yes", "on")
         ):
-            raise FileNotFoundError(
-                f"No fiducial-map path configured for {flavor}. Set "
-                f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON or "
-                "DISAPPTRKS_FIDUCIAL_MAP_DIR."
-            )
-        return ()
-    print(f"Opening {flavor} fiducial map from {path} in {Path.cwd()}")
-    with path.open() as handle:
-        payload = json.load(handle)
-    hot_spots = tuple(payload.get("hot_spots", ()))
-    if (
-        not hot_spots
-        and os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower()
-        in ("1", "true", "yes", "on")
+            raise ValueError(f"Fiducial map {path} has no hot spots")
+        print(f"Loaded {len(hot_spots)} {flavor} fiducial-map hot spot(s) from {path}")
+        return hot_spots
+
+    # No explicit override configured -- automatically resolve the era-appropriate
+    # map from the group's shared EOS space, based on the dataset's own year/era,
+    # rather than requiring a hand-set local path per era.
+    if year is not None:
+        hot_spots = _eos_fiducial_hot_spots(flavor, year, era)
+        if hot_spots is not None:
+            return hot_spots
+
+    if os.environ.get("DISAPPTRKS_REQUIRE_FIDUCIAL_MAPS", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
     ):
-        raise ValueError(f"Fiducial map {path} has no hot spots")
-    print(f"Loaded {len(hot_spots)} {flavor} fiducial-map hot spot(s) from {path}")
-    return hot_spots
+        raise FileNotFoundError(
+            f"No fiducial-map path configured or found on the shared EOS space for "
+            f"{flavor} (year={year!r}, era={era!r}). Set "
+            f"DISAPPTRKS_{flavor.upper()}_FIDUCIAL_MAP_JSON or "
+            "DISAPPTRKS_FIDUCIAL_MAP_DIR to override."
+        )
+    return ()
 
 
 def _outside_fiducial_hot_spots(pairs, hot_spots):
@@ -1219,7 +1316,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             self._disapptrks_fiducial_hot_spots = {}
         if flavor not in self._disapptrks_fiducial_hot_spots:
             self._disapptrks_fiducial_hot_spots[flavor] = _load_fiducial_hot_spots(
-                flavor
+                flavor, year=self._year, era=self._era
             )
         return self._disapptrks_fiducial_hot_spots[flavor]
 
