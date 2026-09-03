@@ -72,7 +72,7 @@ def test_high_purity_study_can_retain_non_high_purity_tracks():
     assert ak.to_list(study) == [[True, True, True]]
 
 
-def test_fake_track_dedx_max_over_median_only_applies_to_nlayers4():
+def test_fake_track_dedx_max_over_median_applies_to_nlayers4_and_nlayers5():
     base = {
         "pt": 100.0, "eta": 0.8, "dxy": 0.1, "dz": 0.1,
         "inECALCrack": False, "inDTWheelGap": False,
@@ -87,29 +87,41 @@ def test_fake_track_dedx_max_over_median_only_applies_to_nlayers4():
         {
             **base,
             "hp_trackerLayersWithMeasurement": 4,
-            "dEdxMaximumOverMedian": 2.6,
+            "dEdxMaximumOverMedian": 2.5,
         },
         {
             **base,
             "hp_trackerLayersWithMeasurement": 4,
-            "dEdxMaximumOverMedian": 2.7,
+            "dEdxMaximumOverMedian": 2.6,
         },
         {
             **base,
             "hp_trackerLayersWithMeasurement": 5,
-            "dEdxMaximumOverMedian": 2.7,
+            "dEdxMaximumOverMedian": 2.5,
+        },
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 5,
+            "dEdxMaximumOverMedian": 2.6,
+        },
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 6,
+            "dEdxMaximumOverMedian": 2.6,
         },
     ]])
 
     nlayers4 = fake_track_no_d0_mask(tracks, layer="NLayers4")
     nlayers5 = fake_track_no_d0_mask(tracks, layer="NLayers5")
+    nlayers6plus = fake_track_no_d0_mask(tracks, layer="NLayers6plus")
     without_dedx_cut = fake_track_no_d0_mask(
         tracks, layer="NLayers4", require_dedx_max_over_median=False
     )
 
-    assert ak.to_list(nlayers4) == [[True, False, False]]
-    assert ak.to_list(nlayers5) == [[False, False, True]]
-    assert ak.to_list(without_dedx_cut) == [[True, True, False]]
+    assert ak.to_list(nlayers4) == [[True, False, False, False, False]]
+    assert ak.to_list(nlayers5) == [[False, False, True, False, False]]
+    assert ak.to_list(nlayers6plus) == [[False, False, False, False, True]]
+    assert ak.to_list(without_dedx_cut) == [[True, True, False, False, False]]
 
 
 def test_fake_track_dedx_max_over_median_skipped_when_field_absent():

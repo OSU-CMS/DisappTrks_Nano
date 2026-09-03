@@ -1251,9 +1251,10 @@ def disappearing_track_selection_mask(tracks, *, layer: str = "combinedBins"):
 # Maximum allowed ratio of a track's largest per-hit dE/dx measurement to its
 # median per-hit dE/dx, applied right after the high-purity/layer cut in
 # `fake_track_no_d0_mask`.  The working point is layer-bin dependent; only
-# NLayers4 has a derived value so far.
+# NLayers4 and NLayers5 have derived values so far.
 FAKE_TRACK_DEDX_MAX_OVER_MEDIAN = {
-    "NLayers4": 2.6,
+    "NLayers4": 2.5,
+    "NLayers5": 2.5,
 }
 
 
