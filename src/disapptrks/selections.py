@@ -1248,6 +1248,15 @@ def disappearing_track_selection_mask(tracks, *, layer: str = "combinedBins"):
     ]
 
 
+# Maximum allowed ratio of a track's largest per-hit dE/dx measurement to its
+# median per-hit dE/dx, applied right after the high-purity/layer cut in
+# `fake_track_no_d0_mask`.  The working point is layer-bin dependent; only
+# NLayers4 has a derived value so far.
+FAKE_TRACK_DEDX_MAX_OVER_MEDIAN = {
+    "NLayers4": 2.6,
+}
+
+
 def fake_track_no_d0_mask(
     tracks,
     *,
@@ -1257,6 +1266,7 @@ def fake_track_no_d0_mask(
     sideband_min: float = 0.05,
     sideband_max: float = 0.50,
     require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
 ):
     """Fake-track control selection with the d0 requirement replaced.
 
@@ -1264,6 +1274,14 @@ def fake_track_no_d0_mask(
     nominal d0 requirement removed.  The transfer factor uses the ratio of the
     signal d0 window to the sideband, while the target-layer control yield is
     counted in the sideband.
+
+    For layer bins listed in ``FAKE_TRACK_DEDX_MAX_OVER_MEDIAN``, an
+    additional cut requires ``tracks.dEdxMaximumOverMedian`` (the track's
+    largest per-hit dE/dx divided by its median per-hit dE/dx) to be at or
+    below the configured working point.  This is skipped if ``tracks`` does
+    not carry that field, so callers must attach it (e.g. via
+    ``_dedx_track_summaries``) before requesting a layer bin with a
+    configured threshold.
     """
 
     abs_dxy = abs(tracks.dxy)
@@ -1273,6 +1291,24 @@ def fake_track_no_d0_mask(
         d0_mask = (abs_dxy >= sideband_min) & (abs_dxy < sideband_max)
     else:
         raise ValueError(f"unknown fake-track d0 region: {d0_region}")
+
+    layer_cut = (
+        analysis_layer_mask(tracks, layer)
+        if require_high_purity
+        else layer_mask(tracks, layer)
+    )
+
+    dedx_max_over_median = FAKE_TRACK_DEDX_MAX_OVER_MEDIAN.get(layer)
+    if (
+        require_dedx_max_over_median
+        and dedx_max_over_median is not None
+        and "dEdxMaximumOverMedian" in tracks.fields
+    ):
+        import awkward as ak
+
+        layer_cut = layer_cut & ak.fill_none(
+            tracks.dEdxMaximumOverMedian <= dedx_max_over_median, False
+        )
 
     return (
         (tracks.pt > pt_min)
@@ -1289,11 +1325,7 @@ def fake_track_no_d0_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dz) < 0.5)
         & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
-        & (
-            analysis_layer_mask(tracks, layer)
-            if require_high_purity
-            else layer_mask(tracks, layer)
-        )
+        & layer_cut
         & (tracks.caloEnergy < 10.0)
         & (tracks.missingOuterHits >= 3)
         & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))

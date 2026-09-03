@@ -72,6 +72,63 @@ def test_high_purity_study_can_retain_non_high_purity_tracks():
     assert ak.to_list(study) == [[True, True, True]]
 
 
+def test_fake_track_dedx_max_over_median_only_applies_to_nlayers4():
+    base = {
+        "pt": 100.0, "eta": 0.8, "dxy": 0.1, "dz": 0.1,
+        "inECALCrack": False, "inDTWheelGap": False,
+        "inCSCTransition": False, "inTOBCrack": False,
+        "isFiducialECALTrack": True, "hp_nValidPixelHits": 4,
+        "hp_nValidHits": 4, "missingInnerHits": 0, "missingMiddleHits": 0,
+        "missingOuterHits": 3, "pfRelIso03_chg": 0.01, "dRMinJet": 1.0,
+        "dRMinElectron": 1.0, "dRMinMuon": 1.0, "dRMinTauHad": 1.0,
+        "caloEnergy": 1.0, "isHighPurityTrack": True,
+    }
+    tracks = ak.Array([[
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 4,
+            "dEdxMaximumOverMedian": 2.6,
+        },
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 4,
+            "dEdxMaximumOverMedian": 2.7,
+        },
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 5,
+            "dEdxMaximumOverMedian": 2.7,
+        },
+    ]])
+
+    nlayers4 = fake_track_no_d0_mask(tracks, layer="NLayers4")
+    nlayers5 = fake_track_no_d0_mask(tracks, layer="NLayers5")
+    without_dedx_cut = fake_track_no_d0_mask(
+        tracks, layer="NLayers4", require_dedx_max_over_median=False
+    )
+
+    assert ak.to_list(nlayers4) == [[True, False, False]]
+    assert ak.to_list(nlayers5) == [[False, False, True]]
+    assert ak.to_list(without_dedx_cut) == [[True, True, False]]
+
+
+def test_fake_track_dedx_max_over_median_skipped_when_field_absent():
+    base = {
+        "pt": 100.0, "eta": 0.8, "dxy": 0.1, "dz": 0.1,
+        "inECALCrack": False, "inDTWheelGap": False,
+        "inCSCTransition": False, "inTOBCrack": False,
+        "isFiducialECALTrack": True, "hp_nValidPixelHits": 4,
+        "hp_nValidHits": 4, "missingInnerHits": 0, "missingMiddleHits": 0,
+        "missingOuterHits": 3, "pfRelIso03_chg": 0.01, "dRMinJet": 1.0,
+        "dRMinElectron": 1.0, "dRMinMuon": 1.0, "dRMinTauHad": 1.0,
+        "caloEnergy": 1.0, "isHighPurityTrack": True,
+        "hp_trackerLayersWithMeasurement": 4,
+    }
+    tracks = ak.Array([[base]])
+
+    assert ak.to_list(fake_track_no_d0_mask(tracks, layer="NLayers4")) == [[True]]
+
+
 def test_signal_track_comparison_applies_high_purity_to_every_layer_bin():
     base = {
         "pt": 100.0, "eta": 0.8, "dxy": 0.01, "dz": 0.1,

@@ -270,6 +270,9 @@ if any(layer not in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins") for
 enable_fake_sideband_histograms = os.environ.get(
     "DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS", "1"
 ).lower() in ("1", "true", "yes", "on")
+fake_track_require_dedx_cut = os.environ.get(
+    "DISAPPTRKS_FAKE_TRACK_REQUIRE_DEDX_CUT", "1"
+).lower() in ("1", "true", "yes", "on")
 enable_high_purity_dedx_histograms = os.environ.get(
     "DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS", "0"
 ).lower() in ("1", "true", "yes", "on")
@@ -300,6 +303,7 @@ parameters["disapptrks"] = {
     "category_mode": category_mode,
     "fake_track_control": fake_track_control_mode,
     "fake_sideband_histograms": enable_fake_sideband_histograms,
+    "fake_track_require_dedx_cut": fake_track_require_dedx_cut,
     "high_purity_study_layers": high_purity_study_layers,
     "high_purity_dedx_histograms": enable_high_purity_dedx_histograms,
     "signal_dedx_histograms": enable_signal_dedx_histograms,
