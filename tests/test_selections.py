@@ -7,6 +7,8 @@ from disapptrks.selections import (
     build_lepton_veto_tag_probe_pairs,
     build_muon_veto_tag_probe_pairs,
     fiducial_map_probe_track_mask,
+    fake_track_base_mask,
+    fake_track_layer_cut,
     fake_track_no_d0_mask,
     hadronic_tau_control_object_mask,
     layer_mask,
@@ -139,6 +141,72 @@ def test_fake_track_dedx_max_over_median_skipped_when_field_absent():
     tracks = ak.Array([[base]])
 
     assert ak.to_list(fake_track_no_d0_mask(tracks, layer="NLayers4")) == [[True]]
+
+
+def test_fake_track_base_and_layer_cut_recombine_to_no_d0_mask():
+    """fake_track_no_d0_mask must equal base_mask & layer_cut for every layer.
+
+    Guards the split introduced so a caller looping over layer bins can
+    compute the layer-independent base once instead of recomputing the full
+    chain per bin -- the combinator wrapper and the split-out pieces must
+    never drift apart.
+    """
+    base = {
+        "pt": 100.0, "eta": 0.8, "dxy": 0.1, "dz": 0.1,
+        "inECALCrack": False, "inDTWheelGap": False,
+        "inCSCTransition": False, "inTOBCrack": False,
+        "isFiducialECALTrack": True, "hp_nValidPixelHits": 4,
+        "hp_nValidHits": 4, "missingInnerHits": 0, "missingMiddleHits": 0,
+        "missingOuterHits": 3, "pfRelIso03_chg": 0.01, "dRMinJet": 1.0,
+        "dRMinElectron": 1.0, "dRMinMuon": 1.0, "dRMinTauHad": 1.0,
+        "caloEnergy": 1.0,
+    }
+    tracks = ak.Array([[
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 4,
+            "isHighPurityTrack": True,
+            "dEdxMaximumOverMedian": 2.4,
+        },
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 4,
+            "isHighPurityTrack": True,
+            "dEdxMaximumOverMedian": 2.6,
+        },
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 5,
+            "isHighPurityTrack": False,
+            "dEdxMaximumOverMedian": 2.4,
+        },
+        {
+            **base,
+            "hp_trackerLayersWithMeasurement": 6,
+            "isHighPurityTrack": True,
+            "dEdxMaximumOverMedian": 2.4,
+        },
+    ]])
+
+    for layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+        for d0_region in ("signal", "sideband"):
+            for require_dedx in (True, False):
+                combined = fake_track_base_mask(tracks, d0_region=d0_region) & (
+                    fake_track_layer_cut(
+                        tracks,
+                        layer=layer,
+                        require_dedx_max_over_median=require_dedx,
+                    )
+                )
+                nominal = fake_track_no_d0_mask(
+                    tracks,
+                    layer=layer,
+                    d0_region=d0_region,
+                    require_dedx_max_over_median=require_dedx,
+                )
+                assert ak.to_list(combined) == ak.to_list(nominal), (
+                    layer, d0_region, require_dedx
+                )
 
 
 def test_signal_track_comparison_applies_high_purity_to_every_layer_bin():

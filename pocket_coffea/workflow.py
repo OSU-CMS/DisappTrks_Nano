@@ -28,6 +28,8 @@ from disapptrks.selections import (
     electron_tag_progression_masks,
     electron_tag_mask,
     delta_phi,
+    fake_track_base_mask,
+    fake_track_layer_cut,
     fake_track_no_d0_mask,
     fiducial_map_probe_track_mask,
     generic_probe_pair_layer_mask,
@@ -518,6 +520,9 @@ def _z_to_mumu_control_diagnostics(
         "muon_selected_tag": trigger & (ak.num(selected) == 2),
         "z_os_window": z_os_window,
     }
+    base_mask = _fake_track_base_mask_with_fiducial(
+        events.IsoTrack, d0_region="sideband", fiducial_hot_spots=fiducial_hot_spots
+    )
     for layer in (*PVETO_LAYERS, "combinedBins"):
         diagnostics[f"sideband_{layer}"] = (
             _fake_track_count_for_control(
@@ -527,6 +532,7 @@ def _z_to_mumu_control_diagnostics(
                 d0_region="sideband",
                 fiducial_hot_spots=fiducial_hot_spots,
                 require_dedx_max_over_median=require_dedx_max_over_median,
+                base_mask=base_mask,
             )
             >= 1
         )
@@ -620,6 +626,9 @@ def _z_to_ee_control_diagnostics(
         "electron_pt32": electron_pt32,
         "z_os_window": z_os_window,
     }
+    base_mask = _fake_track_base_mask_with_fiducial(
+        events.IsoTrack, d0_region="sideband", fiducial_hot_spots=fiducial_hot_spots
+    )
     for layer in (*PVETO_LAYERS, "combinedBins"):
         diagnostics[f"sideband_{layer}"] = (
             _fake_track_count_for_control(
@@ -629,6 +638,7 @@ def _z_to_ee_control_diagnostics(
                 d0_region="sideband",
                 fiducial_hot_spots=fiducial_hot_spots,
                 require_dedx_max_over_median=require_dedx_max_over_median,
+                base_mask=base_mask,
             )
             >= 1
         )
@@ -654,6 +664,34 @@ def _fake_track_mask(
         sideband_max=sideband_max,
         require_high_purity=require_high_purity,
         require_dedx_max_over_median=require_dedx_max_over_median,
+    )
+    if fiducial_hot_spots:
+        mask = mask & _outside_fiducial_hot_spots(tracks, fiducial_hot_spots)
+    return mask
+
+
+def _fake_track_base_mask_with_fiducial(
+    tracks,
+    *,
+    d0_region,
+    fiducial_hot_spots=(),
+    sideband_min: float = 0.05,
+    sideband_max: float = 0.50,
+):
+    """Layer-independent term of ``_fake_track_mask``, computed once.
+
+    A caller looping over several layer bins for the same tracks/d0_region
+    should compute this once and combine it with ``fake_track_layer_cut``
+    per bin (see ``base_mask=`` on ``_fake_track_count_for_control`` and
+    friends), instead of calling ``_fake_track_mask`` fresh for every layer
+    and re-evaluating the same layer-independent terms each time.
+    """
+
+    mask = fake_track_base_mask(
+        tracks,
+        d0_region=d0_region,
+        sideband_min=sideband_min,
+        sideband_max=sideband_max,
     )
     if fiducial_hot_spots:
         mask = mask & _outside_fiducial_hot_spots(tracks, fiducial_hot_spots)
@@ -811,18 +849,23 @@ def _fake_track_count_for_control(
     d0_region,
     fiducial_hot_spots=(),
     require_dedx_max_over_median=True,
+    base_mask=None,
 ):
-    count = ak.num(
-        events.IsoTrack[
-            _fake_track_mask(
-                events.IsoTrack,
-                layer=layer,
-                d0_region=d0_region,
-                fiducial_hot_spots=fiducial_hot_spots,
-                require_dedx_max_over_median=require_dedx_max_over_median,
-            )
-        ]
-    )
+    if base_mask is not None:
+        mask = base_mask & fake_track_layer_cut(
+            events.IsoTrack,
+            layer=layer,
+            require_dedx_max_over_median=require_dedx_max_over_median,
+        )
+    else:
+        mask = _fake_track_mask(
+            events.IsoTrack,
+            layer=layer,
+            d0_region=d0_region,
+            fiducial_hot_spots=fiducial_hot_spots,
+            require_dedx_max_over_median=require_dedx_max_over_median,
+        )
+    count = ak.num(events.IsoTrack[mask])
     return ak.where(control_mask, count, 0)
 
 
@@ -856,6 +899,7 @@ def _fake_sideband_tracks_for_control(
     layer,
     fiducial_hot_spots=(),
     require_dedx_max_over_median=True,
+    base_mask=None,
 ):
     """Return the candidates entering an event-level N_sideband numerator.
 
@@ -865,15 +909,21 @@ def _fake_sideband_tracks_for_control(
     0.05 <= |d0| < 0.50 cm sideband.
     """
 
-    tracks = events.IsoTrack[
-        _fake_track_mask(
+    if base_mask is not None:
+        mask = base_mask & fake_track_layer_cut(
+            events.IsoTrack,
+            layer=layer,
+            require_dedx_max_over_median=require_dedx_max_over_median,
+        )
+    else:
+        mask = _fake_track_mask(
             events.IsoTrack,
             layer=layer,
             d0_region="sideband",
             fiducial_hot_spots=fiducial_hot_spots,
             require_dedx_max_over_median=require_dedx_max_over_median,
         )
-    ]
+    tracks = events.IsoTrack[mask]
     control_track_mask, _ = ak.broadcast_arrays(control_mask, tracks.pt)
     return tracks[control_track_mask]
 
@@ -886,16 +936,24 @@ def _add_fake_sideband_track_diagnostics(
     layer,
     fiducial_hot_spots=(),
     require_dedx_max_over_median=True,
+    base_mask=None,
 ):
     """Attach selected-track diagnostics without changing the sideband selection."""
 
-    candidate_mask = _fake_track_mask(
-        events.IsoTrack,
-        layer=layer,
-        d0_region="sideband",
-        fiducial_hot_spots=fiducial_hot_spots,
-        require_dedx_max_over_median=require_dedx_max_over_median,
-    )
+    if base_mask is not None:
+        candidate_mask = base_mask & fake_track_layer_cut(
+            events.IsoTrack,
+            layer=layer,
+            require_dedx_max_over_median=require_dedx_max_over_median,
+        )
+    else:
+        candidate_mask = _fake_track_mask(
+            events.IsoTrack,
+            layer=layer,
+            d0_region="sideband",
+            fiducial_hot_spots=fiducial_hot_spots,
+            require_dedx_max_over_median=require_dedx_max_over_median,
+        )
     indices = ak.local_index(events.IsoTrack, axis=1)[candidate_mask]
     candidates = events.IsoTrack[candidate_mask]
     control_candidate_mask, _ = ak.broadcast_arrays(control_mask, candidates.pt)
@@ -2606,17 +2664,22 @@ class DisappTrksProcessor(BaseProcessorABC):
             )
         ]
 
+        fake_sideband_base_mask = _fake_track_base_mask_with_fiducial(
+            self.events.IsoTrack,
+            d0_region="sideband",
+            fiducial_hot_spots=fake_fiducial_hot_spots,
+        )
+
         if "basic" in controls:
             self.events["nFakeBasic3HitsD0Signal"] = ak.num(fake_basic3hits_d0_signal)
             self.events["nFakeBasic3HitsD0Sideband"] = ak.num(fake_basic3hits_d0_sideband)
             for layer in (*PVETO_LAYERS, "combinedBins"):
                 self.events[f"nFakeControl_{layer}"] = ak.num(
                     self.events.IsoTrack[
-                        _fake_track_mask(
+                        fake_sideband_base_mask
+                        & fake_track_layer_cut(
                             self.events.IsoTrack,
                             layer=layer,
-                            d0_region="sideband",
-                            fiducial_hot_spots=fake_fiducial_hot_spots,
                             require_dedx_max_over_median=require_dedx_max_over_median,
                         )
                     ]
@@ -2649,6 +2712,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                         layer=layer,
                         fiducial_hot_spots=fake_fiducial_hot_spots,
                         require_dedx_max_over_median=require_dedx_max_over_median,
+                        base_mask=fake_sideband_base_mask,
                     )
                 )
                 self.events[f"nFakeZMuMuSideband_{layer}"] = _fake_track_count_for_control(
@@ -2658,6 +2722,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     d0_region="sideband",
                     fiducial_hot_spots=fake_fiducial_hot_spots,
                     require_dedx_max_over_median=require_dedx_max_over_median,
+                    base_mask=fake_sideband_base_mask,
                 )
                 if self._fake_sideband_histograms_enabled():
                     _add_fake_sideband_track_diagnostics(
@@ -2667,6 +2732,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                         layer=layer,
                         fiducial_hot_spots=fake_fiducial_hot_spots,
                         require_dedx_max_over_median=require_dedx_max_over_median,
+                        base_mask=fake_sideband_base_mask,
                     )
 
         if "zee" in controls:
@@ -2694,6 +2760,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                         layer=layer,
                         fiducial_hot_spots=fake_fiducial_hot_spots,
                         require_dedx_max_over_median=require_dedx_max_over_median,
+                        base_mask=fake_sideband_base_mask,
                     )
                 )
                 self.events[f"nFakeZeeSideband_{layer}"] = _fake_track_count_for_control(
@@ -2703,6 +2770,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     d0_region="sideband",
                     fiducial_hot_spots=fake_fiducial_hot_spots,
                     require_dedx_max_over_median=require_dedx_max_over_median,
+                    base_mask=fake_sideband_base_mask,
                 )
                 if self._fake_sideband_histograms_enabled():
                     _add_fake_sideband_track_diagnostics(
@@ -2712,6 +2780,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                         layer=layer,
                         fiducial_hot_spots=fake_fiducial_hot_spots,
                         require_dedx_max_over_median=require_dedx_max_over_median,
+                        base_mask=fake_sideband_base_mask,
                     )
 
     def _event_quality_masks(self):
@@ -3434,14 +3503,18 @@ class DisappTrksProcessor(BaseProcessorABC):
         ]
         self.events["nFakeBasic3HitsD0Signal"] = ak.num(fake_basic3hits_d0_signal)
         self.events["nFakeBasic3HitsD0Sideband"] = ak.num(fake_basic3hits_d0_sideband)
+        fake_sideband_base_mask = _fake_track_base_mask_with_fiducial(
+            self.events.IsoTrack,
+            d0_region="sideband",
+            fiducial_hot_spots=fake_fiducial_hot_spots,
+        )
         for layer in (*PVETO_LAYERS, "combinedBins"):
             self.events[f"nFakeControl_{layer}"] = ak.num(
                 self.events.IsoTrack[
-                    _fake_track_mask(
+                    fake_sideband_base_mask
+                    & fake_track_layer_cut(
                         self.events.IsoTrack,
                         layer=layer,
-                        d0_region="sideband",
-                        fiducial_hot_spots=fake_fiducial_hot_spots,
                         require_dedx_max_over_median=require_dedx_max_over_median,
                     )
                 ]
@@ -3487,6 +3560,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     layer=layer,
                     fiducial_hot_spots=fake_fiducial_hot_spots,
                     require_dedx_max_over_median=require_dedx_max_over_median,
+                    base_mask=fake_sideband_base_mask,
                 )
             )
             self.events[f"FakeZeeSidebandTrack_{layer}"] = (
@@ -3496,6 +3570,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     layer=layer,
                     fiducial_hot_spots=fake_fiducial_hot_spots,
                     require_dedx_max_over_median=require_dedx_max_over_median,
+                    base_mask=fake_sideband_base_mask,
                 )
             )
             self.events[f"nFakeZMuMuSideband_{layer}"] = _fake_track_count_for_control(
@@ -3505,6 +3580,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 d0_region="sideband",
                 fiducial_hot_spots=fake_fiducial_hot_spots,
                 require_dedx_max_over_median=require_dedx_max_over_median,
+                base_mask=fake_sideband_base_mask,
             )
             self.events[f"nFakeZeeSideband_{layer}"] = _fake_track_count_for_control(
                 self.events,
@@ -3513,6 +3589,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 d0_region="sideband",
                 fiducial_hot_spots=fake_fiducial_hot_spots,
                 require_dedx_max_over_median=require_dedx_max_over_median,
+                base_mask=fake_sideband_base_mask,
             )
             if self._fake_sideband_histograms_enabled():
                 _add_fake_sideband_track_diagnostics(
@@ -3522,6 +3599,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     layer=layer,
                     fiducial_hot_spots=fake_fiducial_hot_spots,
                     require_dedx_max_over_median=require_dedx_max_over_median,
+                    base_mask=fake_sideband_base_mask,
                 )
                 _add_fake_sideband_track_diagnostics(
                     self.events,
@@ -3530,6 +3608,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     layer=layer,
                     fiducial_hot_spots=fake_fiducial_hot_spots,
                     require_dedx_max_over_median=require_dedx_max_over_median,
+                    base_mask=fake_sideband_base_mask,
                 )
 
         event_golden_json = _golden_json_mask(

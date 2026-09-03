@@ -1258,23 +1258,19 @@ FAKE_TRACK_DEDX_MAX_OVER_MEDIAN = {
 }
 
 
-def fake_track_no_d0_mask(
+def fake_track_layer_cut(
     tracks,
     *,
     layer: str = "combinedBins",
-    d0_region: str = "sideband",
-    pt_min: float = 55.0,
-    sideband_min: float = 0.05,
-    sideband_max: float = 0.50,
     require_high_purity: bool = True,
     require_dedx_max_over_median: bool = True,
 ):
-    """Fake-track control selection with the d0 requirement replaced.
+    """Layer/high-purity/dE/dx term of the fake-track selection.
 
-    The fake-track estimate uses disappearing-track-like candidates with the
-    nominal d0 requirement removed.  The transfer factor uses the ratio of the
-    signal d0 window to the sideband, while the target-layer control yield is
-    counted in the sideband.
+    Split out of :func:`fake_track_no_d0_mask` so a caller looping over
+    several layer bins for the same tracks/d0 region can compute
+    :func:`fake_track_base_mask` once and combine it with this cheaper
+    per-layer term, instead of re-evaluating the whole selection per bin.
 
     For layer bins listed in ``FAKE_TRACK_DEDX_MAX_OVER_MEDIAN``, an
     additional cut requires ``tracks.dEdxMaximumOverMedian`` (the track's
@@ -1284,14 +1280,6 @@ def fake_track_no_d0_mask(
     ``_dedx_track_summaries``) before requesting a layer bin with a
     configured threshold.
     """
-
-    abs_dxy = abs(tracks.dxy)
-    if d0_region == "signal":
-        d0_mask = abs_dxy < 0.02
-    elif d0_region == "sideband":
-        d0_mask = (abs_dxy >= sideband_min) & (abs_dxy < sideband_max)
-    else:
-        raise ValueError(f"unknown fake-track d0 region: {d0_region}")
 
     layer_cut = (
         analysis_layer_mask(tracks, layer)
@@ -1311,6 +1299,32 @@ def fake_track_no_d0_mask(
             tracks.dEdxMaximumOverMedian <= dedx_max_over_median, False
         )
 
+    return layer_cut
+
+
+def fake_track_base_mask(
+    tracks,
+    *,
+    d0_region: str = "sideband",
+    pt_min: float = 55.0,
+    sideband_min: float = 0.05,
+    sideband_max: float = 0.50,
+):
+    """Fake-track control selection minus the layer/high-purity/dE/dx term.
+
+    Every condition here is independent of the layer bin, so a caller
+    looping over layer bins for the same tracks/d0 region can compute this
+    once and AND it with :func:`fake_track_layer_cut` per bin.
+    """
+
+    abs_dxy = abs(tracks.dxy)
+    if d0_region == "signal":
+        d0_mask = abs_dxy < 0.02
+    elif d0_region == "sideband":
+        d0_mask = (abs_dxy >= sideband_min) & (abs_dxy < sideband_max)
+    else:
+        raise ValueError(f"unknown fake-track d0 region: {d0_region}")
+
     return (
         (tracks.pt > pt_min)
         & (abs(tracks.eta) < 2.1)
@@ -1326,13 +1340,51 @@ def fake_track_no_d0_mask(
         & (tracks.pfRelIso03_chg < 0.05)
         & (abs(tracks.dz) < 0.5)
         & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
-        & layer_cut
         & (tracks.caloEnergy < 10.0)
         & (tracks.missingOuterHits >= 3)
         & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
         & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
         & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
         & d0_mask
+    )
+
+
+def fake_track_no_d0_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    d0_region: str = "sideband",
+    pt_min: float = 55.0,
+    sideband_min: float = 0.05,
+    sideband_max: float = 0.50,
+    require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
+):
+    """Fake-track control selection with the d0 requirement replaced.
+
+    The fake-track estimate uses disappearing-track-like candidates with the
+    nominal d0 requirement removed.  The transfer factor uses the ratio of the
+    signal d0 window to the sideband, while the target-layer control yield is
+    counted in the sideband.
+
+    A thin wrapper combining :func:`fake_track_base_mask` and
+    :func:`fake_track_layer_cut` -- see those for what each term covers.  A
+    caller evaluating several layer bins for the same tracks/d0 region should
+    call them separately instead, to avoid recomputing the layer-independent
+    terms once per bin.
+    """
+
+    return fake_track_base_mask(
+        tracks,
+        d0_region=d0_region,
+        pt_min=pt_min,
+        sideband_min=sideband_min,
+        sideband_max=sideband_max,
+    ) & fake_track_layer_cut(
+        tracks,
+        layer=layer,
+        require_high_purity=require_high_purity,
+        require_dedx_max_over_median=require_dedx_max_over_median,
     )
 
 
