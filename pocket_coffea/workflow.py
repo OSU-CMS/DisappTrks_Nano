@@ -2583,8 +2583,9 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["IsoTrack"] = _dedx_track_summaries(tracks, grouped_hits)
 
     def _count_fake_track_fields(self, *, controls=("basic", "zmumu", "zee")):
-        self._attach_fake_track_dedx_fields()
         require_dedx_max_over_median = self._fake_track_dedx_cut_enabled()
+        if require_dedx_max_over_median:
+            self._attach_fake_track_dedx_fields()
         fake_fiducial_hot_spots = self._lepton_fiducial_hot_spots("electron", "muon")
         fake_basic3hits_d0_signal = self.events.IsoTrack[
             _fake_track_mask(
