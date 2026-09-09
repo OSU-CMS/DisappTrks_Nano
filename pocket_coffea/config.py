@@ -213,8 +213,7 @@ dataset_json = os.environ.get(
     "DISAPPTRKS_DATASET_JSON",
     f"{localdir}/datasets/local_2024F_muon.json",
 )
-if not os.path.isabs(dataset_json) and not os.path.exists(dataset_json):
-    dataset_json = os.path.join(localdir, dataset_json)
+dataset_json = workflow.resolve_dataset_json(dataset_json, localdir=localdir)
 
 
 def _unique_dataset_metadata_values(json_path, key):
@@ -273,6 +272,9 @@ enable_fake_sideband_histograms = os.environ.get(
 fake_track_require_dedx_cut = os.environ.get(
     "DISAPPTRKS_FAKE_TRACK_REQUIRE_DEDX_CUT", "1"
 ).lower() in ("1", "true", "yes", "on")
+lepton_background_require_dedx_cut = os.environ.get(
+    "DISAPPTRKS_LEPTON_BACKGROUND_REQUIRE_DEDX_CUT", "1"
+).lower() in ("1", "true", "yes", "on")
 enable_high_purity_dedx_histograms = os.environ.get(
     "DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS", "0"
 ).lower() in ("1", "true", "yes", "on")
@@ -304,6 +306,7 @@ parameters["disapptrks"] = {
     "fake_track_control": fake_track_control_mode,
     "fake_sideband_histograms": enable_fake_sideband_histograms,
     "fake_track_require_dedx_cut": fake_track_require_dedx_cut,
+    "lepton_background_require_dedx_cut": lepton_background_require_dedx_cut,
     "high_purity_study_layers": high_purity_study_layers,
     "high_purity_dedx_histograms": enable_high_purity_dedx_histograms,
     "signal_dedx_histograms": enable_signal_dedx_histograms,
@@ -537,34 +540,49 @@ pveto_lepton_background_categories = (
 )
 
 
+# A category_mode with exactly one active cumulative-cutflow-diagnostic family
+# (Table-16-style: one Cut per stage, each just checking one precomputed boolean
+# field) sets this instead of merging that family flat into `selected_categories`.
+# Per pocketcoffea-conventions, a cumulative-stage axis like this is a MultiCut
+# axis, not N one-off StandardSelection categories -- see the `category_selection`
+# assembly below, which wraps it in a CartesianSelection with its own PackedSelection
+# budget instead of counting it against the 64-mask cap shared by everything else in
+# the mode. `cuts_names` is chosen to exactly reproduce today's flat category names,
+# so no downstream consumer (cli.py/tables.py) needs to change.
+active_diagnostic_categories = {}
+
 if category_mode == "muon_pveto":
+    active_diagnostic_categories = muon_table16_categories
     selected_categories = {
         **common_categories,
         **muon_pveto_categories,
-        **muon_table16_categories,
         **muon_pveto_layer_categories,
         **_categories_with_prefix(pveto_lepton_background_categories, "muon_"),
     }
 elif category_mode == "electron_pveto":
+    active_diagnostic_categories = electron_pveto_diagnostic_categories
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "electron_"),
         **_categories_with_prefix(pveto_lepton_background_categories, "electron_"),
-        **electron_pveto_diagnostic_categories,
     }
 elif category_mode == "tau_mu_pveto":
+    active_diagnostic_categories = _categories_with_prefix(
+        tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_mu_"
+    )
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_mu_"),
         **_categories_with_prefix(pveto_lepton_background_categories, "tau_mu_"),
-        **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_mu_"),
     }
 elif category_mode == "tau_ele_pveto":
+    active_diagnostic_categories = _categories_with_prefix(
+        tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_ele_"
+    )
     selected_categories = {
         **common_categories,
         **_categories_with_prefix(lepton_pveto_categories, "tau_ele_"),
         **_categories_with_prefix(pveto_lepton_background_categories, "tau_ele_"),
-        **_categories_with_prefix(tau_pveto_diagnostic_categories, "tau_pveto_diag_tau_ele_"),
     }
 elif category_mode == "muon_pmiss_poffline":
     selected_categories = {
@@ -577,39 +595,43 @@ elif category_mode == "electron_pmiss_poffline":
         **_categories_with_prefix(lepton_background_categories, "electron_"),
     }
 elif category_mode == "tau_mu_pmiss_poffline":
+    active_diagnostic_categories = tau_background_diagnostic_categories
     selected_categories = {
         "inclusive": common_categories["inclusive"],
         **_categories_with_prefix(lepton_background_categories, "tau_mu_"),
-        **tau_background_diagnostic_categories,
     }
 elif category_mode == "tau_ele_pmiss_poffline":
+    active_diagnostic_categories = tau_background_diagnostic_categories
     selected_categories = {
         "inclusive": common_categories["inclusive"],
         **_categories_with_prefix(lepton_background_categories, "tau_ele_"),
-        **tau_background_diagnostic_categories,
     }
 elif category_mode == "tau_trigger_probability":
     selected_categories = {
         "inclusive": common_categories["inclusive"],
     }
 elif category_mode == "tau_pmiss_poffline":
+    active_diagnostic_categories = tau_background_diagnostic_categories
     selected_categories = {
         "inclusive": common_categories["inclusive"],
         **_categories_with_prefix(lepton_background_categories, "tau_control_"),
-        **tau_background_diagnostic_categories,
     }
 elif category_mode == "fake_tracks":
     if fake_track_control_mode == "zmumu":
+        active_diagnostic_categories = _categories_with_prefix(
+            fake_z_control_diagnostic_categories, "fake_zmumu_"
+        )
         selected_categories = {
             "inclusive": common_categories["inclusive"],
             **fake_track_zmumu_categories,
-            **_categories_with_prefix(fake_z_control_diagnostic_categories, "fake_zmumu_"),
         }
     elif fake_track_control_mode == "zee":
+        active_diagnostic_categories = _categories_with_prefix(
+            fake_z_control_diagnostic_categories, "fake_zee_"
+        )
         selected_categories = {
             "inclusive": common_categories["inclusive"],
             **fake_track_zee_categories,
-            **_categories_with_prefix(fake_z_control_diagnostic_categories, "fake_zee_"),
         }
     else:
         selected_categories = {
@@ -1579,6 +1601,20 @@ elif category_mode == "high_purity_study":
                     for layer in high_purity_study_layers
                 ],
                 cuts_names=list(high_purity_study_layers),
+            ),
+        ],
+        common_cats=StandardSelection(selected_categories),
+    )
+elif active_diagnostic_categories:
+    category_selection = CartesianSelection(
+        multicuts=[
+            MultiCut(
+                name="diagnostic_cutflow",
+                cuts=[
+                    category_cut_list[0]
+                    for category_cut_list in active_diagnostic_categories.values()
+                ],
+                cuts_names=list(active_diagnostic_categories.keys()),
             ),
         ],
         common_cats=StandardSelection(selected_categories),

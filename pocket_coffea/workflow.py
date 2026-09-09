@@ -303,6 +303,55 @@ def _load_fiducial_hot_spots(
     return ()
 
 
+# Group-shared canonical dataset JSONs, published with ``disapptrks make-dataset-json
+# --publish`` so every checkout runs against the same input-file lists instead of each
+# person's local `datasets/` accumulating its own ad hoc copies. Mirrors the
+# FIDUCIAL_MAP_EOS_BASE_DEFAULT pattern above; override with DISAPPTRKS_DATASET_EOS_BASE
+# if the group's shared space ever moves.
+DATASET_JSON_EOS_BASE_DEFAULT = (
+    "root://cmseos.fnal.gov//store/group/lpcdisapptrks/dataset_jsons"
+)
+
+
+def _eos_dataset_json_url(name: str) -> str:
+    base = os.environ.get("DISAPPTRKS_DATASET_EOS_BASE", DATASET_JSON_EOS_BASE_DEFAULT)
+    return f"{base}/{name}.json"
+
+
+def resolve_dataset_json(value: str, *, localdir: str) -> str:
+    """Resolve DISAPPTRKS_DATASET_JSON to a local file path.
+
+    ``value`` is tried, in order, as: an absolute path; a path relative to the
+    current directory; a path relative to ``localdir`` (the existing dev/local
+    override -- unchanged from before this function existed); and finally a
+    canonical dataset name (e.g. ``eos_2023C_Muon`` or ``eos_2023C_Muon_OSUv2``,
+    the ``.json`` suffix optional) published to the group's shared EOS
+    dataset-JSON space, which is fetched here on demand since PocketCoffea
+    needs a real local file rather than a URL.
+    """
+    if os.path.isabs(value) or os.path.exists(value):
+        return value
+    local_candidate = os.path.join(localdir, value)
+    if os.path.exists(local_candidate):
+        return local_candidate
+
+    name = value[:-5] if value.endswith(".json") else value
+    url = _eos_dataset_json_url(name)
+    payload = _read_eos_json(url)
+    if payload is None:
+        raise FileNotFoundError(
+            f"Dataset JSON {value!r} was not found locally under {localdir} and "
+            f"not found on the shared EOS space at {url}. Use an existing "
+            "canonical name (published with `disapptrks make-dataset-json "
+            "--publish`) or a local/absolute path for a dev override."
+        )
+    fd, tmp_path = tempfile.mkstemp(prefix=f"disapptrks-dataset-{name}-", suffix=".json")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+    print(f"Resolved dataset JSON {value!r} from {url}")
+    return tmp_path
+
+
 def _outside_fiducial_hot_spots(pairs, hot_spots):
     eta = pairs.probe_eta if "probe_eta" in pairs.fields else pairs.eta
     phi = pairs.probe_phi if "probe_phi" in pairs.fields else pairs.phi
@@ -1370,6 +1419,14 @@ class DisappTrksProcessor(BaseProcessorABC):
                 "DISAPPTRKS_FAKE_TRACK_REQUIRE_DEDX_CUT", "1"
             ).lower() in ("1", "true", "yes", "on")
 
+    def _lepton_background_dedx_cut_enabled(self):
+        try:
+            return bool(self.params.disapptrks.lepton_background_require_dedx_cut)
+        except Exception:
+            return os.environ.get(
+                "DISAPPTRKS_LEPTON_BACKGROUND_REQUIRE_DEDX_CUT", "1"
+            ).lower() in ("1", "true", "yes", "on")
+
     def _high_purity_dedx_histograms_enabled(self):
         try:
             return bool(self.params.disapptrks.high_purity_dedx_histograms)
@@ -1573,16 +1630,17 @@ class DisappTrksProcessor(BaseProcessorABC):
         pveto_pass_mask = pass_mask_function(pairs) & _outside_fiducial_hot_spots(
             pairs, fiducial_hot_spots
         )
+        # Hoisted out of the per-field/per-layer fills below: both are
+        # layer-independent and were previously recomputed on every use
+        # (5x each across this function).
+        os_mass_window_mask = os_mass_window_pair_mask(pairs, window_low, window_high)
+        ss_mass_window_mask = ss_mass_window_pair_mask(pairs, window_low, window_high)
         self.events[f"{prefix}TagProbePair"] = pairs
         self.events[f"{prefix}TagProbePairMassWindow"] = pairs[
             mass_window_pair_mask(pairs, window_low, window_high)
         ]
-        self.events[f"{prefix}TagProbePairOSMassWindow"] = pairs[
-            os_mass_window_pair_mask(pairs, window_low, window_high)
-        ]
-        self.events[f"{prefix}TagProbePairSSMassWindow"] = pairs[
-            ss_mass_window_pair_mask(pairs, window_low, window_high)
-        ]
+        self.events[f"{prefix}TagProbePairOSMassWindow"] = pairs[os_mass_window_mask]
+        self.events[f"{prefix}TagProbePairSSMassWindow"] = pairs[ss_mass_window_mask]
         self._store_trigger_efficiency_counts(
             prefix=prefix,
             pairs=pairs,
@@ -1593,32 +1651,24 @@ class DisappTrksProcessor(BaseProcessorABC):
             ),
         )
         self.events[f"{prefix}PVetoTagProbePairMassWindowPass"] = pairs[
-            os_mass_window_pair_mask(pairs, window_low, window_high)
-            & pveto_pass_mask
+            os_mass_window_mask & pveto_pass_mask
         ]
         self.events[f"{prefix}PVetoTagProbePairSSMassWindowPass"] = pairs[
-            ss_mass_window_pair_mask(pairs, window_low, window_high)
-            & pveto_pass_mask
+            ss_mass_window_mask & pveto_pass_mask
         ]
         for layer in PVETO_LAYERS:
             pair_layer_mask = generic_probe_pair_layer_mask(pairs, layer)
             self.events[f"{prefix}TagProbePairMassWindow_{layer}"] = pairs[
-                os_mass_window_pair_mask(pairs, window_low, window_high)
-                & pair_layer_mask
+                os_mass_window_mask & pair_layer_mask
             ]
             self.events[f"{prefix}PVetoTagProbePairMassWindowPass_{layer}"] = pairs[
-                os_mass_window_pair_mask(pairs, window_low, window_high)
-                & pair_layer_mask
-                & pveto_pass_mask
+                os_mass_window_mask & pair_layer_mask & pveto_pass_mask
             ]
             self.events[f"{prefix}TagProbePairSSMassWindow_{layer}"] = pairs[
-                ss_mass_window_pair_mask(pairs, window_low, window_high)
-                & pair_layer_mask
+                ss_mass_window_mask & pair_layer_mask
             ]
             self.events[f"{prefix}PVetoTagProbePairSSMassWindowPass_{layer}"] = pairs[
-                ss_mass_window_pair_mask(pairs, window_low, window_high)
-                & pair_layer_mask
-                & pveto_pass_mask
+                ss_mass_window_mask & pair_layer_mask & pveto_pass_mask
             ]
 
     def _store_lepton_background_controls(
@@ -1990,6 +2040,16 @@ class DisappTrksProcessor(BaseProcessorABC):
         ):
             self.events["Muon"] = add_muon_derived_fields(self.events)
         self.events["IsoTrack"] = add_isotrack_derived_fields(self.events)
+        if self._lepton_background_dedx_cut_enabled() and self._mode_enabled(
+            "muon_pveto", "electron_pveto", "tau_mu_pveto", "tau_ele_pveto"
+        ):
+            # Attach dE/dx summaries before any Pveto probe-track mask is
+            # built below, so `muon_veto_probe_track_mask`,
+            # `lepton_veto_probe_track_mask`, and `tau_veto_probe_track_mask`
+            # can apply the dE/dx cut (see selections.py).  Scoped to the
+            # Pveto modes that actually build those masks -- other category
+            # modes may not carry the `IsoTrackDeDxHit` branch.
+            self._attach_lepton_background_dedx_fields()
         self.events["AnalysisEvent"] = add_event_derived_fields(self.events)
         self.events["IsoTrackProbe"] = self.events.IsoTrack[
             base_probe_track_mask(self.events.IsoTrack)
@@ -2015,7 +2075,10 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         if self._mode_enabled("muon_pveto"):
             self.events["MuonVetoProbeTrack"] = self.events.IsoTrack[
-                muon_veto_probe_track_mask(self.events.IsoTrack)
+                muon_veto_probe_track_mask(
+                    self.events.IsoTrack,
+                    require_dedx_max_over_median=self._lepton_background_dedx_cut_enabled(),
+                )
             ]
             self.events["MuonVetoProbeTrack"] = ak.with_field(
                 self.events.MuonVetoProbeTrack,
@@ -2040,6 +2103,13 @@ class DisappTrksProcessor(BaseProcessorABC):
             muon_pveto_pass_mask = (
                 muon_pveto_pass_no_fiducial_mask & outside_fiducial_map_mask
             )
+            # Hoisted out of the per-field/per-layer fills below: each of these
+            # is layer-independent and was previously recomputed on every
+            # field access (8x for the Z-window OS/SS masks alone).
+            os_z_window_mask = os_z_window_muon_probe_pair_mask(muon_veto_pairs)
+            ss_z_window_mask = ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
+            muon_veto_pass_mask = muon_veto_pair_pass_mask(muon_veto_pairs)
+            muon_veto_fail_mask = muon_veto_pair_fail_mask(muon_veto_pairs)
             self.events["MuonVetoTagProbePair"] = muon_veto_pairs
             self.events["MuonVetoTagProbePairOS"] = muon_veto_pairs[
                 os_muon_probe_pair_mask(muon_veto_pairs)
@@ -2060,7 +2130,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 z_window_muon_probe_pair_mask(muon_veto_pairs)
             ]
             self.events["MuonVetoTagProbePairOSZWindow"] = muon_veto_pairs[
-                os_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                os_z_window_mask
             ]
             self._store_trigger_efficiency_counts(
                 prefix="Muon",
@@ -2068,54 +2138,46 @@ class DisappTrksProcessor(BaseProcessorABC):
                 mass_mask_function=z_window_muon_probe_pair_mask,
             )
             self.events["MuonVetoTagProbePairZWindowPass"] = muon_veto_pairs[
-                os_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                & muon_veto_pair_pass_mask(muon_veto_pairs)
+                os_z_window_mask & muon_veto_pass_mask
             ]
             self.events["MuonVetoTagProbePairZWindowFail"] = muon_veto_pairs[
-                os_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                & muon_veto_pair_fail_mask(muon_veto_pairs)
+                os_z_window_mask & muon_veto_fail_mask
             ]
             self.events["MuonPVetoTagProbePairZWindowPass"] = muon_veto_pairs[
-                os_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                & muon_pveto_pass_mask
+                os_z_window_mask & muon_pveto_pass_mask
             ]
             self.events["MuonPVetoTagProbePairZWindowPassNoFiducial"] = (
                 muon_veto_pairs[
-                    os_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                    & muon_pveto_pass_no_fiducial_mask
+                    os_z_window_mask & muon_pveto_pass_no_fiducial_mask
                 ]
             )
             self.events["MuonPVetoTagProbePairZWindowFiducialRejected"] = (
                 muon_veto_pairs[
-                    os_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                    os_z_window_mask
                     & muon_pveto_pass_no_fiducial_mask
                     & ~outside_fiducial_map_mask
                 ]
             )
             self.events["MuonVetoTagProbePairSSZWindow"] = muon_veto_pairs[
-                ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                ss_z_window_mask
             ]
             self.events["MuonVetoTagProbePairSSZWindowPass"] = muon_veto_pairs[
-                ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                & muon_veto_pair_pass_mask(muon_veto_pairs)
+                ss_z_window_mask & muon_veto_pass_mask
             ]
             self.events["MuonVetoTagProbePairSSZWindowFail"] = muon_veto_pairs[
-                ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                & muon_veto_pair_fail_mask(muon_veto_pairs)
+                ss_z_window_mask & muon_veto_fail_mask
             ]
             self.events["MuonPVetoTagProbePairSSZWindowPass"] = muon_veto_pairs[
-                ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                & muon_pveto_pass_mask
+                ss_z_window_mask & muon_pveto_pass_mask
             ]
             self.events["MuonPVetoTagProbePairSSZWindowPassNoFiducial"] = (
                 muon_veto_pairs[
-                    ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                    & muon_pveto_pass_no_fiducial_mask
+                    ss_z_window_mask & muon_pveto_pass_no_fiducial_mask
                 ]
             )
             self.events["MuonPVetoTagProbePairSSZWindowFiducialRejected"] = (
                 muon_veto_pairs[
-                    ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
+                    ss_z_window_mask
                     & muon_pveto_pass_no_fiducial_mask
                     & ~outside_fiducial_map_mask
                 ]
@@ -2123,22 +2185,16 @@ class DisappTrksProcessor(BaseProcessorABC):
             for layer in PVETO_LAYERS:
                 pair_layer_mask = muon_probe_pair_layer_mask(muon_veto_pairs, layer)
                 self.events[f"MuonVetoTagProbePairZWindow_{layer}"] = muon_veto_pairs[
-                    os_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                    & pair_layer_mask
+                    os_z_window_mask & pair_layer_mask
                 ]
                 self.events[f"MuonPVetoTagProbePairZWindowPass_{layer}"] = muon_veto_pairs[
-                    os_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                    & pair_layer_mask
-                    & muon_pveto_pass_mask
+                    os_z_window_mask & pair_layer_mask & muon_pveto_pass_mask
                 ]
                 self.events[f"MuonVetoTagProbePairSSZWindow_{layer}"] = muon_veto_pairs[
-                    ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                    & pair_layer_mask
+                    ss_z_window_mask & pair_layer_mask
                 ]
                 self.events[f"MuonPVetoTagProbePairSSZWindowPass_{layer}"] = muon_veto_pairs[
-                    ss_z_window_muon_probe_pair_mask(muon_veto_pairs)
-                    & pair_layer_mask
-                    & muon_pveto_pass_mask
+                    ss_z_window_mask & pair_layer_mask & muon_pveto_pass_mask
                 ]
 
         if self._mode_enabled("electron_pveto", "electron_pmiss_poffline"):
@@ -2148,7 +2204,11 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         if self._mode_enabled("electron_pveto"):
             self.events["ElectronVetoProbeTrack"] = self.events.IsoTrack[
-                lepton_veto_probe_track_mask(self.events.IsoTrack, measured_veto="electron")
+                lepton_veto_probe_track_mask(
+                    self.events.IsoTrack,
+                    measured_veto="electron",
+                    require_dedx_max_over_median=self._lepton_background_dedx_cut_enabled(),
+                )
             ]
             self._store_lepton_pveto_pairs(
                 prefix="Electron",
@@ -2171,7 +2231,10 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         if self._mode_enabled("tau_mu_pveto", "tau_ele_pveto"):
             self.events["TauVetoProbeTrack"] = self.events.IsoTrack[
-                tau_veto_probe_track_mask(self.events.IsoTrack)
+                tau_veto_probe_track_mask(
+                    self.events.IsoTrack,
+                    require_dedx_max_over_median=self._lepton_background_dedx_cut_enabled(),
+                )
             ]
 
         if self._mode_enabled("tau_mu_pveto"):
@@ -2624,14 +2687,20 @@ class DisappTrksProcessor(BaseProcessorABC):
                 self.events[f"MuonPVetoTagProbePairSSZWindowPass_{layer}"]
             )
 
-    def _attach_fake_track_dedx_fields(self):
+    def _attach_dedx_track_summary_fields(self):
         """Attach per-track dE/dx summaries onto ``events.IsoTrack``.
 
-        ``fake_track_no_d0_mask`` reads ``dEdxMaximumOverMedian`` off the
-        tracks it is given (mirroring how it reads ``isHighPurityTrack``), so
-        this collection must exist on the full track collection before any
-        fake-track category masks are built from it.
+        Both the fake-track and lepton-background probe-track selections
+        read ``dEdxMaximumOverMedian`` off the tracks they are given
+        (mirroring how they read ``isHighPurityTrack``), so this collection
+        must exist on the full track collection before any of those category
+        masks are built from it.  A no-op if already attached earlier in the
+        same event pass (e.g. by the fake-track and lepton-background paths
+        both running under a combined ``muon_backgrounds``/``egamma_backgrounds``/
+        ``all`` category mode).
         """
+        if "dEdxMaximumOverMedian" in self.events.IsoTrack.fields:
+            return
         tracks = ak.with_field(
             self.events.IsoTrack,
             ak.local_index(self.events.IsoTrack, axis=1),
@@ -2639,6 +2708,12 @@ class DisappTrksProcessor(BaseProcessorABC):
         )
         grouped_hits = _dedx_hits_grouped_by_track(self.events, tracks)
         self.events["IsoTrack"] = _dedx_track_summaries(tracks, grouped_hits)
+
+    def _attach_fake_track_dedx_fields(self):
+        self._attach_dedx_track_summary_fields()
+
+    def _attach_lepton_background_dedx_fields(self):
+        self._attach_dedx_track_summary_fields()
 
     def _count_fake_track_fields(self, *, controls=("basic", "zmumu", "zee")):
         require_dedx_max_over_median = self._fake_track_dedx_cut_enabled()
@@ -2825,7 +2900,10 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         has_selected_muon_tag = muon_table16_diagnostics["muon_selected_tag"]
         table16_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
-            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack),
+            muon_veto_probe_track_cutflow_masks(
+                self.events.IsoTrack,
+                require_dedx_max_over_median=self._lepton_background_dedx_cut_enabled(),
+            ),
             "muon",
         )
         pre_pair_track_fields = {
@@ -2951,7 +3029,10 @@ class DisappTrksProcessor(BaseProcessorABC):
             "electron_selected_tag"
         ]
         electron_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
-            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack),
+            muon_veto_probe_track_cutflow_masks(
+                self.events.IsoTrack,
+                require_dedx_max_over_median=self._lepton_background_dedx_cut_enabled(),
+            ),
             "electron",
         )
         for name in (
@@ -3069,7 +3150,10 @@ class DisappTrksProcessor(BaseProcessorABC):
 
     def _store_tau_pveto_diagnostics(self, mode):
         event_golden_json, met_filters, jet_veto_map_mask = self._event_quality_masks()
-        tau_track_masks = tau_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+        tau_track_masks = tau_veto_probe_track_cutflow_masks(
+            self.events.IsoTrack,
+            require_dedx_max_over_median=self._lepton_background_dedx_cut_enabled(),
+        )
 
         def store(
             *,
@@ -3646,7 +3730,10 @@ class DisappTrksProcessor(BaseProcessorABC):
 
         has_selected_muon_tag = muon_table16_diagnostics["muon_selected_tag"]
         table16_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
-            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack),
+            muon_veto_probe_track_cutflow_masks(
+                self.events.IsoTrack,
+                require_dedx_max_over_median=self._lepton_background_dedx_cut_enabled(),
+            ),
             "muon",
         )
         pre_pair_track_fields = {
@@ -3779,7 +3866,10 @@ class DisappTrksProcessor(BaseProcessorABC):
             "electron_selected_tag"
         ]
         electron_track_masks = self._apply_lepton_fiducial_maps_to_track_cutflow(
-            muon_veto_probe_track_cutflow_masks(self.events.IsoTrack),
+            muon_veto_probe_track_cutflow_masks(
+                self.events.IsoTrack,
+                require_dedx_max_over_median=self._lepton_background_dedx_cut_enabled(),
+            ),
             "electron",
         )
         for name in (
@@ -3895,7 +3985,10 @@ class DisappTrksProcessor(BaseProcessorABC):
         )
         self.events["ElectronPVetoDiag"] = ak.zip(electron_pveto_diagnostics)
 
-        tau_track_masks = tau_veto_probe_track_cutflow_masks(self.events.IsoTrack)
+        tau_track_masks = tau_veto_probe_track_cutflow_masks(
+            self.events.IsoTrack,
+            require_dedx_max_over_median=self._lepton_background_dedx_cut_enabled(),
+        )
 
         def _store_tau_pveto_diagnostics(
             *,

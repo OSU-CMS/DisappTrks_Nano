@@ -4,6 +4,7 @@ ak = pytest.importorskip("awkward")
 
 from disapptrks.selections import (
     analysis_layer_mask,
+    base_probe_track_mask,
     build_lepton_veto_tag_probe_pairs,
     build_muon_veto_tag_probe_pairs,
     fiducial_map_probe_track_mask,
@@ -12,11 +13,30 @@ from disapptrks.selections import (
     fake_track_no_d0_mask,
     hadronic_tau_control_object_mask,
     layer_mask,
+    lepton_veto_probe_track_mask,
     met_no_mu_minus_lepton,
+    muon_veto_probe_track_cutflow_masks,
     muon_veto_probe_track_mask,
+    probe_track_dedx_mask,
     search_track_cutflow_masks,
     search_track_mask,
+    tau_veto_probe_track_cutflow_masks,
+    tau_veto_probe_track_mask,
 )
+
+
+PROBE_TRACK_BASE_FIELDS = {
+    "pt": 100.0, "eta": 0.8, "dxy": 0.01, "dz": 0.1,
+    "inECALCrack": False, "inDTWheelGap": False,
+    "inCSCTransition": False, "inTOBCrack": False,
+    "isFiducialECALTrack": True, "hp_nValidPixelHits": 4,
+    "hp_nValidHits": 4, "hp_nValidTrackerHits": 4,
+    "missingInnerHits": 0, "missingMiddleHits": 0,
+    "missingOuterHits": 3, "pfRelIso03_chg": 0.01, "dRMinJet": 1.0,
+    "dRMinElectron": 1.0, "dRMinMuon": 1.0, "dRMinTauHad": 1.0,
+    "caloEnergy": 1.0, "isHighPurityTrack": True,
+    "hp_trackerLayersWithMeasurement": 4,
+}
 
 
 def test_analysis_layer_mask_requires_high_purity_for_every_layer_bin():
@@ -506,3 +526,247 @@ def test_fiducial_map_probe_uses_legacy_old_hit_cuts():
         [True]
     ]
     assert ak.to_list(muon_veto_probe_track_mask(tracks)) == [[False]]
+
+
+def test_lepton_background_probe_masks_apply_dedx_cut_after_dz():
+    passing = {**PROBE_TRACK_BASE_FIELDS, "dEdxMaximumOverMedian": 2.5}
+    failing = {**PROBE_TRACK_BASE_FIELDS, "dEdxMaximumOverMedian": 2.6}
+    tracks = ak.Array([[passing, failing]])
+
+    assert ak.to_list(muon_veto_probe_track_mask(tracks, layer="NLayers4")) == [
+        [True, False]
+    ]
+    assert ak.to_list(
+        lepton_veto_probe_track_mask(
+            tracks, measured_veto="electron", layer="NLayers4"
+        )
+    ) == [[True, False]]
+    assert ak.to_list(tau_veto_probe_track_mask(tracks, layer="NLayers4")) == [
+        [True, False]
+    ]
+
+
+def test_lepton_background_probe_masks_apply_dedx_cut_within_combined_bins():
+    """The dE/dx cut must fire for NLayers4/NLayers5 tracks even at the
+    default ``layer="combinedBins"`` -- the layer bin every production call
+    site actually uses. `MuonVetoProbeTrack`/etc. are built as ONE mixed-
+    NLayers collection, not one collection per layer bin, so the dE/dx term
+    cannot just look up a single working point for the caller-requested
+    layer (that's `dedx_max_over_median_mask`, used by the fake-track
+    background, which does call per layer bin) -- it must look up each
+    track's OWN measured layer count instead (`probe_track_dedx_mask`).
+    """
+
+    # `passesTOBDzOrLambda` is only read by the cutflow-mask functions below,
+    # not by `PROBE_TRACK_BASE_FIELDS`'s usual `base_probe_track_mask`
+    # consumers, but including it on every track here lets the same fixtures
+    # exercise both.
+    nlayers4_pass = {
+        **PROBE_TRACK_BASE_FIELDS,
+        "passesTOBDzOrLambda": True,
+        "hp_trackerLayersWithMeasurement": 4,
+        "dEdxMaximumOverMedian": 2.5,
+    }
+    nlayers4_fail = {
+        **PROBE_TRACK_BASE_FIELDS,
+        "passesTOBDzOrLambda": True,
+        "hp_trackerLayersWithMeasurement": 4,
+        "dEdxMaximumOverMedian": 2.6,
+    }
+    nlayers5_fail = {
+        **PROBE_TRACK_BASE_FIELDS,
+        "passesTOBDzOrLambda": True,
+        "hp_trackerLayersWithMeasurement": 5,
+        "dEdxMaximumOverMedian": 2.6,
+    }
+    nlayers6_bad_dedx = {
+        **PROBE_TRACK_BASE_FIELDS,
+        "passesTOBDzOrLambda": True,
+        "hp_trackerLayersWithMeasurement": 6,
+        "dEdxMaximumOverMedian": 99.0,
+    }
+    tracks = ak.Array([[nlayers4_pass, nlayers4_fail, nlayers5_fail, nlayers6_bad_dedx]])
+
+    # No explicit `layer=` -- matches every production call site.
+    expected = [True, False, False, True]
+    assert ak.to_list(muon_veto_probe_track_mask(tracks)) == [expected]
+    assert ak.to_list(
+        lepton_veto_probe_track_mask(tracks, measured_veto="electron")
+    ) == [expected]
+    assert ak.to_list(tau_veto_probe_track_mask(tracks)) == [expected]
+
+    muon_masks = muon_veto_probe_track_cutflow_masks(tracks)
+    assert ak.to_list(muon_masks["track_dedx"]) == [expected]
+    assert ak.to_list(muon_masks["track_layers4plus"]) == [expected]
+
+    tau_masks = tau_veto_probe_track_cutflow_masks(tracks)
+    assert ak.to_list(tau_masks["track_dedx"]) == [expected]
+    assert ak.to_list(tau_masks["track_layers4plus"]) == [expected]
+
+
+def test_probe_track_dedx_mask_is_per_track_not_per_collection():
+    tracks = ak.Array([[
+        {"hp_trackerLayersWithMeasurement": 4, "hp_nValidTrackerHits": 4, "dEdxMaximumOverMedian": 2.4},
+        {"hp_trackerLayersWithMeasurement": 4, "hp_nValidTrackerHits": 4, "dEdxMaximumOverMedian": 2.6},
+        {"hp_trackerLayersWithMeasurement": 5, "hp_nValidTrackerHits": 5, "dEdxMaximumOverMedian": 2.4},
+        {"hp_trackerLayersWithMeasurement": 5, "hp_nValidTrackerHits": 5, "dEdxMaximumOverMedian": 2.6},
+        {"hp_trackerLayersWithMeasurement": 7, "hp_nValidTrackerHits": 7, "dEdxMaximumOverMedian": 1000.0},
+    ]])
+
+    assert ak.to_list(probe_track_dedx_mask(tracks)) == [
+        [True, False, True, False, True]
+    ]
+
+
+def test_fake_track_layer_cut_dedx_lookup_is_unaffected_by_probe_track_dedx_mask():
+    """`fake_track_layer_cut` must keep using the single-layer-bin lookup
+    (`dedx_max_over_median_mask`), not the new per-track lookup -- it already
+    loops per layer bin itself, so a track collection passed to it for a
+    given layer bin is evaluated against that bin's working point uniformly.
+    Guards against `probe_track_dedx_mask` silently replacing it too.
+    """
+
+    base = {
+        "pt": 100.0, "eta": 0.8, "dxy": 0.1, "dz": 0.1,
+        "inECALCrack": False, "inDTWheelGap": False,
+        "inCSCTransition": False, "inTOBCrack": False,
+        "isFiducialECALTrack": True, "hp_nValidPixelHits": 4,
+        "hp_nValidHits": 4, "hp_nValidTrackerHits": 6,
+        "missingInnerHits": 0, "missingMiddleHits": 0,
+        "missingOuterHits": 3, "pfRelIso03_chg": 0.01, "dRMinJet": 1.0,
+        "dRMinElectron": 1.0, "dRMinMuon": 1.0, "dRMinTauHad": 1.0,
+        "caloEnergy": 1.0, "isHighPurityTrack": True,
+    }
+    tracks = ak.Array([[
+        {**base, "hp_trackerLayersWithMeasurement": 6, "dEdxMaximumOverMedian": 99.0},
+    ]])
+
+    # NLayers6plus has no configured working point -- must stay a no-op,
+    # exactly as before this session's change.
+    assert ak.to_list(fake_track_layer_cut(tracks, layer="NLayers6plus")) == [[True]]
+
+
+def test_lepton_background_probe_masks_dedx_cut_can_be_disabled():
+    tracks = ak.Array([[{**PROBE_TRACK_BASE_FIELDS, "dEdxMaximumOverMedian": 2.6}]])
+
+    assert ak.to_list(
+        muon_veto_probe_track_mask(
+            tracks, layer="NLayers4", require_dedx_max_over_median=False
+        )
+    ) == [[True]]
+
+
+def test_lepton_background_probe_masks_dedx_cut_skipped_when_field_absent():
+    tracks = ak.Array([[PROBE_TRACK_BASE_FIELDS]])
+
+    assert ak.to_list(muon_veto_probe_track_mask(tracks, layer="NLayers4")) == [[True]]
+    assert ak.to_list(
+        lepton_veto_probe_track_mask(
+            tracks, measured_veto="electron", layer="NLayers4"
+        )
+    ) == [[True]]
+    assert ak.to_list(tau_veto_probe_track_mask(tracks, layer="NLayers4")) == [[True]]
+
+
+def test_base_probe_track_mask_dedx_cut_is_opt_in_and_does_not_leak_into_search_track_mask():
+    """The dE/dx term defaults off on `base_probe_track_mask` itself.
+
+    `search_track_mask` (the signal-region selection -- a separate,
+    deliberately unsettled question from the lepton-background probe-track
+    cuts, see the analysis's "adding highPurity to the signal selection"
+    investigation) shares `base_probe_track_mask` and must not silently start
+    applying a dE/dx cut just because a track carries
+    `dEdxMaximumOverMedian` -- e.g. because a lepton-background probe-track
+    mask was evaluated earlier in the same event pass and attached the field.
+    """
+    failing_dedx = {**PROBE_TRACK_BASE_FIELDS, "dEdxMaximumOverMedian": 2.6}
+    tracks = ak.Array([[failing_dedx]])
+
+    assert ak.to_list(muon_veto_probe_track_mask(tracks, layer="NLayers4")) == [
+        [False]
+    ]
+    assert ak.to_list(base_probe_track_mask(tracks, layer="NLayers4")) == [[True]]
+    assert ak.to_list(search_track_mask(tracks, layer="NLayers4")) == [[True]]
+
+
+def _table16_probe_fields(*, is_high_purity, dedx_max_over_median):
+    return {
+        "pt": 100.0, "eta": 0.8, "dxy": 0.01, "dz": 0.1,
+        "inECALCrack": False, "inDTWheelGap": False, "inCSCTransition": False,
+        "inTOBCrack": False,
+        "isFiducialECALTrack": True, "passesTOBDzOrLambda": True,
+        "hp_nValidPixelHits": 4, "hp_nValidHits": 4, "hp_nValidTrackerHits": 4,
+        "missingInnerHits": 0, "missingMiddleHits": 0,
+        "pfRelIso03_chg": 0.01, "dRMinJet": 1.0,
+        "dRMinElectron": 1.0, "dRMinTauHad": 1.0,
+        "caloEnergy": 1.0, "hp_trackerLayersWithMeasurement": 4,
+        "isHighPurityTrack": is_high_purity,
+        "dEdxMaximumOverMedian": dedx_max_over_median,
+    }
+
+
+def test_muon_veto_probe_track_cutflow_masks_places_purity_and_dedx_after_dz():
+    tracks = ak.Array([[
+        _table16_probe_fields(is_high_purity=False, dedx_max_over_median=2.5),
+        _table16_probe_fields(is_high_purity=True, dedx_max_over_median=2.6),
+        _table16_probe_fields(is_high_purity=True, dedx_max_over_median=2.5),
+    ]])
+
+    masks = muon_veto_probe_track_cutflow_masks(tracks, layer="NLayers4")
+
+    keys = list(masks.keys())
+    assert keys.index("track_highPurity") == keys.index("track_dz0p5") + 1
+    assert keys.index("track_dedx") == keys.index("track_highPurity") + 1
+    assert ak.to_list(masks["track_dz0p5"]) == [[True, True, True]]
+    assert ak.to_list(masks["track_highPurity"]) == [[False, True, True]]
+    assert ak.to_list(masks["track_dedx"]) == [[False, False, True]]
+    assert ak.to_list(masks["track_layers4plus"]) == [[False, False, True]]
+
+
+def test_tau_veto_probe_track_cutflow_masks_places_purity_and_dedx_after_dz():
+    def fields(*, is_high_purity, dedx_max_over_median):
+        base = _table16_probe_fields(
+            is_high_purity=is_high_purity, dedx_max_over_median=dedx_max_over_median
+        )
+        base["dRMinMuon"] = 1.0
+        return base
+
+    tracks = ak.Array([[
+        fields(is_high_purity=False, dedx_max_over_median=2.5),
+        fields(is_high_purity=True, dedx_max_over_median=2.6),
+        fields(is_high_purity=True, dedx_max_over_median=2.5),
+    ]])
+
+    masks = tau_veto_probe_track_cutflow_masks(tracks, layer="NLayers4")
+
+    keys = list(masks.keys())
+    assert keys.index("track_highPurity") == keys.index("track_dz0p5") + 1
+    assert keys.index("track_dedx") == keys.index("track_highPurity") + 1
+    assert ak.to_list(masks["track_dedx"]) == [[False, False, True]]
+    assert ak.to_list(masks["track_layers4plus"]) == [[False, False, True]]
+
+
+def test_fiducial_map_probe_track_mask_stays_independent_of_high_purity():
+    tracks = ak.Array([[
+        {
+            "pt": 45.0, "eta": 0.6, "phi": 1.0,
+            "inECALCrack": False, "inDTWheelGap": False,
+            "inCSCTransition": False, "inTOBCrack": False,
+            "isFiducialECALTrack": True, "hp_nValidPixelHits": 3,
+            "hp_nValidHits": 7, "hp_nValidTrackerHits": 4,
+            "missingInnerHits": 0, "missingMiddleHits": 0,
+            "pfRelIso03_chg": 0.01, "dxy": 0.01, "dz": 0.1,
+            "hp_trackerLayersWithMeasurement": 4,
+            "dRMinJet": 0.6, "dRMinElectron": 0.2, "dRMinMuon": 0.2,
+            "dRMinTauHad": 0.2, "caloEnergy": 5.0,
+            "isHighPurityTrack": False,
+            "dEdxMaximumOverMedian": 99.0,
+        }
+    ]])
+
+    # Deliberately fails both high-purity and dE/dx working points, but the
+    # fiducial-map probe is documented to measure detector hot spots
+    # independent of track quality -- it must still pass.
+    assert ak.to_list(fiducial_map_probe_track_mask(tracks, flavor="muon")) == [
+        [True]
+    ]

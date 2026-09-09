@@ -483,14 +483,28 @@ region is selected by the muon+tau cross trigger. The cross-trigger is
 2025--2026.
 
 You can still add these categories to a full Pveto job with
-`DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier and can
-run into the Coffea `PackedSelection` slot limit when combined with diagnostic
-categories. It also makes it easier to accidentally include duplicate
-Poffline/Pmiss histograms when combining outputs. By default, Pveto modes no
-longer write the `n<Prefix>Background...` histograms; use the dedicated
-`*_pmiss_poffline` modes for production Poffline/Pmiss. Keep
-`DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS=0` for production unless you are explicitly
-debugging a cutflow.
+`DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier. It also
+makes it easier to accidentally include duplicate Poffline/Pmiss histograms when
+combining outputs. By default, Pveto modes no longer write the
+`n<Prefix>Background...` histograms; use the dedicated `*_pmiss_poffline` modes
+for production Poffline/Pmiss.
+
+Each `category_mode`'s Table-16/Pveto/Poffline-Pmiss diagnostic-cutflow family
+(`muon_table16_categories`, `electron_pveto_diagnostic_categories`,
+`tau_pveto_diagnostic_categories`, `tau_background_diagnostic_categories`,
+`fake_z_control_diagnostic_categories`) is a cumulative cutflow -- one `Cut` per
+stage -- so `config.py` builds it as a single `MultiCut` axis inside a
+`CartesianSelection` (`active_diagnostic_categories`, per
+pocketcoffea-conventions' recommended pattern for a cumulative-stage axis)
+instead of merging it flat into the mode's `StandardSelection`. Each `MultiCut`
+axis gets its own `PackedSelection` budget independent of the rest of that
+mode's categories, so turning on `DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS` for a
+single-flavor Pveto/Poffline-Pmiss mode no longer competes with that mode's
+other categories for the Coffea `PackedSelection` 64-mask cap. This does not
+extend to `muon_backgrounds`/`egamma_backgrounds`/`all`, which still combine
+multiple category families (and, for `all`, multiple diagnostic families at
+once) into one flat `StandardSelection` -- keep those reserved for debugging,
+per the invariant above.
 
 Pveto outputs contain the four counters used to reproduce the legacy
 `calculateTriggerEfficiencyFile()` epsilon divisor:
@@ -664,13 +678,15 @@ relationship remains obvious.
 | `DISAPPTRKS_DATASET_YEAR` | Optional year override, e.g. `2022_preEE`. Usually inferred from metadata. |
 | `DISAPPTRKS_CATEGORY_MODE` | Workflow/category mode. Default is `muon_pveto`. |
 | `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES` | Adds Poffline/Pmiss control categories to a Pveto mode. Prefer the dedicated `*_pmiss_poffline` modes for production. |
-| `DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS` | Adds detailed Pveto cutflow diagnostic categories. Leave off for production Pmiss/Poffline runs unless you need the diagnostic tables. |
+| `DISAPPTRKS_ENABLE_PVETO_DIAGNOSTICS` | Adds detailed Pveto cutflow diagnostic categories (their own `CartesianSelection` `MultiCut` axis, so they no longer compete with the mode's other categories for the `PackedSelection` cap). Leave off for production Pmiss/Poffline runs unless you need the diagnostic tables. |
 | `DISAPPTRKS_ENABLE_SEARCH_DIAGNOSTICS` | Adds detailed search/cutflow diagnostic categories. |
 | `DISAPPTRKS_FAKE_TRACK_CONTROL` | Fake-track control choice: `basic`, `zmumu`, or `zee`. |
 | `DISAPPTRKS_FIDUCIAL_MAP_DIR` | Directory containing `electron_fiducial_map.json` and `muon_fiducial_map.json`. |
 | `DISAPPTRKS_ELECTRON_FIDUCIAL_MAP_JSON` | Explicit electron fiducial-map JSON path. |
 | `DISAPPTRKS_MUON_FIDUCIAL_MAP_JSON` | Explicit muon fiducial-map JSON path. |
 | `DISAPPTRKS_ENABLE_FAKE_SIDEBAND_HISTOGRAMS` | Set to `0` for production fake-track jobs to skip exploratory sideband hit-pattern and dE/dx histograms and event manifests while retaining estimate counts and transfer-factor fits. Defaults to `1`. |
+| `DISAPPTRKS_FAKE_TRACK_REQUIRE_DEDX_CUT` | Set to `0` to drop the fake-track dE/dx max-over-median cut (see `PROBE_TRACK_DEDX_MAX_OVER_MEDIAN` in `selections.py`) for an AN cross-check. Defaults to `1`. |
+| `DISAPPTRKS_LEPTON_BACKGROUND_REQUIRE_DEDX_CUT` | Set to `0` to drop the high-purity/dE/dx cut on the muon/electron/tau Pveto probe-track selections (`muon_pveto`, `electron_pveto`, `tau_mu_pveto`, `tau_ele_pveto`) for an AN cross-check. Defaults to `1`. Shares `PROBE_TRACK_DEDX_MAX_OVER_MEDIAN` with the fake-track cut, but looks it up per track (`probe_track_dedx_mask`) rather than per caller-chosen layer bin (`dedx_max_over_median_mask`), since `MuonVetoProbeTrack`/etc. are one mixed-NLayers collection built at `layer="combinedBins"`, not one collection per bin. A track whose own measured layer count has no working point (`NLayers6plus` and up -- no working point is planned for `combinedBins`/`NLayers6plus`) gets the high-purity requirement only; NLayers4/NLayers5 tracks get cut wherever they appear in the mix. Does not affect `fiducial_map_probe_track_mask`, which is deliberately independent of track quality. |
 | `DISAPPTRKS_HIGH_PURITY_STUDY_LAYERS` | Comma-separated layer bins for `high_purity_study`; defaults to `NLayers4`. |
 | `DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS` | Set to `1` to add linked `IsoTrackDeDxHit` one- and two-dimensional histograms to `high_purity_study`; defaults to `0`. |
 | `DISAPPTRKS_SKIM_OUTPUT` | Required output directory for `z_sideband_skim`; may be a worker-visible local path or XRootD EOS URL. |

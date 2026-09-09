@@ -449,6 +449,78 @@ def analysis_layer_mask(tracks, layer: str):
     return layer_mask(tracks, layer) & tracks.isHighPurityTrack
 
 
+# Maximum allowed ratio of a track's largest per-hit dE/dx measurement to its
+# median per-hit dE/dx.  Originally derived for the fake-track background
+# (see :func:`fake_track_layer_cut`) and shared with the lepton-background
+# probe-track selections below.  The working point is layer-bin dependent;
+# only NLayers4 and NLayers5 have derived values so far -- other layer bins
+# get no dE/dx cut until a value is derived for them.
+PROBE_TRACK_DEDX_MAX_OVER_MEDIAN = {
+    "NLayers4": 2.5,
+    "NLayers5": 2.5,
+}
+
+
+def dedx_max_over_median_mask(tracks, layer: str):
+    """dE/dx max-over-median term shared by the fake-track and probe-track cuts.
+
+    Returns ``True`` (a no-op AND term) if ``layer`` has no configured
+    working point in :data:`PROBE_TRACK_DEDX_MAX_OVER_MEDIAN`, or if
+    ``tracks`` does not carry the ``dEdxMaximumOverMedian`` summary field
+    (callers must attach it, e.g. via ``_dedx_track_summaries``, before this
+    cut can take effect).
+    """
+
+    dedx_max_over_median = PROBE_TRACK_DEDX_MAX_OVER_MEDIAN.get(layer)
+    if dedx_max_over_median is None or "dEdxMaximumOverMedian" not in tracks.fields:
+        return True
+
+    import awkward as ak
+
+    return ak.fill_none(tracks.dEdxMaximumOverMedian <= dedx_max_over_median, False)
+
+
+def probe_track_dedx_mask(tracks):
+    """Per-track dE/dx max-over-median requirement, looked up by each track's
+    own measured layer count.
+
+    Used by the lepton-background Pveto probe-track selections
+    (:func:`muon_veto_probe_track_mask`, :func:`lepton_veto_probe_track_mask`,
+    :func:`tau_veto_probe_track_mask`, and their AN Table-16/22/23 cutflow
+    variants), which build one mixed-NLayers probe-track collection at
+    ``layer="combinedBins"`` rather than a separate collection per layer bin.
+    Contrast :func:`dedx_max_over_median_mask`, which looks up a single
+    working point for a caller-chosen layer bin and is correct only when the
+    caller has already restricted ``tracks`` to that one bin (e.g. the
+    fake-track background, which does loop per layer bin) -- calling it with
+    ``"combinedBins"`` against a mixed population is a no-op, since
+    ``PROBE_TRACK_DEDX_MAX_OVER_MEDIAN`` has no ``"combinedBins"`` entry.
+
+    Here, each track is instead checked against whichever entry of
+    :data:`PROBE_TRACK_DEDX_MAX_OVER_MEDIAN` matches its own layer count, so
+    NLayers4/NLayers5 tracks mixed into a combinedBins collection still get
+    their bin's working point; tracks whose own layer count has no configured
+    working point (NLayers6plus and up) pass unconditionally.  Returns
+    ``True`` (a no-op) if ``tracks`` doesn't carry the
+    ``dEdxMaximumOverMedian`` summary field.
+    """
+
+    if "dEdxMaximumOverMedian" not in tracks.fields:
+        return True
+
+    import awkward as ak
+
+    mask = None
+    for configured_layer, dedx_max_over_median in PROBE_TRACK_DEDX_MAX_OVER_MEDIAN.items():
+        applies = layer_mask(tracks, configured_layer)
+        passes = ak.fill_none(
+            tracks.dEdxMaximumOverMedian <= dedx_max_over_median, False
+        )
+        term = ~applies | passes
+        mask = term if mask is None else (mask & term)
+    return mask if mask is not None else True
+
+
 ISOLATED_TRACK_SELECTION_FIELDS = (
     "track_pt55",
     "track_eta2p1",
@@ -570,6 +642,13 @@ def base_probe_track_mask(
     apply_calo_cut: bool = True,
     apply_outer_hits_cut: bool = False,
     require_high_purity: bool = True,
+    # Defaults to off: this helper is also shared by the signal-region
+    # `search_track_mask`, which must not silently pick up a dE/dx cut just
+    # because some other caller (e.g. a lepton-background probe track)
+    # attached `dEdxMaximumOverMedian` onto the same track collection earlier
+    # in the same event pass.  Callers that want the cut (the lepton-
+    # background probe-track wrappers below) pass it explicitly.
+    require_dedx_max_over_median: bool = False,
 ):
     mask = (
         (tracks.pt > pt_min)
@@ -592,6 +671,8 @@ def base_probe_track_mask(
             else layer_mask(tracks, layer)
         )
     )
+    if require_dedx_max_over_median:
+        mask = mask & probe_track_dedx_mask(tracks)
     if apply_jet_cut:
         mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     if apply_calo_cut:
@@ -782,13 +863,21 @@ def fiducial_map_probe_track_mask(
     return mask
 
 
-def muon_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
+def muon_veto_probe_track_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_dedx_max_over_median: bool = True,
+):
     """Cumulative probe-track masks in the AN Table 16 order.
 
     These are used for the displayed muon-Pveto cutflow.  The implementation
     follows the legacy ``ZtoMuProbeTrk`` probe definition: the valid-hit
     requirement from ``isoTrkCuts`` is kept together with the pixel-hit row even
-    though Table 16 only prints the pixel-hit label.
+    though Table 16 only prints the pixel-hit label.  The high-purity and
+    dE/dx requirements are applied right after the ``dz`` cut, matching
+    :func:`base_probe_track_mask`; the trailing ``track_layers4plus`` row is a
+    pure layer-count cut since purity was already applied earlier.
     """
     masks = {}
     mask = tracks.pt > 30.0
@@ -830,6 +919,13 @@ def muon_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & (abs(tracks.dz) < 0.5)
     masks["track_dz0p5"] = mask
 
+    mask = mask & tracks.isHighPurityTrack
+    masks["track_highPurity"] = mask
+
+    if require_dedx_max_over_median:
+        mask = mask & probe_track_dedx_mask(tracks)
+    masks["track_dedx"] = mask
+
     mask = mask & ((tracks.dRMinJet < 0.0) | (tracks.dRMinJet > 0.5))
     masks["track_dRJet0p5"] = mask
 
@@ -844,7 +940,7 @@ def muon_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & (tracks.caloEnergy < 10.0)
     masks["track_calo10"] = mask
 
-    mask = mask & analysis_layer_mask(tracks, layer)
+    mask = mask & layer_mask(tracks, layer)
     masks["track_layers4plus"] = mask
 
     return masks
@@ -859,7 +955,12 @@ def muon_tag_mask(
     )["muon_selected_tag"]
 
 
-def muon_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
+def muon_veto_probe_track_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_dedx_max_over_median: bool = True,
+):
     """Probe-track denominator for a first muon-veto tag-and-probe study.
 
     This intentionally does not apply the muon veto.  The muon-veto pass/fail
@@ -871,6 +972,7 @@ def muon_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
         layer=layer,
         apply_calo_cut=True,
         apply_outer_hits_cut=False,
+        require_dedx_max_over_median=require_dedx_max_over_median,
     ) & (
         ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
         & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
@@ -882,6 +984,7 @@ def lepton_veto_probe_track_mask(
     *,
     measured_veto: str,
     layer: str = "combinedBins",
+    require_dedx_max_over_median: bool = True,
 ):
     """Probe-track denominator with the measured lepton veto intentionally open."""
     mask = base_probe_track_mask(
@@ -894,6 +997,7 @@ def lepton_veto_probe_track_mask(
         # requirements.
         apply_calo_cut=(measured_veto != "electron"),
         apply_outer_hits_cut=False,
+        require_dedx_max_over_median=require_dedx_max_over_median,
     )
     if measured_veto != "electron":
         mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
@@ -904,7 +1008,12 @@ def lepton_veto_probe_track_mask(
     return mask
 
 
-def tau_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
+def tau_veto_probe_track_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_dedx_max_over_median: bool = True,
+):
     """Tau Pveto tag-and-probe denominator from AN Tables 22/23.
 
     The tau denominator intentionally leaves the measured tau veto open.  It
@@ -919,14 +1028,26 @@ def tau_veto_probe_track_mask(tracks, *, layer: str = "combinedBins"):
         apply_jet_cut=False,
         apply_calo_cut=False,
         apply_outer_hits_cut=False,
+        require_dedx_max_over_median=require_dedx_max_over_median,
     ) & (
         ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
         & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
     )
 
 
-def tau_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
-    """Cumulative tau Pveto probe-track masks in the AN Table 22/23 order."""
+def tau_veto_probe_track_cutflow_masks(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_dedx_max_over_median: bool = True,
+):
+    """Cumulative tau Pveto probe-track masks in the AN Table 22/23 order.
+
+    The high-purity and dE/dx requirements are applied right after the ``dz``
+    cut, matching :func:`base_probe_track_mask`; the trailing
+    ``track_layers4plus`` row is a pure layer-count cut since purity was
+    already applied earlier.
+    """
 
     masks = {}
     mask = tracks.pt > 30.0
@@ -968,13 +1089,20 @@ def tau_veto_probe_track_cutflow_masks(tracks, *, layer: str = "combinedBins"):
     mask = mask & (abs(tracks.dz) < 0.5)
     masks["track_dz0p5"] = mask
 
+    mask = mask & tracks.isHighPurityTrack
+    masks["track_highPurity"] = mask
+
+    if require_dedx_max_over_median:
+        mask = mask & probe_track_dedx_mask(tracks)
+    masks["track_dedx"] = mask
+
     mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
     masks["track_electronVeto"] = mask
 
     mask = mask & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
     masks["track_muonVeto"] = mask
 
-    mask = mask & analysis_layer_mask(tracks, layer)
+    mask = mask & layer_mask(tracks, layer)
     masks["track_layers4plus"] = mask
 
     return masks
@@ -1248,16 +1376,6 @@ def disappearing_track_selection_mask(tracks, *, layer: str = "combinedBins"):
     ]
 
 
-# Maximum allowed ratio of a track's largest per-hit dE/dx measurement to its
-# median per-hit dE/dx, applied right after the high-purity/layer cut in
-# `fake_track_no_d0_mask`.  The working point is layer-bin dependent; only
-# NLayers4 and NLayers5 have derived values so far.
-FAKE_TRACK_DEDX_MAX_OVER_MEDIAN = {
-    "NLayers4": 2.5,
-    "NLayers5": 2.5,
-}
-
-
 def fake_track_layer_cut(
     tracks,
     *,
@@ -1272,7 +1390,7 @@ def fake_track_layer_cut(
     :func:`fake_track_base_mask` once and combine it with this cheaper
     per-layer term, instead of re-evaluating the whole selection per bin.
 
-    For layer bins listed in ``FAKE_TRACK_DEDX_MAX_OVER_MEDIAN``, an
+    For layer bins listed in :data:`PROBE_TRACK_DEDX_MAX_OVER_MEDIAN`, an
     additional cut requires ``tracks.dEdxMaximumOverMedian`` (the track's
     largest per-hit dE/dx divided by its median per-hit dE/dx) to be at or
     below the configured working point.  This is skipped if ``tracks`` does
@@ -1287,17 +1405,8 @@ def fake_track_layer_cut(
         else layer_mask(tracks, layer)
     )
 
-    dedx_max_over_median = FAKE_TRACK_DEDX_MAX_OVER_MEDIAN.get(layer)
-    if (
-        require_dedx_max_over_median
-        and dedx_max_over_median is not None
-        and "dEdxMaximumOverMedian" in tracks.fields
-    ):
-        import awkward as ak
-
-        layer_cut = layer_cut & ak.fill_none(
-            tracks.dEdxMaximumOverMedian <= dedx_max_over_median, False
-        )
+    if require_dedx_max_over_median:
+        layer_cut = layer_cut & dedx_max_over_median_mask(tracks, layer)
 
     return layer_cut
 
