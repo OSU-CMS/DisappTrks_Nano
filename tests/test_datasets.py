@@ -1,6 +1,8 @@
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from disapptrks.datasets import (
     build_dataset_definition,
     count_root_events,
@@ -10,6 +12,7 @@ from disapptrks.datasets import (
     is_allowed_osunano_path,
     osunano_area_and_top_dir,
     primary_dataset_from_path,
+    publish_dataset_json,
     root_files_from_lines,
     run_year_era_from_path,
     signal_point_from_path,
@@ -256,3 +259,112 @@ def test_write_grouped_filelists_adds_special_output_suffix(tmp_path):
     assert entry["filelist"].name == "Muon_2023C_OSUv2.txt"
     assert entry["dataset_json"].name == "eos_2023C_Muon_OSUv2.json"
     assert "Run2023C_Muon_OSUNano_EOS_OSUv2" in entry["dataset_json"].read_text()
+
+
+def test_publish_dataset_json_uploads_when_absent(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[0] == "xrdfs":
+            return SimpleNamespace(returncode=1)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("disapptrks.datasets.subprocess.run", fake_run)
+
+    local = tmp_path / "eos_2025_Muon_OSUv2.json"
+    local.write_text("{}")
+
+    destination = publish_dataset_json(
+        local,
+        name="eos_2025_Muon_OSUv2",
+        eos_base="root://cmseos.fnal.gov//store/group/lpcdisapptrks/dataset_jsons",
+    )
+
+    assert destination == (
+        "root://cmseos.fnal.gov//store/group/lpcdisapptrks/dataset_jsons/"
+        "eos_2025_Muon_OSUv2.json"
+    )
+    assert calls[0][:2] == ["xrdfs", "root://cmseos.fnal.gov"]
+    assert calls[-1][0] == "xrdcp"
+
+
+def test_publish_dataset_json_refuses_to_overwrite_without_force(tmp_path, monkeypatch):
+    def fake_run(cmd, **kwargs):
+        if cmd[0] == "xrdfs":
+            return SimpleNamespace(returncode=0)
+        raise AssertionError("xrdcp should not run without --force")
+
+    monkeypatch.setattr("disapptrks.datasets.subprocess.run", fake_run)
+
+    local = tmp_path / "eos_2025_Muon_OSUv2.json"
+    local.write_text("{}")
+
+    with pytest.raises(FileExistsError):
+        publish_dataset_json(
+            local,
+            name="eos_2025_Muon_OSUv2",
+            eos_base="root://cmseos.fnal.gov//store/group/lpcdisapptrks/dataset_jsons",
+        )
+
+
+def test_publish_dataset_json_force_skips_existence_check(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("disapptrks.datasets.subprocess.run", fake_run)
+
+    local = tmp_path / "eos_2025_Muon_OSUv2.json"
+    local.write_text("{}")
+
+    publish_dataset_json(
+        local,
+        name="eos_2025_Muon_OSUv2",
+        eos_base="root://cmseos.fnal.gov//store/group/lpcdisapptrks/dataset_jsons",
+        force=True,
+    )
+
+    # Only the xrdcp call should have happened -- no existence check with force=True.
+    assert len(calls) == 1
+    assert calls[0][0] == "xrdcp"
+
+
+def test_publish_output_dir_copies_files_without_double_nesting(tmp_path, monkeypatch):
+    from disapptrks.datasets import publish_output_dir
+
+    local_dir = tmp_path / "fake_tracks_smoke"
+    local_dir.mkdir()
+    (local_dir / "output_all.coffea").write_text("payload")
+    nested = local_dir / "nested"
+    nested.mkdir()
+    (nested / "extra.txt").write_text("extra")
+
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[0] == "xrdfs":
+            return SimpleNamespace(returncode=1)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("disapptrks.datasets.subprocess.run", fake_run)
+
+    destination = publish_output_dir(
+        local_dir,
+        period="2099_test",
+        mode="fake_tracks_smoke",
+        eos_base="root://cmseos.fnal.gov//store/user/mjoyce/claude_verify_scratch",
+    )
+
+    assert destination == (
+        "root://cmseos.fnal.gov//store/user/mjoyce/claude_verify_scratch/"
+        "2099_test/fake_tracks_smoke"
+    )
+    xrdcp_destinations = [cmd[-1] for cmd in calls if cmd[0] == "xrdcp"]
+    assert destination + "/output_all.coffea" in xrdcp_destinations
+    assert destination + "/nested/extra.txt" in xrdcp_destinations
+    # Never a doubled path segment like .../fake_tracks_smoke/fake_tracks_smoke/...
+    assert not any(d.count("fake_tracks_smoke") > 1 for d in xrdcp_destinations)

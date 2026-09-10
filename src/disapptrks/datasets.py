@@ -506,3 +506,111 @@ def build_dataset_definition(
 def write_dataset_definition(dataset: dict, output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(dataset, indent=2) + "\n")
+
+
+# Kept in sync with workflow.py's DATASET_JSON_EOS_BASE_DEFAULT -- this is the
+# group's canonical location for shared dataset JSONs (see that module for the
+# resolution side; this is the publish side used by `make-dataset-json --publish`).
+DATASET_JSON_EOS_BASE_DEFAULT = (
+    "root://cmseos.fnal.gov//store/group/lpcdisapptrks/dataset_jsons"
+)
+
+
+def publish_dataset_json(
+    local_path: Path,
+    *,
+    name: str,
+    eos_base: str = DATASET_JSON_EOS_BASE_DEFAULT,
+    force: bool = False,
+) -> str:
+    """Copy a dataset JSON to the group's canonical shared EOS location.
+
+    ``name`` is the canonical dataset name, without a directory or ``.json``
+    suffix (e.g. ``eos_2023C_Muon`` or ``eos_2023C_Muon_OSUv2``). Refuses to
+    overwrite an existing canonical file unless ``force`` is set, so a
+    development/test regeneration can't silently clobber the group's current
+    dataset. Returns the destination URL.
+    """
+    parsed = urlsplit(eos_base)
+    server = f"{parsed.scheme}://{parsed.netloc}"
+    remote_dir = "/" + parsed.path.lstrip("/")
+    remote_path = f"{remote_dir}/{name}.json"
+    destination = f"{eos_base}/{name}.json"
+
+    if not force:
+        check = subprocess.run(
+            ["xrdfs", server, "stat", remote_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if check.returncode == 0:
+            raise FileExistsError(
+                f"{destination} already exists; pass --force to overwrite the "
+                "group's canonical dataset JSON"
+            )
+
+    subprocess.run(["xrdcp", "-f", str(local_path), destination], check=True)
+    return destination
+
+
+# Shared EOS space for PocketCoffea/postprocessing output, mirroring the
+# dataset-JSON and fiducial-map shared spaces above.
+OUTPUT_EOS_BASE_DEFAULT = (
+    "root://cmseos.fnal.gov//store/group/lpcdisapptrks/disapptrks_output"
+)
+
+
+class OutputAlreadyExistsError(Exception):
+    """Raised when the destination for publish_output_dir already exists on EOS.
+
+    Callers (the CLI) decide how to resolve this -- overwrite or publish under a
+    different path -- rather than this function silently picking one.
+    """
+
+    def __init__(self, destination: str):
+        super().__init__(f"{destination} already exists")
+        self.destination = destination
+
+
+def publish_output_dir(
+    local_dir: Path,
+    *,
+    period: str,
+    mode: str,
+    eos_base: str = OUTPUT_EOS_BASE_DEFAULT,
+    overwrite: bool = False,
+) -> str:
+    """Copy a local output directory (e.g. analysis_output/<period>/<mode>) to the
+    group's shared EOS output space, at <eos_base>/<period>/<mode>.
+
+    Raises OutputAlreadyExistsError if that destination already exists and
+    ``overwrite`` is not set -- this never decides on its own whether to replace
+    good production output with a development/test run's output.
+    """
+    parsed = urlsplit(eos_base)
+    server = f"{parsed.scheme}://{parsed.netloc}"
+    remote_dir = f"{parsed.path.rstrip('/')}/{period}/{mode}"
+    destination = f"{eos_base}/{period}/{mode}"
+
+    if not overwrite:
+        check = subprocess.run(
+            ["xrdfs", server, "stat", remote_dir],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if check.returncode == 0:
+            raise OutputAlreadyExistsError(destination)
+
+    # xrdcp -r copies the source directory itself as a new subdirectory of the
+    # destination (like `cp -r src dst/` creating `dst/src`), which would nest an
+    # extra `<mode>/<mode>` level here. Copy each file individually instead, so
+    # the destination is exactly <eos_base>/<period>/<mode>/<relative path>.
+    for local_file in sorted(local_dir.rglob("*")):
+        if not local_file.is_file():
+            continue
+        relative = local_file.relative_to(local_dir)
+        subprocess.run(
+            ["xrdcp", "-f", str(local_file), f"{destination}/{relative.as_posix()}"],
+            check=True,
+        )
+    return destination

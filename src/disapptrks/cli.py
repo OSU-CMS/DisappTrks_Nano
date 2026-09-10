@@ -7,11 +7,16 @@ from typing import Union
 
 from . import greet
 from .datasets import (
+    DATASET_JSON_EOS_BASE_DEFAULT,
+    OUTPUT_EOS_BASE_DEFAULT,
+    OutputAlreadyExistsError,
     build_dataset_definition,
     count_root_events,
     group_signal_files,
     group_osunano_files,
     list_eos_root_files,
+    publish_dataset_json,
+    publish_output_dir,
     root_files_from_lines,
     scan_eos_bases_for_root_files,
     write_dataset_definition,
@@ -1128,6 +1133,45 @@ def _make_dataset_json_command(args: argparse.Namespace) -> int:
     if not files:
         print("Warning: no ROOT files found")
         return 2
+
+    if args.publish:
+        publish_name = args.publish_name or args.output.stem
+        try:
+            destination = publish_dataset_json(
+                args.output,
+                name=publish_name,
+                eos_base=args.publish_eos_base,
+                force=args.force,
+            )
+        except FileExistsError as err:
+            raise SystemExit(f"error: {err}") from err
+        print(f"Published to {destination}")
+
+    return 0
+
+
+def _publish_output_command(args: argparse.Namespace) -> int:
+    if not args.input_dir.is_dir():
+        raise SystemExit(f"error: {args.input_dir} is not a directory")
+    if args.overwrite and args.suffix:
+        raise SystemExit("error: --overwrite and --suffix are mutually exclusive")
+
+    mode = f"{args.mode}_{args.suffix}" if args.suffix else args.mode
+    try:
+        destination = publish_output_dir(
+            args.input_dir,
+            period=args.period,
+            mode=mode,
+            eos_base=args.eos_base,
+            overwrite=args.overwrite,
+        )
+    except OutputAlreadyExistsError as err:
+        raise SystemExit(
+            f"error: {err.destination} already exists. Re-run with --overwrite to "
+            "replace it, or --suffix <label> to publish this run alongside it "
+            "without touching the existing copy."
+        ) from err
+    print(f"Published {args.input_dir} to {destination}")
     return 0
 
 
@@ -3257,7 +3301,75 @@ def main():
         type=Path,
         help="Read ROOT file URLs from a text file instead of calling xrdfs.",
     )
+    dataset_json.add_argument(
+        "--publish",
+        action="store_true",
+        help=(
+            "After writing --output locally, also xrdcp it to the group's shared "
+            "canonical dataset-JSON space, so other checkouts can resolve it by name "
+            "via DISAPPTRKS_DATASET_JSON."
+        ),
+    )
+    dataset_json.add_argument(
+        "--publish-name",
+        help=(
+            "Canonical name to publish under (no directory or .json suffix). "
+            "Default: the --output filename stem."
+        ),
+    )
+    dataset_json.add_argument(
+        "--publish-eos-base",
+        default=DATASET_JSON_EOS_BASE_DEFAULT,
+        help="Shared EOS base directory for --publish.",
+    )
+    dataset_json.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "With --publish, overwrite an existing canonical dataset JSON of the "
+            "same name instead of refusing."
+        ),
+    )
     dataset_json.set_defaults(func=_make_dataset_json_command)
+
+    publish_output = subparsers.add_parser(
+        "publish-output",
+        help=(
+            "Copy a local analysis_output/<period>/<mode> directory to the group's "
+            "shared EOS output space."
+        ),
+    )
+    publish_output.add_argument(
+        "input_dir",
+        type=Path,
+        help="Local directory to publish, e.g. analysis_output/2025/fake_tracks/basic.",
+    )
+    publish_output.add_argument(
+        "--period", required=True, help="Run period label, e.g. 2025."
+    )
+    publish_output.add_argument(
+        "--mode",
+        required=True,
+        help="Mode/category label, e.g. fake_tracks/basic.",
+    )
+    publish_output.add_argument(
+        "--eos-base",
+        default=OUTPUT_EOS_BASE_DEFAULT,
+        help="Shared EOS base directory for the published output.",
+    )
+    publish_output.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace an existing EOS copy at the same period/mode path.",
+    )
+    publish_output.add_argument(
+        "--suffix",
+        help=(
+            "Publish under <mode>_<suffix> instead, alongside any existing copy at "
+            "the unsuffixed path. Mutually exclusive with --overwrite."
+        ),
+    )
+    publish_output.set_defaults(func=_publish_output_command)
 
     era_filelists = subparsers.add_parser(
         "make-era-filelists",
