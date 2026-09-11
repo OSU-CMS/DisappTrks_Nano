@@ -505,6 +505,7 @@ def _lepton_background_track_mask(
     flavor: str,
     layer: str,
     matched_object_d_r=None,
+    require_dedx_max_over_median: bool = True,
 ):
     mask = base_probe_track_mask(
         tracks,
@@ -515,6 +516,11 @@ def _lepton_background_track_mask(
         apply_jet_cut=(flavor != "tau"),
         apply_calo_cut=(flavor == "muon"),
         apply_outer_hits_cut=False,
+        # The Poffline/Pmiss control track is the same kind of track the
+        # signal selection targets, so it gets the same high-purity/dE/dx
+        # requirement as the Pveto probe tracks (base_probe_track_mask
+        # already applies high-purity by default; this adds dE/dx).
+        require_dedx_max_over_median=require_dedx_max_over_median,
     )
     if flavor == "electron":
         mask = mask & ((tracks.dRMinElectron >= 0.0) & (tracks.dRMinElectron < 0.1))
@@ -1717,6 +1723,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                 flavor=flavor,
                 layer=layer,
                 matched_object_d_r=matched_object_d_r,
+                require_dedx_max_over_median=self._lepton_background_dedx_cut_enabled(),
             )
             track_mask = track_mask & _outside_fiducial_hot_spots(
                 self.events.IsoTrack,
@@ -2041,14 +2048,26 @@ class DisappTrksProcessor(BaseProcessorABC):
             self.events["Muon"] = add_muon_derived_fields(self.events)
         self.events["IsoTrack"] = add_isotrack_derived_fields(self.events)
         if self._lepton_background_dedx_cut_enabled() and self._mode_enabled(
-            "muon_pveto", "electron_pveto", "tau_mu_pveto", "tau_ele_pveto"
+            "muon_pveto",
+            "electron_pveto",
+            "tau_mu_pveto",
+            "tau_ele_pveto",
+            "muon_pmiss_poffline",
+            "electron_pmiss_poffline",
+            "tau_mu_pmiss_poffline",
+            "tau_ele_pmiss_poffline",
+            "tau_pmiss_poffline",
         ):
-            # Attach dE/dx summaries before any Pveto probe-track mask is
-            # built below, so `muon_veto_probe_track_mask`,
-            # `lepton_veto_probe_track_mask`, and `tau_veto_probe_track_mask`
-            # can apply the dE/dx cut (see selections.py).  Scoped to the
-            # Pveto modes that actually build those masks -- other category
-            # modes may not carry the `IsoTrackDeDxHit` branch.
+            # Attach dE/dx summaries before any Pveto probe-track mask or
+            # Poffline/Pmiss control-track mask is built below, so
+            # `muon_veto_probe_track_mask`, `lepton_veto_probe_track_mask`,
+            # `tau_veto_probe_track_mask`, and `_lepton_background_track_mask`
+            # can all apply the dE/dx cut (see selections.py) -- the
+            # Poffline/Pmiss control track selects the same kind of track the
+            # signal selection targets, so it needs the same requirement as
+            # the Pveto probe tracks. Scoped to the modes that actually build
+            # one of those masks -- other category modes may not carry the
+            # `IsoTrackDeDxHit` branch.
             self._attach_lepton_background_dedx_fields()
         self.events["AnalysisEvent"] = add_event_derived_fields(self.events)
         self.events["IsoTrackProbe"] = self.events.IsoTrack[
