@@ -207,6 +207,106 @@ def test_estimate_lepton_background_accepts_layer_trigger_efficiencies():
     assert estimates[0].estimate.value == 2.0 * estimates[1].estimate.value
 
 
+def test_estimate_lepton_background_low_stat_layers_use_combined_poffline_pmiss():
+    """NLayers4/NLayers5 Poffline/Pmiss control samples can be too small for a
+    meaningful per-layer ratio -- low_stat_layers substitutes combined_layer's
+    Poffline/Pmiss and trigger efficiency for those layers, while leaving
+    N_ctrl, Pveto, and any layer not listed using their own categories.
+    """
+
+    pair_counts = {
+        "NLayers4": {"den_os": 50.0, "num_os": 5.0, "den_ss": 10.0, "num_ss": 1.0},
+        "NLayers5": {"den_os": 60.0, "num_os": 6.0, "den_ss": 12.0, "num_ss": 1.0},
+        "combinedBins": {"den_os": 500.0, "num_os": 50.0, "den_ss": 100.0, "num_ss": 10.0},
+    }
+    counts = {
+        # NLayers4's own Poffline/Pmiss inputs are deliberately implausible
+        # (offline > control) so the test fails loudly if they leak through
+        # instead of being replaced by combinedBins.
+        "control_NLayers4": 100.0,
+        "offline_NLayers4": 999.0,
+        "trigger_NLayers4": 999.0,
+        # NLayers5 is not in low_stat_layers -- must keep using its own.
+        "control_NLayers5": 100.0,
+        "offline_NLayers5": 25.0,
+        "trigger_NLayers5": 20.0,
+        "control_combinedBins": 1000.0,
+        "offline_combinedBins": 300.0,
+        "trigger_combinedBins": 270.0,
+    }
+
+    estimates = estimate_lepton_background(
+        flavor=r"$\mu$",
+        layers=["NLayers4", "NLayers5", "combinedBins"],
+        pair_counts=pair_counts,
+        counts=counts,
+        control_category="control_{layer}",
+        poffline_numerator_category="offline_{layer}",
+        poffline_denominator_category="control_{layer}",
+        pmiss_numerator_category="trigger_{layer}",
+        pmiss_denominator_category="offline_{layer}",
+        trigger_efficiency={
+            "NLayers4": Count(0.5, 0.0),
+            "NLayers5": Count(1.0, 0.0),
+            "combinedBins": Count(2.0, 0.0),
+        },
+        low_stat_layers=["NLayers4"],
+    )
+    nlayers4, nlayers5, combined = estimates
+
+    # N_ctrl and Pveto still come from NLayers4's own categories.
+    assert nlayers4.control_raw.value == 100.0
+    assert nlayers4.p_veto.value == (5.0 - 1.0) / (50.0 - 10.0)
+
+    # Poffline/Pmiss/trigger efficiency come from combinedBins instead.
+    assert nlayers4.p_offline.value == 300.0 / 1000.0
+    assert nlayers4.p_miss.value == 270.0 / 300.0
+    assert nlayers4.trigger_efficiency.value == 2.0
+    assert nlayers4.poffline_numerator_category == "offline_combinedBins"
+    assert nlayers4.poffline_denominator_category == "control_combinedBins"
+    assert nlayers4.pmiss_numerator_category == "trigger_combinedBins"
+    assert nlayers4.pmiss_denominator_category == "offline_combinedBins"
+
+    # NLayers5 was not listed in low_stat_layers -- unaffected.
+    assert nlayers5.p_offline.value == 25.0 / 100.0
+    assert nlayers5.p_miss.value == 20.0 / 25.0
+    assert nlayers5.trigger_efficiency.value == 1.0
+    assert nlayers5.poffline_numerator_category == "offline_NLayers5"
+
+    # combinedBins itself is unaffected either way.
+    assert combined.p_offline.value == 300.0 / 1000.0
+    assert combined.trigger_efficiency.value == 2.0
+
+
+def test_estimate_lepton_background_low_stat_layers_default_disabled():
+    """The default (empty low_stat_layers) must reproduce prior behavior --
+    every layer uses its own Poffline/Pmiss/trigger-efficiency categories."""
+
+    estimates = estimate_lepton_background(
+        flavor=r"$\mu$",
+        layers=["NLayers4"],
+        pair_counts={
+            "NLayers4": {"den_os": 50.0, "num_os": 5.0, "den_ss": 10.0, "num_ss": 1.0},
+        },
+        counts={
+            "control_NLayers4": 100.0,
+            "offline_NLayers4": 25.0,
+            "trigger_NLayers4": 20.0,
+            "control_combinedBins": 1000.0,
+            "offline_combinedBins": 300.0,
+            "trigger_combinedBins": 270.0,
+        },
+        control_category="control_{layer}",
+        poffline_numerator_category="offline_{layer}",
+        poffline_denominator_category="control_{layer}",
+        pmiss_numerator_category="trigger_{layer}",
+        pmiss_denominator_category="offline_{layer}",
+    )
+
+    assert estimates[0].p_offline.value == 0.25
+    assert estimates[0].p_miss.value == 0.8
+
+
 def test_trigger_efficiency_uses_same_sign_subtraction():
     efficiency = trigger_efficiency_from_counts(
         total_os=Count(100.0, 100.0),
@@ -380,10 +480,9 @@ def test_tau_trigger_probability_from_outputs_uses_mode_counters():
     assert numerator.value == 146.0
     assert denominator.value == 100.0
     assert probability.value == 1.46
-    efficiency = 100.0 / 146.0
     assert np.isclose(
         probability.variance,
-        (1.0 - efficiency) / (146.0 * efficiency**3),
+        1.46**2 * (1.0 / 146.0 + 1.0 / 100.0),
     )
 
 

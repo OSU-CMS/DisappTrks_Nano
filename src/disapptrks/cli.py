@@ -1510,6 +1510,17 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         if args.tau_probability is not None
         else None
     )
+    if args.low_stat_layers is not None:
+        low_stat_layers = args.low_stat_layers
+    elif args.mode in ("muon", "tau_mu", "tau_ele"):
+        # NLayers4/NLayers5 Poffline/Pmiss/trigger-efficiency control samples
+        # are too small for a meaningful per-layer ratio in these modes; fall
+        # back to combinedBins by default (mirrors the dissertation Table-7.25
+        # sparse-layer prescription that estimate-tau-background's own
+        # _apply_sparse_tau_met_probability_fallback already applies).
+        low_stat_layers = ["NLayers4", "NLayers5"]
+    else:
+        low_stat_layers = []
     estimates = estimate_lepton_background(
         flavor=flavor,
         layers=args.layers,
@@ -1524,6 +1535,8 @@ def _estimate_lepton_background_command(args: argparse.Namespace) -> int:
         trigger_efficiency=trigger_efficiency,
         tau_probability=tau_probability,
         met_probabilities=met_probabilities,
+        low_stat_layers=low_stat_layers,
+        combined_layer=args.low_stat_combined_layer,
         dataset=args.dataset,
         sample=args.sample,
         variation=args.variation,
@@ -2479,6 +2492,25 @@ def main():
         type=float,
         default=0.0,
         help="Absolute uncertainty on --tau-probability.",
+    )
+    lepton_background.add_argument(
+        "--low-stat-layers",
+        nargs="*",
+        default=None,
+        help=(
+            "Layer bins whose Poffline/Pmiss and trigger efficiency are too "
+            "low-statistics to use their own per-layer control categories; "
+            "draw them from --low-stat-combined-layer's categories instead. "
+            "N_ctrl and Pveto still use each layer's own categories. Defaults "
+            "to 'NLayers4 NLayers5' for --mode muon/tau_mu/tau_ele, and to "
+            "none (every layer uses its own categories) for --mode electron. "
+            "Pass with no values to force-disable for any mode."
+        ),
+    )
+    lepton_background.add_argument(
+        "--low-stat-combined-layer",
+        default="combinedBins",
+        help="Layer whose Poffline/Pmiss/trigger-efficiency categories back --low-stat-layers.",
     )
     lepton_background.add_argument(
         "--met-cut",

@@ -529,10 +529,23 @@ def estimate_lepton_background(
     trigger_efficiency: Count | Mapping[str, Count] | None = None,
     tau_probability: Count | None = None,
     met_probabilities: Mapping[str, tuple[Count, Count]] | None = None,
+    low_stat_layers: Sequence[str] = (),
+    combined_layer: str = "combinedBins",
     dataset: str | None = None,
     sample: str | None = None,
     variation: str = "nominal",
 ) -> list[LeptonBackgroundEstimate]:
+    """Compute one lepton-background estimate per requested layer bin.
+
+    ``low_stat_layers`` names layer bins whose Poffline/Pmiss and trigger
+    efficiency are drawn from ``combined_layer`` instead of their own
+    per-layer categories -- N_ctrl and Pveto still use the requested layer's
+    own categories. Use this for layer bins (e.g. NLayers4/NLayers5) whose
+    own Poffline/Pmiss control samples are too small to give a meaningful
+    per-layer ratio; leave it empty (the default) to use every layer's own
+    categories, as before.
+    """
+
     estimates = []
     pmiss_numerator_category = pmiss_numerator_category or ptrigger_numerator_category
     pmiss_denominator_category = pmiss_denominator_category or ptrigger_denominator_category
@@ -543,11 +556,12 @@ def estimate_lepton_background(
     trigger_efficiency = trigger_efficiency or Count(1.0, 0.0)
     tau_probability = tau_probability or Count(1.0, 0.0)
     for layer in layers:
+        poffline_pmiss_layer = combined_layer if layer in low_stat_layers else layer
         control_name = _category_name(control_category, layer)
-        poffline_num_name = _category_name(poffline_numerator_category, layer)
-        poffline_den_name = _category_name(poffline_denominator_category, layer)
-        pmiss_num_name = _category_name(pmiss_numerator_category, layer)
-        pmiss_den_name = _category_name(pmiss_denominator_category, layer)
+        poffline_num_name = _category_name(poffline_numerator_category, poffline_pmiss_layer)
+        poffline_den_name = _category_name(poffline_denominator_category, poffline_pmiss_layer)
+        pmiss_num_name = _category_name(pmiss_numerator_category, poffline_pmiss_layer)
+        pmiss_den_name = _category_name(pmiss_denominator_category, poffline_pmiss_layer)
 
         control_raw = _count_from_source(
             counts=counts,
@@ -558,8 +572,8 @@ def estimate_lepton_background(
             variation=variation,
         )
         control = control_raw * control_prescale * tau_probability
-        if met_probabilities is not None and layer in met_probabilities:
-            poffline, pmiss = met_probabilities[layer]
+        if met_probabilities is not None and poffline_pmiss_layer in met_probabilities:
+            poffline, pmiss = met_probabilities[poffline_pmiss_layer]
         else:
             poffline = probability_from_counts(
                 _count_from_source(
@@ -602,7 +616,7 @@ def estimate_lepton_background(
             use_two_lepton_denominator=False,
         )
         layer_trigger_efficiency = (
-            trigger_efficiency.get(layer, Count(1.0, 0.0))
+            trigger_efficiency.get(poffline_pmiss_layer, Count(1.0, 0.0))
             if isinstance(trigger_efficiency, Mapping)
             else trigger_efficiency
         )
