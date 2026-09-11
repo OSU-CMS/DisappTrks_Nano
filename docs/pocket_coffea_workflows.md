@@ -472,15 +472,15 @@ disapptrks extract-tau-trigger-probability \
   analysis_output/2022CD_tau_trigger_probability_dask/output_*.coffea
 ```
 
-Following dissertation Equation 7.8, the extractor calculates the unprescaled
-correction `P(tau) = N(total)/N(IsoMu24) = 1/P(IsoMu24)` after the common
-muon/tau eta legs. The cross-trigger probability is already present in
-`N_ctrl` and cancels algebraically. The extractor prints the resulting
-`--tau-probability` and `--tau-probability-error` arguments, and stores the
-underlying counts in JSON. This correction is required when the tau control
-region is selected by the muon+tau cross trigger. The cross-trigger is
-`IsoMu24+LooseDeepTau30` for 2022--2024 and `IsoMu24+PNetTau26+L2NN` for
-2025--2026.
+Following dissertation Equation 7.7, the extractor calculates
+`P(tau) = P(muon+tau)/P(muon) = N(cross)/N(muon)`, where the cross-trigger and
+single-muon-trigger counts are each measured independently (not one
+conditioned on the other) over the same common muon/tau eta-leg baseline. The
+extractor prints the resulting `--tau-probability` and
+`--tau-probability-error` arguments, and stores the underlying counts in
+JSON. This correction is required when the tau control region is selected by
+the muon+tau cross trigger. The cross-trigger is `IsoMu24+LooseDeepTau30` for
+2022--2024 and `IsoMu24+PNetTau26+L2NN` for 2025--2026.
 
 You can still add these categories to a full Pveto job with
 `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier. It also

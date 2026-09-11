@@ -393,16 +393,11 @@ def _tau_trigger_probability_from_outputs(
     if numerator <= 0.0 or denominator <= 0.0:
         probability = Count(0.0, 0.0)
     else:
-        if denominator > numerator:
-            raise ValueError(
-                "IsoMu24-and-cross overlap exceeds the cross-trigger count"
-            )
-        efficiency = denominator / numerator
-        correction = 1.0 / efficiency
-        correction_variance = (1.0 - efficiency) / (
-            numerator * efficiency**3
-        )
-        probability = Count(correction, correction_variance)
+        # P(tau) = P(muon+tau) / P(muon) = N(cross) / N(muon), both counted
+        # independently over the same eta-accepted baseline sample.
+        value = numerator / denominator
+        variance = value**2 * (1.0 / numerator + 1.0 / denominator)
+        probability = Count(value, variance)
     return numerator_count, denominator_count, probability
 
 
@@ -1682,7 +1677,7 @@ def _estimate_tau_background_command(args: argparse.Namespace) -> int:
             "Calculated tau_probability="
             f"{tau_probability.value:.8g} ± {tau_probability.error:.8g} "
             f"from N_cross={probability_numerator.value:g}, "
-            f"N_cross_and_IsoMu24={probability_denominator.value:g}"
+            f"N_muon={probability_denominator.value:g}"
         )
     elif args.tau_probability_json is not None:
         if args.tau_probability_error != 0.0:
@@ -1832,7 +1827,7 @@ def _extract_tau_trigger_probability_command(args: argparse.Namespace) -> int:
         "tau_probability="
         f"{probability.value:.6g} ± {probability.error:.6g} "
         f"(N_cross={numerator.value:.6g}, "
-        f"N_cross_and_IsoMu24={denominator.value:.6g})"
+        f"N_muon={denominator.value:.6g})"
     )
     print(
         "Use with estimate-lepton-background: "

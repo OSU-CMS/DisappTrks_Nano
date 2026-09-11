@@ -2599,10 +2599,11 @@ class DisappTrksProcessor(BaseProcessorABC):
         eta_legs = muon_eta_leg & tau_eta_leg
         cross_trigger = _muon_tau_trigger_mask(self.events, self._year)
         single_muon_trigger = _tau_probability_single_muon_trigger_mask(self.events)
-        # Legacy/Dissertation Eq. 7.8: correct the control sample selected by
-        # both triggers back to the full muon+tau cross-trigger population.
+        # Legacy/Dissertation Eq. 7.7-7.8: P(tau) = P(muon+tau) / P(muon),
+        # each measured independently over the same eta-accepted baseline
+        # sample (denominator is not required to be a subset of numerator).
         numerator = eta_legs & cross_trigger
-        denominator = numerator & single_muon_trigger
+        denominator = eta_legs & single_muon_trigger
 
         self.events["nTauTriggerProbabilityMuonEtaLeg"] = ak.values_astype(
             muon_eta_leg, np.int64
