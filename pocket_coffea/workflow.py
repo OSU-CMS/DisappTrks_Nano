@@ -3240,7 +3240,7 @@ class DisappTrksProcessor(BaseProcessorABC):
                     "pair_ss_pass_tau_pveto": ak.num(
                         pairs[
                             ss_mass_window
-                            & layer_mask
+                            & combined_layer_mask
                             & tau_pveto_pair_pass_mask(pairs)
                         ]
                     )
