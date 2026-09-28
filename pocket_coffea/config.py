@@ -25,6 +25,7 @@ from pocket_coffea.lib.categorization import (
 )
 from pocket_coffea.lib.columns_manager import ColOut
 from pocket_coffea.lib.hist_manager import Axis, HistConf
+from pocket_coffea.lib.weights.common import common_weights
 from pocket_coffea.utils.configurator import Configurator
 
 import cuts
@@ -61,6 +62,7 @@ from cuts import (
     signal_acceptance_layer_entry_cuts,
     signal_acceptance_layer_cuts,
     signal_acceptance_stage_cuts,
+    staged_search_layer_cuts,
     signal_acceptance_variant_axis_cuts,
     single_electron_hlt,
     single_muon_hlt,
@@ -275,6 +277,9 @@ fake_track_require_dedx_cut = os.environ.get(
 lepton_background_require_dedx_cut = os.environ.get(
     "DISAPPTRKS_LEPTON_BACKGROUND_REQUIRE_DEDX_CUT", "1"
 ).lower() in ("1", "true", "yes", "on")
+search_require_dedx_cut = os.environ.get(
+    "DISAPPTRKS_SEARCH_REQUIRE_DEDX_CUT", "1"
+).lower() in ("1", "true", "yes", "on")
 enable_high_purity_dedx_histograms = os.environ.get(
     "DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS", "0"
 ).lower() in ("1", "true", "yes", "on")
@@ -307,6 +312,7 @@ parameters["disapptrks"] = {
     "fake_sideband_histograms": enable_fake_sideband_histograms,
     "fake_track_require_dedx_cut": fake_track_require_dedx_cut,
     "lepton_background_require_dedx_cut": lepton_background_require_dedx_cut,
+    "search_require_dedx_cut": search_require_dedx_cut,
     "high_purity_study_layers": high_purity_study_layers,
     "high_purity_dedx_histograms": enable_high_purity_dedx_histograms,
     "signal_dedx_histograms": enable_signal_dedx_histograms,
@@ -364,7 +370,7 @@ def _skim_cuts_for_mode(mode, sample):
             return [single_electron_hlt]
         if sample in ("DATA_JetMET", "DATA_MET"):
             return [met_hlt]
-    if mode == "signal_acceptance":
+    if mode in ("signal_acceptance", "search_region"):
         return [met_hlt]
     return []
 
@@ -691,6 +697,45 @@ elif category_mode == "signal_acceptance":
             for name, cut in signal_acceptance_layer_entry_cuts.items()
         },
     }
+elif category_mode == "search_region":
+    # Explicit, dissertation-matching (Ch. 7.3.3) staged cumulative chain per
+    # layer bin: basic_selection -> isolated_track -> candidate_track ->
+    # disappearing_track (final). Each stage's Cut checks a layer-bin-aware
+    # count field built from the single staged mask implementation in
+    # selections.py (search_track_cutflow_masks and its
+    # isolated/candidate/disappearing_track_selection_cutflow_masks
+    # wrappers) -- see disapptrks-signal-acceptance's "historical context"
+    # section for where highPurity/dE-dx-max-over-median sit in that chain
+    # (bundled into the isolated-track endpoint, matching this codebase's
+    # own existing convention, since the dissertation predates both).
+    # Plain StandardSelection per stage: no CartesianSelection needed since
+    # there's no cumulative-stage/variant axis being crossed here (contrast
+    # signal_acceptance, which crosses layer_bin against a variant axis this
+    # mode doesn't need).
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        "basic_selection": common_categories["basic_selection"],
+    }
+    for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+        selected_categories[f"isolated_track_{_layer}"] = [
+            basic_event_selection,
+            staged_search_layer_cuts[f"isolated_track_{_layer}"],
+        ]
+        selected_categories[f"candidate_track_{_layer}"] = [
+            basic_event_selection,
+            staged_search_layer_cuts[f"isolated_track_{_layer}"],
+            staged_search_layer_cuts[f"candidate_track_{_layer}"],
+        ]
+        # Final stage reuses signal_acceptance_layer_cuts' own
+        # signal_selection_with_high_purity_<layer> Cut (nIsoTrackSearch_<layer>
+        # >= 1) rather than duplicating it under a new name -- it is the same
+        # AN Table-20 endpoint search_track_mask now delegates to.
+        selected_categories[f"disappearing_track_{_layer}"] = [
+            basic_event_selection,
+            staged_search_layer_cuts[f"isolated_track_{_layer}"],
+            staged_search_layer_cuts[f"candidate_track_{_layer}"],
+            signal_acceptance_layer_cuts[f"signal_selection_with_high_purity_{_layer}"],
+        ]
 elif category_mode == "all":
     selected_categories = {
         **common_categories,
@@ -712,7 +757,7 @@ else:
         "electron_pmiss_poffline, tau_mu_pmiss_poffline, "
         "tau_ele_pmiss_poffline, tau_pmiss_poffline, tau_trigger_probability, "
         "fake_tracks, high_purity_study, z_sideband_skim, muon_backgrounds, "
-        "egamma_backgrounds, fiducial_maps, signal_acceptance, all."
+        "egamma_backgrounds, fiducial_maps, signal_acceptance, search_region, all."
     )
 
 selected_categories = {
@@ -814,6 +859,9 @@ def _variables_for_mode(mode, variables):
         "signal_acceptance": (
             ("signalDeDxTrack",) if enable_signal_dedx_histograms else ()
         ),
+        # Counting-experiment datacard: one trivial 1-bin yield histogram per
+        # layer-bin category, not a shape variable -- see search_region_yield_variables.
+        "search_region": ("searchRegionYield",),
     }
     prefixes = prefixes_by_mode.get(mode)
     if prefixes is None:
@@ -1120,6 +1168,51 @@ tau_trigger_probability_variables = {
         "N(events with at least one tau |eta| < 2.1)",
         bins=2,
     ),
+    "nTauTriggerProbabilityGoodTau": _event_count_hist(
+        "nTauTriggerProbabilityGoodTau",
+        "N(events with at least one Table-27 hadronic tau)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityGoodMuon": _event_count_hist(
+        "nTauTriggerProbabilityGoodMuon",
+        "N(events with at least one tight isolated muon tag)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityGoodDenominator": _event_count_hist(
+        "nTauTriggerProbabilityGoodDenominator",
+        "N(good tau and good muon, single-muon trigger)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityGoodNumerator": _event_count_hist(
+        "nTauTriggerProbabilityGoodNumerator",
+        "N(good tau and good muon, muon+tau cross-trigger)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityGoodNumeratorAndDenominator": _event_count_hist(
+        "nTauTriggerProbabilityGoodNumeratorAndDenominator",
+        "N(good tau and good muon, cross-trigger and single-muon trigger)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityGoodDenominatorIsoMu20": _event_count_hist(
+        "nTauTriggerProbabilityGoodDenominatorIsoMu20",
+        "N(good tau and good muon, IsoMu20)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityGoodNumeratorIsoMu20HPS27": _event_count_hist(
+        "nTauTriggerProbabilityGoodNumeratorIsoMu20HPS27",
+        "N(good tau and good muon, IsoMu20 eta2p1 HPS27 cross-trigger)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityGoodTauCrossHPS30": _event_count_hist(
+        "nTauTriggerProbabilityGoodTauCrossHPS30",
+        "N(good tau, IsoMu24 eta2p1 HPS30 cross-trigger; no muon requirement)",
+        bins=2,
+    ),
+    "nTauTriggerProbabilityGoodTauCrossHPS27": _event_count_hist(
+        "nTauTriggerProbabilityGoodTauCrossHPS27",
+        "N(good tau, IsoMu20 eta2p1 HPS27 cross-trigger; no muon requirement)",
+        bins=2,
+    ),
 }
 
 
@@ -1388,6 +1481,34 @@ if category_mode == "signal_acceptance" and enable_signal_dedx_histograms:
                 ],
                 only_categories=["inclusive"],
             )
+search_region_yield_variables = {}
+if category_mode == "search_region":
+    # Pure counting experiment: one bin wide enough to hold every event that
+    # already passed the category's selection, so the histogram's single-bin
+    # yield *is* the rate Datacard.rate() reads -- no shape variable intended
+    # (see pocketcoffea-datacards-limits' datacard-api.md for how Datacard
+    # slices this per category). METNoMu_pt is used only as a stable,
+    # always-present event-level field to bin on; its distribution within
+    # the bin is irrelevant since there is only one bin.
+    for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+        search_region_yield_variables[f"searchRegionYield_{_layer}"] = HistConf(
+            [
+                Axis(
+                    coll="AnalysisEvent",
+                    field="METNoMu_pt",
+                    bins=1,
+                    start=0.0,
+                    stop=13000.0,
+                    label="search-region yield (1-bin counting)",
+                )
+            ],
+            # Must match search_region's actual final-stage category name
+            # (see the category_mode == "search_region" branch above) -- this
+            # previously pointed at signal_selection_without_high_purity_<layer>,
+            # a category search_region stopped producing once it switched to
+            # requiring high purity, silently leaving this histogram empty.
+            only_categories=[f"disappearing_track_{_layer}"],
+        )
 if category_mode == "high_purity_study" and enable_high_purity_dedx_histograms:
     _study_control_key = "ZMuMu" if fake_track_control_mode == "zmumu" else "Zee"
     high_purity_dedx_hit_variables[
@@ -1642,13 +1763,22 @@ cfg = Configurator(
     skim=skim_cuts,
     preselections=data_quality_cuts,
     categories=category_selection,
-    weights={"common": {"inclusive": []}, "bysample": {}},
-    weights_classes=[],
+    # genWeight/lumi/XS give properly luminosity-and-cross-section-normalized
+    # yields (previously every mode ran on raw, unweighted event counts --
+    # sum_genweights rescaling happens automatically in the base processor's
+    # postprocess(), not something to hand-roll here). isMC_only defaults to
+    # True on all three, so WeightsManager skips them for data automatically
+    # -- no bysample exclusion needed. weights_classes registers the full
+    # common_weights bundle (pileup, lepton/jet SFs, ...) for future use;
+    # only genWeight/lumi/XS are actually activated below.
+    weights={"common": {"inclusive": ["genWeight", "lumi", "XS"]}, "bysample": {}},
+    weights_classes=common_weights,
     variations={"weights": {"common": {"inclusive": []}}},
     variables=_variables_for_mode(category_mode, {
         **high_purity_study_variables,
         **high_purity_dedx_hit_variables,
         **signal_dedx_track_variables,
+        **search_region_yield_variables,
         **(fake_sideband_track_variables if enable_fake_sideband_histograms else {}),
         "nIsoTrack": HistConf(
             [

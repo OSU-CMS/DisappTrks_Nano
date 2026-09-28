@@ -539,6 +539,7 @@ ISOLATED_TRACK_SELECTION_FIELDS = (
     "track_dRJet0p5",
     "track_layers4plus",
     "track_highPurity",
+    "track_dedxMaxOverMedian",
 )
 
 
@@ -687,20 +688,28 @@ def isolated_track_selection_mask(
     *,
     pt_min: float = 55.0,
     layer: str = "combinedBins",
+    require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
 ):
     """AN Table-18 isolated-track selection before later candidate-track cuts.
 
     This wrapper gives the legacy ``isoTrkWithPt55Cuts`` requirements a name
     matching the AN: pT, eta/crack/fiducial regions, hit and missing-hit
     quality, track isolation, impact parameters, track-jet separation, and the
-    requested layer bin.  Calorimeter energy, missing outer hits, and lepton
-    vetoes are intentionally left for the disappearing-track candidate stage.
+    requested layer bin -- plus the layer-bin/highPurity/dE-dx-max-over-median
+    requirements added to the selection since the AN was written (bundled into
+    this same endpoint; see ``ISOLATED_TRACK_SELECTION_FIELDS``). Calorimeter
+    energy, missing outer hits, and lepton vetoes are intentionally left for
+    the disappearing-track/candidate stages.
     """
 
     if pt_min == 55.0:
-        return isolated_track_selection_cutflow_masks(tracks, layer=layer)[
-            "track_highPurity"
-        ]
+        return isolated_track_selection_cutflow_masks(
+            tracks,
+            layer=layer,
+            require_high_purity=require_high_purity,
+            require_dedx_max_over_median=require_dedx_max_over_median,
+        )["track_dedxMaxOverMedian"]
 
     return base_probe_track_mask(
         tracks,
@@ -717,6 +726,7 @@ def isolated_track_selection_cutflow_masks(
     *,
     layer: str = "combinedBins",
     require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
 ):
     """Cumulative masks through the AN Table-18 isolated-track endpoint."""
 
@@ -724,6 +734,7 @@ def isolated_track_selection_cutflow_masks(
         tracks,
         layer=layer,
         require_high_purity=require_high_purity,
+        require_dedx_max_over_median=require_dedx_max_over_median,
     )
     return {
         field: search_masks[field]
@@ -736,6 +747,7 @@ def candidate_track_selection_cutflow_masks(
     *,
     layer: str = "combinedBins",
     require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
 ):
     """Cumulative masks through the AN Table-19 candidate-track endpoint."""
 
@@ -744,9 +756,10 @@ def candidate_track_selection_cutflow_masks(
             tracks,
             layer=layer,
             require_high_purity=require_high_purity,
+            require_dedx_max_over_median=require_dedx_max_over_median,
         )
     )
-    mask = masks["track_highPurity"]
+    mask = masks["track_dedxMaxOverMedian"]
 
     mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
     masks["track_electronVeto"] = mask
@@ -760,10 +773,21 @@ def candidate_track_selection_cutflow_masks(
     return masks
 
 
-def candidate_track_selection_mask(tracks, *, layer: str = "combinedBins"):
+def candidate_track_selection_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
+):
     """AN Table-19 candidate-track selection."""
 
-    return candidate_track_selection_cutflow_masks(tracks, layer=layer)["track_tauVeto"]
+    return candidate_track_selection_cutflow_masks(
+        tracks,
+        layer=layer,
+        require_high_purity=require_high_purity,
+        require_dedx_max_over_median=require_dedx_max_over_median,
+    )["track_tauVeto"]
 
 
 def disappearing_track_selection_cutflow_masks(
@@ -771,6 +795,7 @@ def disappearing_track_selection_cutflow_masks(
     *,
     layer: str = "combinedBins",
     require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
 ):
     """Cumulative masks through the AN Table-20 disappearing-track endpoint."""
 
@@ -779,6 +804,7 @@ def disappearing_track_selection_cutflow_masks(
             tracks,
             layer=layer,
             require_high_purity=require_high_purity,
+            require_dedx_max_over_median=require_dedx_max_over_median,
         )
     )
     mask = masks["track_tauVeto"]
@@ -1353,27 +1379,41 @@ def search_track_mask(
     *,
     layer: str = "combinedBins",
     require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
 ):
-    return base_probe_track_mask(
+    """The full search-region track selection -- AN Table-20 endpoint.
+
+    Thin wrapper around ``disappearing_track_selection_cutflow_masks`` (the
+    single staged implementation) rather than a separately-maintained boolean
+    expression, so this and ``disappearing_track_selection_mask``/
+    ``common_categories["disappearing_track_selection"]``/``"search"`` can
+    never again silently drift apart (as happened when a dE/dx term was added
+    to only one of two previously-duplicated implementations).
+    """
+
+    return disappearing_track_selection_cutflow_masks(
         tracks,
-        pt_min=55.0,
         layer=layer,
-        apply_calo_cut=True,
-        apply_outer_hits_cut=True,
         require_high_purity=require_high_purity,
-    ) & (
-        ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
-        & ((tracks.dRMinMuon < 0.0) | (tracks.dRMinMuon > 0.15))
-        & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
-    )
+        require_dedx_max_over_median=require_dedx_max_over_median,
+    )["track_missingOuter3"]
 
 
-def disappearing_track_selection_mask(tracks, *, layer: str = "combinedBins"):
+def disappearing_track_selection_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
+):
     """AN Table-20 disappearing-track selection for the search region."""
 
-    return disappearing_track_selection_cutflow_masks(tracks, layer=layer)[
-        "track_missingOuter3"
-    ]
+    return disappearing_track_selection_cutflow_masks(
+        tracks,
+        layer=layer,
+        require_high_purity=require_high_purity,
+        require_dedx_max_over_median=require_dedx_max_over_median,
+    )["track_missingOuter3"]
 
 
 def fake_track_layer_cut(
@@ -1586,8 +1626,21 @@ def search_track_cutflow_masks(
     *,
     layer: str = "combinedBins",
     require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
 ):
-    """Return cumulative track masks for debugging the search-track selection."""
+    """Return cumulative track masks for debugging the search-track selection.
+
+    This is the single source of truth for the staged search-track selection --
+    ``search_track_mask`` and the AN Table-18/19/20 wrappers below
+    (``isolated_track_selection_cutflow_masks``/``candidate_track_selection_cutflow_masks``/
+    ``disappearing_track_selection_cutflow_masks``) all derive from this function's
+    cumulative ``masks`` dict rather than re-deriving the per-track cuts
+    independently. Do not hand-duplicate any of these terms elsewhere -- a prior
+    version of this codebase had ``search_track_mask`` maintain a separate,
+    independently-hand-written boolean expression (via ``base_probe_track_mask``),
+    which silently drifted out of sync with this function when the dE/dx term
+    below was added to only one of the two.
+    """
     masks = {}
     mask = tracks.pt > 55.0
     masks["track_pt55"] = mask
@@ -1640,6 +1693,15 @@ def search_track_cutflow_masks(
     if require_high_purity:
         mask = mask & tracks.isHighPurityTrack
     masks["track_highPurity"] = mask
+
+    if require_dedx_max_over_median:
+        # NLayers4/NLayers5 only (see PROBE_TRACK_DEDX_MAX_OVER_MEDIAN) --
+        # probe_track_dedx_mask looks up each track's own layer count, so it
+        # is a no-op for NLayers6plus+ and for any track missing the
+        # dEdxMaximumOverMedian summary field (e.g. a sample produced before
+        # the IsoTrackDeDxHit branch existed).
+        mask = mask & probe_track_dedx_mask(tracks)
+    masks["track_dedxMaxOverMedian"] = mask
 
     mask = mask & (tracks.caloEnergy < 10.0)
     masks["track_calo10"] = mask

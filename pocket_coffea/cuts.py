@@ -909,6 +909,24 @@ for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
         function=_has_count,
     )
 
+# Per-layer-bin AN Table-18/19/20 staged endpoints for search_region's
+# explicit basic_selection -> isolated_track -> candidate_track ->
+# disappearing_track category chain (see config.py). The final
+# ("disappearing_track") stage reuses signal_acceptance_layer_cuts'
+# signal_selection_with_high_purity_<layer> above rather than duplicating it.
+staged_search_layer_cuts = {}
+for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+    staged_search_layer_cuts[f"isolated_track_{_layer}"] = Cut(
+        name=f"has_isolated_track_{_layer}",
+        params={"field": f"nIsoTrackIsolated_{_layer}", "minimum": 1},
+        function=_has_count,
+    )
+    staged_search_layer_cuts[f"candidate_track_{_layer}"] = Cut(
+        name=f"has_candidate_track_{_layer}",
+        params={"field": f"nIsoTrackCandidate_{_layer}", "minimum": 1},
+        function=_has_count,
+    )
+
 signal_acceptance_common_cutflow_cuts = {}
 for _field in SIGNAL_ACCEPTANCE_PRE_LAYER_FIELDS:
     _name = f"signal_cutflow_common_{_field}"

@@ -1433,6 +1433,14 @@ class DisappTrksProcessor(BaseProcessorABC):
                 "DISAPPTRKS_LEPTON_BACKGROUND_REQUIRE_DEDX_CUT", "1"
             ).lower() in ("1", "true", "yes", "on")
 
+    def _search_dedx_cut_enabled(self):
+        try:
+            return bool(self.params.disapptrks.search_require_dedx_cut)
+        except Exception:
+            return os.environ.get(
+                "DISAPPTRKS_SEARCH_REQUIRE_DEDX_CUT", "1"
+            ).lower() in ("1", "true", "yes", "on")
+
     def _high_purity_dedx_histograms_enabled(self):
         try:
             return bool(self.params.disapptrks.high_purity_dedx_histograms)
@@ -2069,16 +2077,45 @@ class DisappTrksProcessor(BaseProcessorABC):
             # one of those masks -- other category modes may not carry the
             # `IsoTrackDeDxHit` branch.
             self._attach_lepton_background_dedx_fields()
+        if self._search_dedx_cut_enabled() and self._mode_enabled(
+            "signal_acceptance", "search_region"
+        ):
+            # Attach dE/dx summaries before IsoTrackIsolated/IsoTrackCandidate
+            # (built below) and the search-track masks (built later in this
+            # method) are computed, so the staged AN Table-18/19/20 selection
+            # -- and search_track_mask, which now delegates to the same
+            # staged functions in selections.py -- picks up the dE/dx cut
+            # consistently at every stage, not only at the final
+            # IsoTrackSearch collection.
+            self._attach_dedx_track_summary_fields()
+        # Fiducial hot-spot veto for signal_acceptance/search_region -- computed
+        # once here (before IsoTrackIsolated/IsoTrackCandidate, so the whole
+        # staged AN Table-18/19/20 chain gets it consistently) and reused below
+        # for the final IsoTrackSearch/IsoTrackSearchNoHighPurity masks too.
+        # Previously this was only applied to the final search_mask, leaving
+        # IsoTrackIsolated/IsoTrackCandidate (and hence search_region's
+        # isolated_track_<layer>/candidate_track_<layer> categories) silently
+        # fiducial-unmasked -- a real inconsistency, not just a display gap
+        # (confirmed by cross-checking a per-event-cut breakdown against
+        # production output for AMSB_Wino_M700GeV_ctau100cm).
+        search_fiducial_mask = None
+        if self._category_mode() in ("signal_acceptance", "search_region"):
+            fiducial_hot_spots = self._lepton_fiducial_hot_spots("electron", "muon")
+            if fiducial_hot_spots:
+                search_fiducial_mask = _outside_fiducial_hot_spots(
+                    self.events.IsoTrack, fiducial_hot_spots
+                )
         self.events["AnalysisEvent"] = add_event_derived_fields(self.events)
         self.events["IsoTrackProbe"] = self.events.IsoTrack[
             base_probe_track_mask(self.events.IsoTrack)
         ]
-        self.events["IsoTrackIsolated"] = self.events.IsoTrack[
-            isolated_track_selection_mask(self.events.IsoTrack)
-        ]
-        self.events["IsoTrackCandidate"] = self.events.IsoTrack[
-            candidate_track_selection_mask(self.events.IsoTrack)
-        ]
+        isolated_mask = isolated_track_selection_mask(self.events.IsoTrack)
+        candidate_mask = candidate_track_selection_mask(self.events.IsoTrack)
+        if search_fiducial_mask is not None:
+            isolated_mask = isolated_mask & search_fiducial_mask
+            candidate_mask = candidate_mask & search_fiducial_mask
+        self.events["IsoTrackIsolated"] = self.events.IsoTrack[isolated_mask]
+        self.events["IsoTrackCandidate"] = self.events.IsoTrack[candidate_mask]
 
         fiducial_count_flavors = []
         if self._mode_enabled("electron_pveto"):
@@ -2464,24 +2501,33 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["IsoTrackSearchPreLeptonVeto"] = self.events.IsoTrack[
             search_diagnostic_masks["track_missingOuter3"]
         ]
-        search_mask = search_track_mask(self.events.IsoTrack)
+        # dE/dx summary fields (if enabled for this mode) were already
+        # attached earlier in this method, before IsoTrackIsolated/
+        # IsoTrackCandidate were built -- _attach_dedx_track_summary_fields
+        # is a no-op if already attached, so no need to call it again here.
+        require_search_dedx_cut = self._search_dedx_cut_enabled()
+        search_mask = search_track_mask(
+            self.events.IsoTrack,
+            require_dedx_max_over_median=require_search_dedx_cut,
+        )
         search_no_high_purity_mask = search_track_mask(
             self.events.IsoTrack,
             require_high_purity=False,
+            require_dedx_max_over_median=require_search_dedx_cut,
         )
-        if self._category_mode() == "signal_acceptance":
-            fiducial_hot_spots = self._lepton_fiducial_hot_spots(
-                "electron", "muon"
+        # search_region reuses signal_selection_with_high_purity_<layer>
+        # (built from IsoTrackSearch below) as its actual search selection,
+        # so it needs the same fiducial-hot-spot masking signal_acceptance
+        # applies, or its selection would silently diverge from the
+        # production search selection (see disapptrks-signal-acceptance).
+        # search_fiducial_mask was already computed earlier in this method
+        # (before IsoTrackIsolated/IsoTrackCandidate), reused here rather
+        # than recomputed.
+        if search_fiducial_mask is not None:
+            search_mask = search_mask & search_fiducial_mask
+            search_no_high_purity_mask = (
+                search_no_high_purity_mask & search_fiducial_mask
             )
-            if fiducial_hot_spots:
-                fiducial_mask = _outside_fiducial_hot_spots(
-                    self.events.IsoTrack,
-                    fiducial_hot_spots,
-                )
-                search_mask = search_mask & fiducial_mask
-                search_no_high_purity_mask = (
-                    search_no_high_purity_mask & fiducial_mask
-                )
         self.events["IsoTrackSearch"] = self.events.IsoTrack[search_mask]
         self.events["IsoTrackSearchNoHighPurity"] = self.events.IsoTrack[
             search_no_high_purity_mask
@@ -2592,10 +2638,27 @@ class DisappTrksProcessor(BaseProcessorABC):
                     layer_mask(self.events.IsoTrackSearchHighPurity, layer)
                 ]
             )
+            # Layer-bin split of the AN Table-18/19 endpoints, for
+            # search_region's staged basic->isolated->candidate->disappearing
+            # categories (see config.py). IsoTrackIsolated/IsoTrackCandidate
+            # are themselves built at layer="combinedBins" (>=4 layers), same
+            # pattern as IsoTrackSearch above.
+            self.events[f"nIsoTrackIsolated_{layer}"] = ak.num(
+                self.events.IsoTrackIsolated[
+                    layer_mask(self.events.IsoTrackIsolated, layer)
+                ]
+            )
+            self.events[f"nIsoTrackCandidate_{layer}"] = ak.num(
+                self.events.IsoTrackCandidate[
+                    layer_mask(self.events.IsoTrackCandidate, layer)
+                ]
+            )
         self.events["nIsoTrackSearchNoHighPurity_combinedBins"] = (
             self.events.nIsoTrackSearchNoHighPurity
         )
         self.events["nIsoTrackSearch_combinedBins"] = self.events.nIsoTrackSearch
+        self.events["nIsoTrackIsolated_combinedBins"] = self.events.nIsoTrackIsolated
+        self.events["nIsoTrackCandidate_combinedBins"] = self.events.nIsoTrackCandidate
 
     def _has_eta_leg(self, collection_name, eta_max=2.1):
         if collection_name not in self.events.fields:
