@@ -1686,6 +1686,22 @@ if (
             ),
         ]
 
+# Opt-in per-event GenChargino columns for the signal search region, so a Run 2-style
+# lifetime reweighting (legacy makeDatacards.py's TreeMaker loop) can be computed offline
+# for any target ctau from one source sample. ColOut also stores each event's "weight",
+# the same one the histograms are filled with, but NOT rescaled by sum_genweights
+# (postprocess() only rescales variables/sumw/sumw2) -- divide by it when summing.
+if category_mode == "search_region" and _env_flag("DISAPPTRKS_SEARCH_LIFETIME_COLUMNS"):
+    sideband_event_columns["bysample"]["SIGNAL_Chargino"] = {
+        "inclusive": [],
+        "bycategory": {
+            f"disappearing_track_{_layer}": [
+                ColOut("GenChargino", ["ctau", "isDecayed", "Lxy"], flatten=True, store_size=True),
+            ]
+            for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins")
+        },
+    }
+
 if category_mode == "signal_acceptance":
     category_selection = CartesianSelection(
         multicuts=[
@@ -1752,6 +1768,18 @@ else:
     category_selection = StandardSelection(selected_categories)
 
 
+# Opt-in signal pileup reweighting (SIG-01) with its up/down variation (SYST-03):
+# PocketCoffea's built-in "pileup" weight from the LUM puWeights correctionlib files
+# (parameters/pileup.yaml, keyed by the dataset "year" metadata). Scoped to
+# SIGNAL_Chargino so data and background modes are untouched; off by default so
+# existing outputs stay byte-identical. With it on, columns outputs also carry
+# weight_variation_pileupUp/Down beside "weight" (same sum_genweights caveat).
+enable_signal_pileup = _env_flag("DISAPPTRKS_SIGNAL_PILEUP")
+signal_pileup_bysample = (
+    {"SIGNAL_Chargino": {"inclusive": ["pileup"]}} if enable_signal_pileup else {}
+)
+
+
 cfg = Configurator(
     parameters=parameters,
     datasets={
@@ -1770,10 +1798,11 @@ cfg = Configurator(
     # True on all three, so WeightsManager skips them for data automatically
     # -- no bysample exclusion needed. weights_classes registers the full
     # common_weights bundle (pileup, lepton/jet SFs, ...) for future use;
-    # only genWeight/lumi/XS are actually activated below.
-    weights={"common": {"inclusive": ["genWeight", "lumi", "XS"]}, "bysample": {}},
+    # only genWeight/lumi/XS are activated by default (plus pileup for
+    # SIGNAL_Chargino with DISAPPTRKS_SIGNAL_PILEUP=1, see above).
+    weights={"common": {"inclusive": ["genWeight", "lumi", "XS"]}, "bysample": signal_pileup_bysample},
     weights_classes=common_weights,
-    variations={"weights": {"common": {"inclusive": []}}},
+    variations={"weights": {"common": {"inclusive": []}, "bysample": signal_pileup_bysample}},
     variables=_variables_for_mode(category_mode, {
         **high_purity_study_variables,
         **high_purity_dedx_hit_variables,
