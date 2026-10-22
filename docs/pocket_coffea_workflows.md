@@ -479,8 +479,10 @@ conditioned on the other) over the same common muon/tau eta-leg baseline. The
 extractor prints the resulting `--tau-probability` and
 `--tau-probability-error` arguments, and stores the underlying counts in
 JSON. This correction is required when the tau control region is selected by
-the muon+tau cross trigger. The cross-trigger is `IsoMu24+LooseDeepTau30` for
-2022--2024 and `IsoMu24+PNetTau26+L2NN` for 2025--2026.
+the muon+tau cross trigger. The cross-trigger is `IsoMu20+LooseDeepTau27` for
+2022--2023 and `IsoMu24+PNetTau26+L2NN` for 2024--2026. `IsoMu24+LooseDeepTau30`
+is not prescaled but fires ~1/330 as often as `IsoMu20+LooseDeepTau27` in
+2022--2024 data, so it is not used.
 
 You can still add these categories to a full Pveto job with
 `DISAPPTRKS_ENABLE_LEPTON_BACKGROUND_CATEGORIES=1`, but this is heavier. It also
