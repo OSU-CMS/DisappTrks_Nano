@@ -15,6 +15,7 @@ from disapptrks.selections import (
     layer_mask,
     lepton_veto_probe_track_mask,
     met_no_mu_minus_lepton,
+    missing_hits_control_track_mask,
     muon_veto_probe_track_cutflow_masks,
     muon_veto_probe_track_mask,
     probe_track_dedx_mask,
@@ -770,3 +771,159 @@ def test_fiducial_map_probe_track_mask_stays_independent_of_high_purity():
     assert ak.to_list(fiducial_map_probe_track_mask(tracks, flavor="muon")) == [
         [True]
     ]
+
+
+def test_search_track_cutflow_inner_middle_opt_out_only_relaxes_those_stages():
+    hit_tracks = ak.Array(
+        [[
+            {**PROBE_TRACK_BASE_FIELDS, "missingInnerHits": 1},
+            {**PROBE_TRACK_BASE_FIELDS, "missingMiddleHits": 2},
+            PROBE_TRACK_BASE_FIELDS,
+        ]]
+    )
+
+    nominal = search_track_cutflow_masks(hit_tracks)
+    relaxed = search_track_cutflow_masks(
+        hit_tracks, require_no_missing_inner_middle=False
+    )
+
+    assert list(relaxed) == list(nominal)
+    assert ak.to_list(nominal["track_noMissingMiddle"]) == [[False, False, True]]
+    assert ak.to_list(relaxed["track_noMissingMiddle"]) == [[True, True, True]]
+    assert ak.to_list(relaxed["track_tauVeto"]) == [[True, True, True]]
+
+
+def test_missing_hits_control_track_is_candidate_track_without_muon_veto():
+    # A real muon track: next to a muon, large calorimeter energy irrelevant,
+    # no missing outer hits.  The control region must keep it.
+    muon_track = {
+        **PROBE_TRACK_BASE_FIELDS,
+        "dRMinMuon": 0.01,
+        "caloEnergy": 50.0,
+        "missingOuterHits": 0,
+    }
+    tracks = ak.Array(
+        [[
+            muon_track,
+            {**muon_track, "dRMinElectron": 0.01},
+            {**muon_track, "dRMinTauHad": 0.01},
+            {**muon_track, "isHighPurityTrack": False},
+            {**muon_track, "missingMiddleHits": 1},
+        ]]
+    )
+
+    assert ak.to_list(missing_hits_control_track_mask(tracks)) == [
+        [True, False, False, False, False]
+    ]
+    assert ak.to_list(
+        missing_hits_control_track_mask(
+            tracks, require_no_missing_inner_middle=False
+        )
+    ) == [[True, False, False, False, True]]
+
+
+def test_missing_hits_control_track_applies_dedx_cut():
+    tracks = ak.Array(
+        [[
+            {**PROBE_TRACK_BASE_FIELDS, "dEdxMaximumOverMedian": 2.5},
+            {**PROBE_TRACK_BASE_FIELDS, "dEdxMaximumOverMedian": 2.6},
+        ]]
+    )
+
+    assert ak.to_list(missing_hits_control_track_mask(tracks)) == [[True, False]]
+    assert ak.to_list(
+        missing_hits_control_track_mask(
+            tracks, require_dedx_max_over_median=False
+        )
+    ) == [[True, True]]
+
+
+def _hit_drop(n_tracks, *, strip=10, tob=6, middle=0, outer=0, **probabilities):
+    import numpy as np
+
+    from disapptrks.selections import hit_drop_corrected_missing_hits, hit_drop_uniforms
+
+    ones = np.ones(n_tracks, dtype=np.int64)
+    uniforms = hit_drop_uniforms(ones * 362000, ones * 50, np.arange(n_tracks), ones * 0)
+    return hit_drop_corrected_missing_hits(
+        ones * middle, ones * outer, ones * strip, ones * tob, uniforms, **probabilities
+    )
+
+
+NO_DROP = {"p_middle": 0.0, "p_tob": 0.0, "p_pre_tob": 0.0, "p_post_tob": 0.0}
+
+
+def test_hit_drop_limiting_cases():
+    import numpy as np
+
+    middle, outer = _hit_drop(100, middle=1, outer=2, **NO_DROP)
+    assert np.all(middle == 1) and np.all(outer == 2)
+
+    # TOB always dropped, no further drops: all TOB layers become missing outer hits.
+    middle, outer = _hit_drop(100, **{**NO_DROP, "p_tob": 1.0})
+    assert np.all(outer == 6) and np.all(middle == 0)
+
+    # Every outer hit dropped (TOB kept): all strip layers become missing outer hits.
+    middle, outer = _hit_drop(100, **{**NO_DROP, "p_pre_tob": 1.0})
+    assert np.all(outer == 10)
+
+    # Every hit dropped for the middle count: no kept hit, so no missing *middle* hit.
+    middle, outer = _hit_drop(100, **{**NO_DROP, "p_middle": 1.0})
+    assert np.all(middle == 0)
+
+
+def test_hit_drop_uniforms_are_reproducible_and_per_track():
+    import numpy as np
+
+    from disapptrks.selections import hit_drop_uniforms
+
+    a = hit_drop_uniforms(np.array([1, 1]), np.array([2, 2]), np.array([3, 3]), np.array([0, 1]))
+    b = hit_drop_uniforms(np.array([1]), np.array([2]), np.array([3]), np.array([0]))
+    assert a.shape == (2, 101)
+    assert np.array_equal(a[0], b[0])
+    assert not np.array_equal(a[0], a[1])
+    assert np.all((a >= 0.0) & (a < 1.0))
+
+
+def test_hit_drop_reproduces_legacy_outer_and_middle_pdfs():
+    """Random drop frequencies match the legacy fit's analytic PDFs."""
+    import math
+
+    import numpy as np
+
+    n_tracks, n, p = 200_000, 10, 0.3
+    _, outer = _hit_drop(n_tracks, strip=n, **{**NO_DROP, "p_pre_tob": p})
+    expected_outer = [p**k * (1 - p) for k in range(n)] + [p**n]
+    for k, expected in enumerate(expected_outer):
+        observed = np.mean(outer == k)
+        assert abs(observed - expected) < 5 * math.sqrt(expected * (1 - expected) / n_tracks) + 1e-6
+
+    p = 0.2
+    middle, _ = _hit_drop(n_tracks, strip=n, **{**NO_DROP, "p_middle": p})
+    for k in range(n + 1):
+        expected = sum(
+            p ** (i - 1) * (1 - p) * math.comb(n - i, k) * p**k * (1 - p) ** (n - i - k)
+            for i in range(1, n + 1)
+            if k <= n - i
+        )
+        observed = np.mean(middle == k)
+        assert abs(observed - expected) < 5 * math.sqrt(expected * (1 - expected) / n_tracks) + 1e-6
+
+
+def test_apply_hit_drop_correction_keeps_raw_counts():
+    from disapptrks.selections import apply_hit_drop_correction
+
+    events = ak.Array({"run": [1, 1], "luminosityBlock": [2, 2], "event": [3, 4]})
+    tracks = ak.Array(
+        [
+            [{"missingMiddleHits": 0, "missingOuterHits": 1,
+              "hp_stripLayersWithMeasurement": 10, "hp_stripTOBLayersWithMeasurement": 6}],
+            [],
+        ]
+    )
+    corrected = apply_hit_drop_correction(
+        events, tracks, {"P0": 0.0, "P_TOB": 1.0, "P_preTOB": 0.0, "P_postTOB": 0.0}
+    )
+    assert ak.to_list(corrected.missingOuterHits) == [[7], []]
+    assert ak.to_list(corrected.missingOuterHitsRaw) == [[1], []]
+    assert ak.to_list(corrected.missingMiddleHits) == [[0], []]

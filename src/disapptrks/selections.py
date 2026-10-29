@@ -1627,6 +1627,7 @@ def search_track_cutflow_masks(
     layer: str = "combinedBins",
     require_high_purity: bool = True,
     require_dedx_max_over_median: bool = True,
+    require_no_missing_inner_middle: bool = True,
 ):
     """Return cumulative track masks for debugging the search-track selection.
 
@@ -1640,6 +1641,13 @@ def search_track_cutflow_masks(
     independently-hand-written boolean expression (via ``base_probe_track_mask``),
     which silently drifted out of sync with this function when the dE/dx term
     below was added to only one of the two.
+
+    ``require_no_missing_inner_middle=False`` turns the missing-inner and
+    missing-middle stages into pass-throughs (the stage keys are kept, so the
+    cutflow structure is unchanged).  Only the missing-hits control region
+    (legacy ``HitsSystematicsCtrlSelection``, see
+    :func:`missing_hits_control_track_mask`) uses it: that region measures
+    the missing inner/middle hit distributions, so it cannot also cut on them.
     """
     masks = {}
     mask = tracks.pt > 55.0
@@ -1669,10 +1677,12 @@ def search_track_cutflow_masks(
     mask = mask & (tracks.hp_nValidHits >= 4)
     masks["track_validHits4"] = mask
 
-    mask = mask & (tracks.missingInnerHits == 0)
+    if require_no_missing_inner_middle:
+        mask = mask & (tracks.missingInnerHits == 0)
     masks["track_noMissingInner"] = mask
 
-    mask = mask & (tracks.missingMiddleHits == 0)
+    if require_no_missing_inner_middle:
+        mask = mask & (tracks.missingMiddleHits == 0)
     masks["track_noMissingMiddle"] = mask
 
     mask = mask & (tracks.pfRelIso03_chg < 0.05)
@@ -1719,6 +1729,167 @@ def search_track_cutflow_masks(
     masks["track_tauVeto"] = mask
 
     return masks
+
+
+# Missing-hits (hit-drop) correction for simulation -- port of the legacy
+# OSUT3Analysis/Collections/src/TrackBase.cc random hit removal (Run 2 method).
+# Legacy draws 1 TOB decision + 50 outer-hit + 50 middle-hit decisions per track.
+HIT_DROP_DRAWS_PER_LIST = 50
+_GOLDEN = np.uint64(0x9E3779B97F4A7C15)
+
+
+def _splitmix64(x):
+    x = x + _GOLDEN
+    x = (x ^ (x >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
+    x = (x ^ (x >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+    return x ^ (x >> np.uint64(31))
+
+
+def hit_drop_uniforms(run, luminosity_block, event, track_index):
+    """Reproducible uniform draws in [0, 1), shape (n_tracks, 1 + 2 * 50).
+
+    Counter-based (splitmix64 of run, lumi, event, track index and draw index),
+    so a track gets the same draws whatever the chunking -- unlike the legacy
+    clock-seeded generator. Column 0 decides the TOB drop, columns 1-50 the
+    outer-hit drops, columns 51-100 the middle-hit drops.
+    """
+    with np.errstate(over="ignore"):
+        key = _splitmix64(np.asarray(run, dtype=np.uint64))
+        key = _splitmix64(key ^ np.asarray(luminosity_block, dtype=np.uint64))
+        key = _splitmix64(key ^ np.asarray(event, dtype=np.uint64))
+        key = _splitmix64(key ^ np.asarray(track_index, dtype=np.uint64))
+        draws = np.arange(1 + 2 * HIT_DROP_DRAWS_PER_LIST, dtype=np.uint64)
+        bits = _splitmix64(key[:, None] + draws[None, :] * _GOLDEN)
+    return (bits >> np.uint64(11)).astype(np.float64) * (1.0 / (1 << 53))
+
+
+def hit_drop_corrected_missing_hits(
+    missing_middle,
+    missing_outer,
+    strip_layers,
+    tob_layers,
+    uniforms,
+    *,
+    p_middle,
+    p_tob,
+    p_pre_tob,
+    p_post_tob,
+):
+    """Legacy hit-drop correction on flat per-track arrays.
+
+    Returns (corrected missing middle hits, corrected missing outer hits):
+
+    - with probability ``p_tob`` all TOB layers are dropped (added to the
+      missing outer hits);
+    - over the remaining strip layers, outer hits are dropped from the outside
+      in with probability ``p_post_tob`` (TOB dropped) or ``p_pre_tob``, stopping
+      at the first kept hit (legacy ``extraMissingOuterHits``);
+    - each of those layers loses its hit with probability ``p_middle``; a loss
+      counts as a missing middle hit only after the first kept hit (legacy
+      ``extraMissingMiddleHits``).
+    """
+    n_draws = HIT_DROP_DRAWS_PER_LIST
+    missing_middle = np.asarray(missing_middle)
+    missing_outer = np.asarray(missing_outer)
+    strip_layers = np.asarray(strip_layers)
+    tob_layers = np.asarray(tob_layers)
+
+    drop_tob = uniforms[:, 0] < p_tob
+    dropped_tob_layers = np.where(drop_tob, tob_layers, 0)
+    layers = np.clip(strip_layers - dropped_tob_layers, 0, n_draws)
+    active = np.arange(n_draws)[None, :] < layers[:, None]
+
+    outer_p = np.where(drop_tob, p_post_tob, p_pre_tob)[:, None]
+    outer_drop = uniforms[:, 1 : 1 + n_draws] < outer_p
+    stop = (~outer_drop) | (~active)  # first kept hit, or no more layers
+    extra_outer = np.argmax(stop, axis=1)
+
+    middle_drop = uniforms[:, 1 + n_draws : 1 + 2 * n_draws] < p_middle
+    kept = active & ~middle_drop
+    after_first_kept = np.cumsum(kept, axis=1) > 0
+    extra_middle = np.sum(active & middle_drop & after_first_kept, axis=1)
+
+    return (
+        missing_middle + extra_middle,
+        missing_outer + dropped_tob_layers + extra_outer,
+    )
+
+
+def apply_hit_drop_correction(events, tracks, probabilities):
+    """Return ``tracks`` with hit-drop-corrected missing middle/outer hits.
+
+    ``probabilities`` holds P0, P_TOB, P_preTOB, P_postTOB. The uncorrected
+    counts are kept as ``missingMiddleHitsRaw``/``missingOuterHitsRaw``.
+    """
+    import awkward as ak
+
+    counts = ak.num(tracks)
+    flat = ak.flatten(tracks)
+    run, lumi, event = (
+        np.repeat(ak.to_numpy(events[name]), ak.to_numpy(counts))
+        for name in ("run", "luminosityBlock", "event")
+    )
+    track_index = ak.to_numpy(ak.flatten(ak.local_index(tracks, axis=1)))
+    uniforms = hit_drop_uniforms(run, lumi, event, track_index)
+    middle, outer = hit_drop_corrected_missing_hits(
+        ak.to_numpy(flat.missingMiddleHits),
+        ak.to_numpy(flat.missingOuterHits),
+        ak.to_numpy(flat.hp_stripLayersWithMeasurement),
+        ak.to_numpy(flat.hp_stripTOBLayersWithMeasurement),
+        uniforms,
+        p_middle=probabilities["P0"],
+        p_tob=probabilities["P_TOB"],
+        p_pre_tob=probabilities["P_preTOB"],
+        p_post_tob=probabilities["P_postTOB"],
+    )
+    tracks = ak.with_field(tracks, tracks.missingMiddleHits, "missingMiddleHitsRaw")
+    tracks = ak.with_field(tracks, tracks.missingOuterHits, "missingOuterHitsRaw")
+    tracks = ak.with_field(
+        tracks,
+        ak.unflatten(middle.astype(np.int16), counts),
+        "missingMiddleHits",
+    )
+    return ak.with_field(
+        tracks,
+        ak.unflatten(outer.astype(np.int16), counts),
+        "missingOuterHits",
+    )
+
+
+def missing_hits_control_track_mask(
+    tracks,
+    *,
+    layer: str = "combinedBins",
+    require_high_purity: bool = True,
+    require_dedx_max_over_median: bool = True,
+    require_no_missing_inner_middle: bool = True,
+):
+    """Muon control-region track for the missing-hits corrections.
+
+    Legacy ``MuonCtrlSelection`` (``candTrkSelection`` minus the muon veto):
+    the AN Table-18 isolated-track endpoint -- including the highPurity and
+    dE/dx max-over-median terms added since -- followed by the electron and
+    tau vetoes.  No calorimeter-energy or missing-outer-hits requirement, so
+    the selected tracks are real (mostly W->munu) muons whose missing-outer
+    distribution the hit-drop fit compares between data and simulation.
+
+    ``require_no_missing_inner_middle=False`` gives the legacy
+    ``HitsSystematicsCtrlSelection`` (the same region without the missing
+    inner/middle requirements), used for the missing-middle-hit fit and the
+    inner/middle hit systematics.
+    """
+
+    masks = search_track_cutflow_masks(
+        tracks,
+        layer=layer,
+        require_high_purity=require_high_purity,
+        require_dedx_max_over_median=require_dedx_max_over_median,
+        require_no_missing_inner_middle=require_no_missing_inner_middle,
+    )
+    mask = masks["track_dedxMaxOverMedian"]
+    mask = mask & ((tracks.dRMinElectron < 0.0) | (tracks.dRMinElectron > 0.15))
+    mask = mask & ((tracks.dRMinTauHad < 0.0) | (tracks.dRMinTauHad > 0.15))
+    return mask
 
 
 def search_event_cutflow_masks(
@@ -1810,3 +1981,82 @@ def add_event_derived_fields(events):
             ),
         }
     )
+
+
+def isr_zmumu_muons(events):
+    """Muons passing the legacy ZtoMuMu muon cuts (pT > 26, |eta| < 2.1, tight ID, tight PF isolation)."""
+    muons = events.Muon
+    return muons[
+        (muons.pt > 26.0)
+        & (abs(muons.eta) < 2.1)
+        & muons.tightId
+        & (muons.pfRelIso04_all < 0.15)
+    ]
+
+
+def isr_zmumu_candidate(events, *, z_mass: float = 91.1876, window: float = 10.0):
+    """Z->mumu control sample for the ISR scale factor (SIG-06), the legacy ``ZtoMuMu`` selection.
+
+    Run 2 / dissertation ``BackgroundEstimation/python/ZtoMuMuSelections.py``: exactly two muons
+    with pT > 26 GeV (IsoMu24 plateau; legacy cutMuonPairPt is ``== 2``), |eta| < 2.1, tight ID and
+    tight PF isolation (pfRelIso04_all < 0.15), opposite charge and |m(mumu) - mZ| < 10 GeV. The
+    single-muon trigger is the mode's skim. Returns one record per event with ``pass`` and the pair's
+    ``pt``/``mass`` (-1 when there is no pair) -- the reconstructed pT(mumu) the legacy
+    makeZToMuMuISRPlot.py compared between data and MC.
+    """
+    import awkward as ak
+    import numpy as np
+
+    selected = isr_zmumu_muons(events)
+    two = ak.num(selected) == 2
+    padded = ak.pad_none(selected, 2, axis=1, clip=True)
+    first, second = padded[:, 0], padded[:, 1]
+    px = first.pt * np.cos(first.phi) + second.pt * np.cos(second.phi)
+    py = first.pt * np.sin(first.phi) + second.pt * np.sin(second.phi)
+    mass = invariant_mass(first, second, first_mass=0.105658, second_mass=0.105658)
+    opposite = first.charge * second.charge < 0
+    in_window = abs(mass - z_mass) < window
+    passed = ak.fill_none(two & opposite & in_window, False)
+    return ak.zip(
+        {
+            "pass": passed,
+            "pt": ak.fill_none(np.hypot(px, py), -1.0),
+            "mass": ak.fill_none(mass, -1.0),
+        }
+    )
+
+
+def met_no_mu_puppi(events):
+    """MET-no-mu from Type-1 PUPPI MET with the PF muons added back (2026-10-28, DISAPPTRKS_PUPPI_METNOMU).
+
+    ``events.PuppiMET`` must already be recomputed by PocketCoffea's METCalibrator from RawPuppiMET with the
+    calibrated Jet and CorrT1METJet (JME Type-1 recipe for NanoAOD), so jets and MET use the same JEC -- the stored
+    OSUNano MetNoMu was built from the MiniAOD PF Type-1 MET, whose 2023 data JEC is ~6-10 % low. Only PF muons are
+    added back, as in met_no_mu_pf_only; NanoAOD muons below its pT threshold cannot be added (a few GeV at most).
+    """
+    import awkward as ak
+
+    pf = events.Muon[events.Muon.isPFcand]
+    met_x = events.PuppiMET.pt * np.cos(events.PuppiMET.phi) + ak.sum(pf.pt * np.cos(pf.phi), axis=1)
+    met_y = events.PuppiMET.pt * np.sin(events.PuppiMET.phi) + ak.sum(pf.pt * np.sin(pf.phi), axis=1)
+    return ak.zip({"pt": np.hypot(met_x, met_y), "phi": np.arctan2(met_y, met_x)})
+
+
+def met_no_mu_pf_only(events):
+    """MET with only the PF muons added back, the legacy Run 2 definition (OSUT3Analysis Met.cc: PF candidates
+    with |pdgId| == 13).
+
+    OSUNano's MetNoMuTableProducer adds every slimmed muon to the PF MET, but non-PF muons were never in the PF
+    MET, so they inject fake momentum (found 2026-10-27; ~1 % effect on the basic selection, mostly through the
+    jet-MET dphi cut, plus a rare fake-MET tail). Undo that by subtracting the non-PF NanoAOD muons
+    (``Muon_isPFcand == 0``) from the stored value -- rebuilding from MET + PF muons would differ for an unrelated
+    reason, since NanoAOD drops low-pT muons the producer used. Non-PF muons below the NanoAOD muon threshold
+    cannot be removed (a few GeV at most).
+    """
+    import awkward as ak
+
+    nonpf = events.Muon[~events.Muon.isPFcand]
+    met_x = events.MetNoMu.pt * np.cos(events.MetNoMu.phi) - ak.sum(nonpf.pt * np.cos(nonpf.phi), axis=1)
+    met_y = events.MetNoMu.pt * np.sin(events.MetNoMu.phi) - ak.sum(nonpf.pt * np.sin(nonpf.phi), axis=1)
+    return ak.zip({"pt": np.hypot(met_x, met_y), "phi": np.arctan2(met_y, met_x)})
+

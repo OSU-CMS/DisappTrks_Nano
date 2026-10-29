@@ -18,7 +18,12 @@ from pocket_coffea.utils.skim import copy_file, uproot_writeable
 from disapptrks.selections import (
     add_electron_derived_fields,
     add_event_derived_fields,
+    met_no_mu_pf_only,
+    met_no_mu_puppi,
+    isr_zmumu_candidate,
+    isr_zmumu_muons,
     add_isotrack_derived_fields,
+    apply_hit_drop_correction,
     add_muon_derived_fields,
     base_probe_track_mask,
     build_lepton_veto_tag_probe_pairs,
@@ -43,6 +48,7 @@ from disapptrks.selections import (
     mass_window_pair_mask,
     met_no_mu_minus_lepton,
     minimum_delta_r,
+    missing_hits_control_track_mask,
     muon_tag_progression_masks,
     muon_tag_mask,
     muon_pveto_pair_pass_mask,
@@ -59,6 +65,7 @@ from disapptrks.selections import (
     search_event_cutflow_masks,
     search_track_cutflow_masks,
     search_track_mask,
+    disappearing_track_selection_cutflow_masks,
     single_electron_trigger_mask,
     trigger_matched_track_mask,
     run3_tight_lepton_veto_jet_mask,
@@ -148,6 +155,13 @@ except ImportError:
         return masks
 
 PVETO_LAYERS = ("NLayers4", "NLayers5", "NLayers6plus")
+# MC campaign year -> period of the missing-hits (hit-drop) correction it gets.
+HIT_DROP_PERIOD_BY_YEAR = {
+    "2022_preEE": "2022CD",
+    "2022_postEE": "2022EFG",
+    "2023_preBPix": "2023C",
+    "2023_postBPix": "2023D",
+}
 ELECTRON_MASS = 0.000511
 MUON_MASS = 0.105658
 
@@ -435,7 +449,16 @@ def _met_filters_mask(events):
     return mask
 
 
-def _met_for_transverse_mass(events):
+def _puppi_met_no_mu_enabled(params):
+    # params.disapptrks.puppi_met_no_mu is set by config.py at submit time; the env var is only a fallback,
+    # since dask/condor workers do not inherit DISAPPTRKS_PUPPI_METNOMU.
+    try:
+        return bool(params.disapptrks.puppi_met_no_mu)
+    except Exception:
+        return os.environ.get("DISAPPTRKS_PUPPI_METNOMU", "").lower() in ("1", "true", "yes", "on")
+
+
+def _met_for_transverse_mass(events, puppi_met_no_mu=False):
     """Return the event-level MET collection used for lepton MT cuts.
 
     Some of the newer/custom NanoAOD files used in the 2024/2025 productions do
@@ -443,6 +466,8 @@ def _met_for_transverse_mass(events):
     low-MT tag selection only needs an event-level ``pt`` and ``phi``, so use
     ``MET`` when available and fall back to ``PuppiMET`` otherwise.
     """
+    if puppi_met_no_mu:
+        return events["PuppiMET"]  # recalibrated Type-1 PUPPI MET, the same MET as MetNoMu, in every year
     for name in ("MET", "PuppiMET"):
         if name in events.fields:
             return events[name]
@@ -1441,6 +1466,49 @@ class DisappTrksProcessor(BaseProcessorABC):
                 "DISAPPTRKS_SEARCH_REQUIRE_DEDX_CUT", "1"
             ).lower() in ("1", "true", "yes", "on")
 
+    def _missing_outer_columns_enabled(self):
+        try:
+            return bool(self.params.disapptrks.search_missing_outer_columns)
+        except Exception:
+            return os.environ.get(
+                "DISAPPTRKS_SEARCH_MISSING_OUTER_COLUMNS", "0"
+            ).lower() in ("1", "true", "yes", "on")
+
+    def _hit_drop_probabilities(self):
+        """Hit-drop probabilities for this chunk, or None if not applied.
+
+        Applied to MC only, when DISAPPTRKS_MISSING_HITS_CORRECTION is on. The
+        period follows the sample's campaign year, unless an override is
+        configured (2023D MC standing in for 2024-2026), which is only allowed
+        for 2023_postBPix samples.
+        """
+        try:
+            settings = self.params.disapptrks.missing_hits_correction
+        except Exception:
+            return None
+        if not settings or not settings.enabled or not self._isMC:
+            return None
+        period = settings.period or HIT_DROP_PERIOD_BY_YEAR.get(self._year)
+        if settings.period and self._year != "2023_postBPix":
+            raise ValueError(
+                f"missing-hits correction period {settings.period!r} is only valid "
+                f"for 2023_postBPix MC, got year={self._year!r}"
+            )
+        if period not in settings.probabilities:
+            raise ValueError(
+                f"no missing-hits correction for period {period!r} "
+                f"(year={self._year!r})"
+            )
+        return {key: float(value) for key, value in settings.probabilities[period].items()}
+
+    def _missing_hits_high_purity_enabled(self):
+        try:
+            return bool(self.params.disapptrks.missing_hits_require_high_purity)
+        except Exception:
+            return os.environ.get(
+                "DISAPPTRKS_MISSING_HITS_REQUIRE_HIGH_PURITY", "1"
+            ).lower() in ("1", "true", "yes", "on")
+
     def _high_purity_dedx_histograms_enabled(self):
         try:
             return bool(self.params.disapptrks.high_purity_dedx_histograms)
@@ -1944,7 +2012,24 @@ class DisappTrksProcessor(BaseProcessorABC):
                 electron_z & electron_pairs.probe_passVetoElectronVeto
             ]
 
+    def process_extra_after_skim(self):
+        super().process_extra_after_skim()
+        # MET-no-mu fix (2026-10-27): add back only PF muons, as Run 2 did -- the stored OSUNano MetNoMu adds
+        # every muon. Done once here, before anything reads MetNoMu (basic selection, lepton MET-minus-one,
+        # background columns); skimmed-file export happens earlier, so skims keep the raw branch.
+        # DISAPPTRKS_METNOMU_ALL_MUONS=1 restores the stored (all-muon) value.
+        # With DISAPPTRKS_PUPPI_METNOMU=1 MetNoMu is instead rebuilt from the recalibrated PUPPI MET in
+        # apply_object_preselection, which runs after the calibrators.
+        if _puppi_met_no_mu_enabled(self.params):
+            return
+        if os.environ.get("DISAPPTRKS_METNOMU_ALL_MUONS", "").lower() not in ("1", "true", "yes", "on"):
+            self.events["MetNoMu"] = met_no_mu_pf_only(self.events)
+
     def apply_object_preselection(self, variation):
+        if _puppi_met_no_mu_enabled(self.params):
+            # Type-1 PUPPI MET recomputed by the METCalibrator from the same calibrated jets (JME: keep jet and
+            # MET corrections consistent) + PF muons; replaces the stored PF-MET-based OSUNano MetNoMu everywhere.
+            self.events["MetNoMu"] = met_no_mu_puppi(self.events)
         if (
             self._category_mode() == "tau_trigger_probability"
             and not self._full_workflow_enabled()
@@ -2055,6 +2140,13 @@ class DisappTrksProcessor(BaseProcessorABC):
         ):
             self.events["Muon"] = add_muon_derived_fields(self.events)
         self.events["IsoTrack"] = add_isotrack_derived_fields(self.events)
+        # Missing-hits correction (MC only, opt-in): replace the track hit
+        # counts before any selection mask reads them.
+        hit_drop = self._hit_drop_probabilities()
+        if hit_drop is not None:
+            self.events["IsoTrack"] = apply_hit_drop_correction(
+                self.events, self.events.IsoTrack, hit_drop
+            )
         if self._lepton_background_dedx_cut_enabled() and self._mode_enabled(
             "muon_pveto",
             "electron_pveto",
@@ -2078,7 +2170,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             # `IsoTrackDeDxHit` branch.
             self._attach_lepton_background_dedx_fields()
         if self._search_dedx_cut_enabled() and self._mode_enabled(
-            "signal_acceptance", "search_region"
+            "signal_acceptance", "search_region", "missing_hits_control"
         ):
             # Attach dE/dx summaries before IsoTrackIsolated/IsoTrackCandidate
             # (built below) and the search-track masks (built later in this
@@ -2099,13 +2191,23 @@ class DisappTrksProcessor(BaseProcessorABC):
         # (confirmed by cross-checking a per-event-cut breakdown against
         # production output for AMSB_Wino_M700GeV_ctau100cm).
         search_fiducial_mask = None
-        if self._category_mode() in ("signal_acceptance", "search_region"):
+        if self._category_mode() in (
+            "signal_acceptance",
+            "search_region",
+            "missing_hits_control",
+        ):
             fiducial_hot_spots = self._lepton_fiducial_hot_spots("electron", "muon")
             if fiducial_hot_spots:
                 search_fiducial_mask = _outside_fiducial_hot_spots(
                     self.events.IsoTrack, fiducial_hot_spots
                 )
         self.events["AnalysisEvent"] = add_event_derived_fields(self.events)
+        if self._category_mode() == "isr_zmumu":
+            # Z->mumu ISR scale-factor control sample (SIG-06), data and background MC.
+            self.events["ISRZMuMu"] = isr_zmumu_candidate(self.events)
+            # muons the MC muon ID/iso/trigger scale factors are evaluated on (Nano muons are pT-ordered)
+            self.events["ISRZMuMuMuon"] = isr_zmumu_muons(self.events)
+            self.events["ISRZMuMuLeadingMuon"] = self.events.ISRZMuMuMuon[:, :1]
         self.events["IsoTrackProbe"] = self.events.IsoTrack[
             base_probe_track_mask(self.events.IsoTrack)
         ]
@@ -2116,6 +2218,25 @@ class DisappTrksProcessor(BaseProcessorABC):
             candidate_mask = candidate_mask & search_fiducial_mask
         self.events["IsoTrackIsolated"] = self.events.IsoTrack[isolated_mask]
         self.events["IsoTrackCandidate"] = self.events.IsoTrack[candidate_mask]
+
+        if self._category_mode() == "missing_hits_control":
+            # Legacy MuonCtrlSelection / HitsSystematicsCtrlSelection tracks
+            # for the missing-hits (hit-drop) correction fits; the same
+            # fiducial hot-spot veto as the search selection (legacy
+            # isoTrkCuts carry both fiducial-map cuts).
+            for collection, require_no_missing_inner_middle in (
+                ("MissingHitsMuonCtrlTrack", True),
+                ("MissingHitsCtrlTrackNoInnerMiddle", False),
+            ):
+                control_mask = missing_hits_control_track_mask(
+                    self.events.IsoTrack,
+                    require_high_purity=self._missing_hits_high_purity_enabled(),
+                    require_dedx_max_over_median=self._search_dedx_cut_enabled(),
+                    require_no_missing_inner_middle=require_no_missing_inner_middle,
+                )
+                if search_fiducial_mask is not None:
+                    control_mask = control_mask & search_fiducial_mask
+                self.events[collection] = self.events.IsoTrack[control_mask]
 
         fiducial_count_flavors = []
         if self._mode_enabled("electron_pveto"):
@@ -2283,7 +2404,7 @@ class DisappTrksProcessor(BaseProcessorABC):
             "tau_mu_pveto",
             "tau_ele_pveto",
         ):
-            tag_met = _met_for_transverse_mass(self.events)
+            tag_met = _met_for_transverse_mass(self.events, _puppi_met_no_mu_enabled(self.params))
 
         if self._mode_enabled("tau_mu_pveto", "tau_ele_pveto"):
             self.events["TauVetoProbeTrack"] = self.events.IsoTrack[
@@ -2535,6 +2656,24 @@ class DisappTrksProcessor(BaseProcessorABC):
         self.events["IsoTrackSearchHighPurity"] = self.events.IsoTrackSearch[
             self.events.IsoTrackSearch.isHighPurityTrack
         ]
+        if self._missing_outer_columns_enabled():
+            # SYST-08 (legacy DisTrkNoNMissOut): the full search selection with
+            # only the >= 3 missing-outer-hits requirement removed, per layer
+            # bin. The missing outer hits are hit-drop corrected when that
+            # correction is on, as legacy hitAndTOBDrop_bestTrackMissingOuterHits.
+            no_missing_outer_mask = disappearing_track_selection_cutflow_masks(
+                self.events.IsoTrack,
+                require_dedx_max_over_median=require_search_dedx_cut,
+            )["track_calo10"]
+            if search_fiducial_mask is not None:
+                no_missing_outer_mask = no_missing_outer_mask & search_fiducial_mask
+            no_missing_outer_tracks = self.events.IsoTrack[no_missing_outer_mask]
+            for layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+                selected = no_missing_outer_tracks[
+                    layer_mask(no_missing_outer_tracks, layer)
+                ]
+                self.events[f"IsoTrackSearchNoMissOuter_{layer}"] = selected
+                self.events[f"nIsoTrackSearchNoMissOuter_{layer}"] = ak.num(selected)
         if (
             self._category_mode() == "signal_acceptance"
             and self._signal_dedx_histograms_enabled()
@@ -2691,6 +2830,67 @@ class DisappTrksProcessor(BaseProcessorABC):
         )
         self.events["nTauTriggerProbabilityNumerator"] = ak.values_astype(
             numerator, np.int64
+        )
+
+        # Good-object baseline: the eta-only baseline above counts any Tau
+        # collection object, so the ratio is dominated by how often a muon-
+        # triggered event contains a genuine tau at all, not by the tau leg.
+        # Condition on the same Table-27 tau the N_ctrl sample uses plus an
+        # offline muon tag, so the ratio reads as P(cross | IsoMu24, good tau).
+        good_tau = ak.num(
+            self.events.Tau[hadronic_tau_control_object_mask(self.events.Tau)]
+        ) >= 1
+        # muon_tag_mask also requires matchedIsoMu24, a trigger-object match
+        # that is only attached in the pveto modes.  Use the same kinematic,
+        # tight-ID and isolation cuts without the trigger-object match.
+        muons = self.events.Muon
+        good_muon = ak.num(
+            muons[
+                (muons.pt > 26.0)
+                & (abs(muons.eta) < 2.1)
+                & muons.tightId
+                & (muons.pfRelIso04_all < 0.15)
+            ]
+        ) >= 1
+        good_legs = good_tau & good_muon
+        self.events["nTauTriggerProbabilityGoodTau"] = ak.values_astype(
+            good_tau, np.int64
+        )
+        self.events["nTauTriggerProbabilityGoodMuon"] = ak.values_astype(
+            good_muon, np.int64
+        )
+        self.events["nTauTriggerProbabilityGoodDenominator"] = ak.values_astype(
+            good_legs & single_muon_trigger, np.int64
+        )
+        self.events["nTauTriggerProbabilityGoodNumerator"] = ak.values_astype(
+            good_legs & cross_trigger, np.int64
+        )
+        # Cross-trigger fired with the muon trigger also fired: shows how far
+        # the numerator is from being a subset of the denominator.
+        self.events["nTauTriggerProbabilityGoodNumeratorAndDenominator"] = (
+            ak.values_astype(
+                good_legs & cross_trigger & single_muon_trigger, np.int64
+            )
+        )
+
+        # Cross-check against the dissertation's trigger pair (IsoMu20 and
+        # IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1).
+        isomu20 = _hlt_or_mask(self.events, ("IsoMu20",))
+        cross_hps27 = _hlt_or_mask(
+            self.events,
+            ("IsoMu20_eta2p1_LooseDeepTauPFTauHPS27_eta2p1_CrossL1",),
+        )
+        self.events["nTauTriggerProbabilityGoodDenominatorIsoMu20"] = (
+            ak.values_astype(good_legs & isomu20, np.int64)
+        )
+        self.events["nTauTriggerProbabilityGoodNumeratorIsoMu20HPS27"] = (
+            ak.values_astype(good_legs & cross_hps27, np.int64)
+        )
+        self.events["nTauTriggerProbabilityGoodTauCrossHPS30"] = ak.values_astype(
+            good_tau & cross_trigger, np.int64
+        )
+        self.events["nTauTriggerProbabilityGoodTauCrossHPS27"] = ak.values_astype(
+            good_tau & cross_hps27, np.int64
         )
 
     def _select_one_tau_control_tag(self):
@@ -3503,6 +3703,12 @@ class DisappTrksProcessor(BaseProcessorABC):
             self._store_tau_trigger_probability_counts()
         elif mode == "fake_tracks":
             self._count_fake_track_fields(controls=self._fake_track_controls())
+        elif mode == "missing_hits_control":
+            for collection in (
+                "MissingHitsMuonCtrlTrack",
+                "MissingHitsCtrlTrackNoInnerMiddle",
+            ):
+                self.events[f"n{collection}"] = ak.num(self.events[collection])
         elif mode == "muon_backgrounds":
             self._count_muon_pveto_fields()
             self._store_muon_pveto_diagnostics()

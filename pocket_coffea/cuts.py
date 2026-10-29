@@ -15,6 +15,7 @@ from pocket_coffea.lib.cut_functions import apply_golden_json, get_JetVetoMap_Ma
 from disapptrks.triggers import ISO_MUON_REFERENCE_TRIGGER, tau_cross_trigger_for_year
 from disapptrks.selections import (
     invariant_mass,
+    search_event_cutflow_masks,
     layer_mask,
     single_electron_trigger_mask,
 )
@@ -926,6 +927,13 @@ for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
         params={"field": f"nIsoTrackCandidate_{_layer}", "minimum": 1},
         function=_has_count,
     )
+    # Full search selection minus only the >= 3 missing-outer-hits cut (legacy
+    # DisTrkNoNMissOut), for the missing-outer-hits systematic (SYST-08).
+    staged_search_layer_cuts[f"no_missing_outer_track_{_layer}"] = Cut(
+        name=f"has_no_missing_outer_track_{_layer}",
+        params={"field": f"nIsoTrackSearchNoMissOuter_{_layer}", "minimum": 1},
+        function=_has_count,
+    )
 
 signal_acceptance_common_cutflow_cuts = {}
 for _field in SIGNAL_ACCEPTANCE_PRE_LAYER_FIELDS:
@@ -1016,6 +1024,32 @@ jet_veto_map = Cut(
     function=_jet_veto_map,
 )
 
+def _has_isr_zmumu(events, params, **kwargs):
+    return events.ISRZMuMu["pass"]
+
+
+has_isr_zmumu = Cut(
+    name="has_isr_zmumu",
+    params={},
+    function=_has_isr_zmumu,
+)
+
+
+def _has_isr_zmumu_jet(events, params, **kwargs):
+    # legacy ZtoMuMuISRStudy (SignalSystematicSelections.py): ZtoMuMu plus the BasicSelection jet cuts --
+    # leading jet pT > 110, |eta| < 2.4, tightLepVeto, dijet dphi < 2.5, dphi(leading jet, MET-no-mu) > 0.5 --
+    # without the MET requirement (MET-no-mu ~ pT(mumu) here). The analysis's own basic-selection chain.
+    jets = search_event_cutflow_masks(events.AnalysisEvent, met_min=-1.0)["event_jetMetDphi0p5"]
+    return events.ISRZMuMu["pass"] & jets
+
+
+has_isr_zmumu_jet = Cut(
+    name="has_isr_zmumu_jet",
+    params={},
+    function=_has_isr_zmumu_jet,
+)
+
+
 single_muon_hlt = Cut(
     name="single_muon_hlt",
     params={"paths": ("IsoMu24",)},
@@ -1079,6 +1113,20 @@ met_hlt = Cut(
         )
     },
     function=_met_hlt,
+)
+
+# Missing-hits correction control regions (legacy MuonCtrlSelection and
+# HitsSystematicsCtrlSelection), built in the missing_hits_control mode.
+has_missing_hits_muon_ctrl_track = Cut(
+    name="has_missing_hits_muon_ctrl_track",
+    params={"field": "nMissingHitsMuonCtrlTrack", "minimum": 1},
+    function=_has_count,
+)
+
+has_missing_hits_ctrl_track_no_inner_middle = Cut(
+    name="has_missing_hits_ctrl_track_no_inner_middle",
+    params={"field": "nMissingHitsCtrlTrackNoInnerMiddle", "minimum": 1},
+    function=_has_count,
 )
 
 has_muon_tag = Cut(

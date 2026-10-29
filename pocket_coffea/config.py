@@ -29,6 +29,8 @@ from pocket_coffea.lib.weights.common import common_weights
 from pocket_coffea.utils.configurator import Configurator
 
 import cuts
+import isr_weights
+import pileup_weights
 import workflow
 from cuts import (
     event_flags,
@@ -71,6 +73,10 @@ from cuts import (
     z_sideband_skim_cuts,
 )
 from cuts import (
+    has_isr_zmumu,
+    has_isr_zmumu_jet,
+    has_missing_hits_ctrl_track_no_inner_middle,
+    has_missing_hits_muon_ctrl_track,
     has_muon_veto_os_mass10_pair,
     has_muon_veto_os_pair,
     has_muon_pveto_ss_zwindow_pass_pair,
@@ -90,6 +96,8 @@ from cuts import (
 from workflow import DisappTrksProcessor
 
 cloudpickle.register_pickle_by_value(cuts)
+cloudpickle.register_pickle_by_value(pileup_weights)
+cloudpickle.register_pickle_by_value(isr_weights)
 cloudpickle.register_pickle_by_value(workflow)
 # Dask workers can run in a slightly different import context inside the LPC
 # container. Ship local analysis modules by value instead of requiring workers
@@ -277,9 +285,43 @@ fake_track_require_dedx_cut = os.environ.get(
 lepton_background_require_dedx_cut = os.environ.get(
     "DISAPPTRKS_LEPTON_BACKGROUND_REQUIRE_DEDX_CUT", "1"
 ).lower() in ("1", "true", "yes", "on")
+# search_region only, opt-in: add disappearing_track_noMissOuter_<layer> categories
+# (search selection minus the >= 3 missing-outer-hits cut) with GenChargino lifetime
+# and track missingOuterHits columns, for the missing-outer-hits systematic (SYST-08).
+search_missing_outer_columns = os.environ.get(
+    "DISAPPTRKS_SEARCH_MISSING_OUTER_COLUMNS", "0"
+).lower() in ("1", "true", "yes", "on")
 search_require_dedx_cut = os.environ.get(
     "DISAPPTRKS_SEARCH_REQUIRE_DEDX_CUT", "1"
 ).lower() in ("1", "true", "yes", "on")
+# missing_hits_control only: =0 drops highPurity from the muon control-region
+# tracks (cross-check against the legacy selection, which had no highPurity;
+# combine with DISAPPTRKS_SEARCH_REQUIRE_DEDX_CUT=0 to also drop dE/dx).
+missing_hits_require_high_purity = os.environ.get(
+    "DISAPPTRKS_MISSING_HITS_REQUIRE_HIGH_PURITY", "1"
+).lower() in ("1", "true", "yes", "on")
+# Missing-hits (hit-drop) correction for simulation, opt-in: MC track missing
+# middle/outer hits are randomly increased with the fitted per-period
+# probabilities (data/missing_hits_corrections/, from
+# scripts/fit_missing_hits_corrections.py); data is never touched. The period
+# follows the MC campaign year; for 2023D MC standing in for 2024-2026 it
+# follows DISAPPTRKS_PILEUP_TARGET_YEAR, or DISAPPTRKS_MISSING_HITS_CORRECTION_PERIOD
+# if set. The probabilities are embedded in the parameters (no file transfer).
+enable_missing_hits_correction = os.environ.get(
+    "DISAPPTRKS_MISSING_HITS_CORRECTION", "0"
+).lower() in ("1", "true", "yes", "on")
+missing_hits_correction_file = Path(localdir) / "data" / "missing_hits_corrections" / os.environ.get(
+    "DISAPPTRKS_MISSING_HITS_CORRECTION_FILE", "hit_drop_probabilities_v1.json"
+)
+missing_hits_correction = {"enabled": False, "period": None, "probabilities": {}}
+if enable_missing_hits_correction:
+    missing_hits_correction = {
+        "enabled": True,
+        "period": os.environ.get("DISAPPTRKS_MISSING_HITS_CORRECTION_PERIOD")
+        or os.environ.get("DISAPPTRKS_PILEUP_TARGET_YEAR")
+        or None,
+        "probabilities": json.loads(missing_hits_correction_file.read_text())["probabilities"],
+    }
 enable_high_purity_dedx_histograms = os.environ.get(
     "DISAPPTRKS_ENABLE_HIGH_PURITY_DEDX_HISTOGRAMS", "0"
 ).lower() in ("1", "true", "yes", "on")
@@ -313,6 +355,9 @@ parameters["disapptrks"] = {
     "fake_track_require_dedx_cut": fake_track_require_dedx_cut,
     "lepton_background_require_dedx_cut": lepton_background_require_dedx_cut,
     "search_require_dedx_cut": search_require_dedx_cut,
+    "search_missing_outer_columns": search_missing_outer_columns,
+    "missing_hits_require_high_purity": missing_hits_require_high_purity,
+    "missing_hits_correction": missing_hits_correction,
     "high_purity_study_layers": high_purity_study_layers,
     "high_purity_dedx_histograms": enable_high_purity_dedx_histograms,
     "signal_dedx_histograms": enable_signal_dedx_histograms,
@@ -324,6 +369,9 @@ parameters["disapptrks"] = {
     "search_diagnostics": enable_search_diagnostics,
     "pveto_diagnostics": enable_pveto_diagnostics,
     "lepton_background_categories": enable_lepton_background_categories,
+    # Read by the processor on the workers, which do not inherit the submit-side environment.
+    "puppi_met_no_mu": os.environ.get("DISAPPTRKS_PUPPI_METNOMU", "").lower()
+    in ("1", "true", "yes", "on"),
 }
 data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
 
@@ -370,8 +418,11 @@ def _skim_cuts_for_mode(mode, sample):
             return [single_electron_hlt]
         if sample in ("DATA_JetMET", "DATA_MET"):
             return [met_hlt]
-    if mode in ("signal_acceptance", "search_region"):
+    if mode in ("signal_acceptance", "search_region", "missing_hits_control"):
         return [met_hlt]
+    if mode == "isr_zmumu":
+        # data (Muon PD) and every background-MC sample alike
+        return [single_muon_hlt]
     return []
 
 
@@ -736,6 +787,43 @@ elif category_mode == "search_region":
             staged_search_layer_cuts[f"candidate_track_{_layer}"],
             signal_acceptance_layer_cuts[f"signal_selection_with_high_purity_{_layer}"],
         ]
+        if search_missing_outer_columns:
+            # SYST-08: the same chain with only the >= 3 missing-outer-hits cut
+            # removed (legacy DisTrkNoNMissOut<layer>); columns below.
+            selected_categories[f"disappearing_track_noMissOuter_{_layer}"] = [
+                basic_event_selection,
+                staged_search_layer_cuts[f"isolated_track_{_layer}"],
+                staged_search_layer_cuts[f"candidate_track_{_layer}"],
+                staged_search_layer_cuts[f"no_missing_outer_track_{_layer}"],
+            ]
+elif category_mode == "missing_hits_control":
+    # Muon control regions for the missing-hits (hit-drop) correction fits
+    # (SIG-02/03) and the hit systematics (SYST-06..08), following the Run 2
+    # method: legacy MuonCtrlSelection (candidate-track selection minus the
+    # muon veto -- real muon tracks, MET-triggered) and
+    # HitsSystematicsCtrlSelection (the same without the missing inner/middle
+    # requirements). Both keep the current highPurity and dE/dx terms.
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        "basic_selection": common_categories["basic_selection"],
+        "missing_hits_muon_ctrl": [
+            basic_event_selection,
+            has_missing_hits_muon_ctrl_track,
+        ],
+        "missing_hits_ctrl_no_inner_middle": [
+            basic_event_selection,
+            has_missing_hits_ctrl_track_no_inner_middle,
+        ],
+    }
+elif category_mode == "isr_zmumu":
+    # ISR scale factor (SIG-06): legacy ZtoMuMu selection, data vs the full background-MC
+    # stack, histogrammed in reconstructed pT(mumu) (legacy makeZToMuMuISRPlot.py).
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        "isr_zmumu": [has_isr_zmumu],
+        # the legacy ZtoMuMuISRStudy phase space the ISR SF was measured in (adds the basic-selection jet cuts)
+        "isr_zmumu_jet": [has_isr_zmumu_jet],
+    }
 elif category_mode == "all":
     selected_categories = {
         **common_categories,
@@ -757,7 +845,8 @@ else:
         "electron_pmiss_poffline, tau_mu_pmiss_poffline, "
         "tau_ele_pmiss_poffline, tau_pmiss_poffline, tau_trigger_probability, "
         "fake_tracks, high_purity_study, z_sideband_skim, muon_backgrounds, "
-        "egamma_backgrounds, fiducial_maps, signal_acceptance, search_region, all."
+        "egamma_backgrounds, fiducial_maps, signal_acceptance, search_region, "
+        "missing_hits_control, isr_zmumu, all."
     )
 
 selected_categories = {
@@ -862,6 +951,8 @@ def _variables_for_mode(mode, variables):
         # Counting-experiment datacard: one trivial 1-bin yield histogram per
         # layer-bin category, not a shape variable -- see search_region_yield_variables.
         "search_region": ("searchRegionYield",),
+        "missing_hits_control": ("missingHits",),
+        "isr_zmumu": ("isrZMuMu",),
     }
     prefixes = prefixes_by_mode.get(mode)
     if prefixes is None:
@@ -1509,6 +1600,95 @@ if category_mode == "search_region":
             # requiring high purity, silently leaving this histogram empty.
             only_categories=[f"disappearing_track_{_layer}"],
         )
+isr_zmumu_variables = {}
+if category_mode == "isr_zmumu":
+    # Fine binning; the scale-factor script merges bins to the target statistical precision.
+    isr_zmumu_variables["isrZMuMu_pt"] = HistConf(
+        [Axis(coll="ISRZMuMu", field="pt", bins=500, start=0.0, stop=1000.0,
+              label=r"$p_{T}(\mu\mu)$ [GeV]")],
+        only_categories=["isr_zmumu", "isr_zmumu_jet"],
+    )
+    isr_zmumu_variables["isrZMuMu_mass"] = HistConf(
+        [Axis(coll="ISRZMuMu", field="mass", bins=40, start=71.0, stop=111.0,
+              label=r"$m(\mu\mu)$ [GeV]")],
+        only_categories=["isr_zmumu", "isr_zmumu_jet"],
+    )
+    isr_zmumu_variables["isrZMuMu_METNoMu"] = HistConf(
+        [Axis(coll="AnalysisEvent", field="METNoMu_pt", bins=100, start=0.0, stop=1000.0,
+              label=r"$p_{T}^{miss,\mu\!\!\!/}$ [GeV]")],
+        only_categories=["isr_zmumu", "isr_zmumu_jet"],
+    )
+
+missing_hits_control_variables = {}
+if category_mode == "missing_hits_control":
+    # Inputs to the missing-hits correction fits, one entry per selected
+    # track (legacy MuonCtrlSelectionPlotter/HitsSystematicsCtrlSelectionPlotter
+    # "Track Plots"). The fits take data's 1D projection and MC's full
+    # histogram, as legacy findMissing{Outer,Middle}HitsCorrection.py did:
+    # - outer: trackNHitsStripLayersVsTOBLayersVsMissingOuter
+    #   (x missing outer, y TOB layers, z strip layers with measurement);
+    # - middle: trackNHitsStripLayersVsMissingMiddle (x missing middle,
+    #   y strip layers), without the missing inner/middle requirements;
+    # - inner/middle systematics: trackNHitsMissingMiddleVsInner.
+    def _missing_hits_axis(coll, field, label, nmax):
+        return Axis(
+            coll=coll,
+            field=field,
+            bins=nmax + 1,
+            start=-0.5,
+            stop=nmax + 0.5,
+            label=label,
+        )
+
+    missing_hits_control_variables[
+        "missingHitsMuonCtrl_missingOuter_TOBLayers_stripLayers"
+    ] = HistConf(
+        [
+            _missing_hits_axis(
+                "MissingHitsMuonCtrlTrack", "missingOuterHits",
+                "missing outer hits", 15,
+            ),
+            _missing_hits_axis(
+                "MissingHitsMuonCtrlTrack", "hp_stripTOBLayersWithMeasurement",
+                "TOB layers with measurement", 15,
+            ),
+            _missing_hits_axis(
+                "MissingHitsMuonCtrlTrack", "hp_stripLayersWithMeasurement",
+                "strip layers with measurement", 20,
+            ),
+        ],
+        only_categories=["missing_hits_muon_ctrl"],
+    )
+    missing_hits_control_variables[
+        "missingHitsNoInnerMiddle_missingMiddle_stripLayers"
+    ] = HistConf(
+        [
+            _missing_hits_axis(
+                "MissingHitsCtrlTrackNoInnerMiddle", "missingMiddleHits",
+                "missing middle hits", 15,
+            ),
+            _missing_hits_axis(
+                "MissingHitsCtrlTrackNoInnerMiddle", "hp_stripLayersWithMeasurement",
+                "strip layers with measurement", 20,
+            ),
+        ],
+        only_categories=["missing_hits_ctrl_no_inner_middle"],
+    )
+    missing_hits_control_variables[
+        "missingHitsNoInnerMiddle_missingMiddle_missingInner"
+    ] = HistConf(
+        [
+            _missing_hits_axis(
+                "MissingHitsCtrlTrackNoInnerMiddle", "missingMiddleHits",
+                "missing middle hits", 15,
+            ),
+            _missing_hits_axis(
+                "MissingHitsCtrlTrackNoInnerMiddle", "missingInnerHits",
+                "missing inner hits", 15,
+            ),
+        ],
+        only_categories=["missing_hits_ctrl_no_inner_middle"],
+    )
 if category_mode == "high_purity_study" and enable_high_purity_dedx_histograms:
     _study_control_key = "ZMuMu" if fake_track_control_mode == "zmumu" else "Zee"
     high_purity_dedx_hit_variables[
@@ -1701,6 +1881,20 @@ if category_mode == "search_region" and _env_flag("DISAPPTRKS_SEARCH_LIFETIME_CO
             for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins")
         },
     }
+if category_mode == "search_region" and search_missing_outer_columns:
+    _signal_columns = sideband_event_columns["bysample"].setdefault(
+        "SIGNAL_Chargino", {"inclusive": [], "bycategory": {}}
+    )
+    for _layer in ("NLayers4", "NLayers5", "NLayers6plus", "combinedBins"):
+        _signal_columns["bycategory"][f"disappearing_track_noMissOuter_{_layer}"] = [
+            ColOut("GenChargino", ["ctau", "isDecayed"], flatten=True, store_size=True),
+            ColOut(
+                f"IsoTrackSearchNoMissOuter_{_layer}",
+                ["missingOuterHits"],
+                flatten=True,
+                store_size=True,
+            ),
+        ]
 
 if category_mode == "signal_acceptance":
     category_selection = CartesianSelection(
@@ -1775,9 +1969,87 @@ else:
 # existing outputs stay byte-identical. With it on, columns outputs also carry
 # weight_variation_pileupUp/Down beside "weight" (same sum_genweights caveat).
 enable_signal_pileup = _env_flag("DISAPPTRKS_SIGNAL_PILEUP")
+# DISAPPTRKS_PILEUP_TARGET_YEAR=2024|2025|2026 swaps "pileup" for
+# "pileup_target" (pileup_weights.py): Summer23BPix (2023D) MC reweighted to
+# that year's data pileup profile instead of 2023D's, for the 2023D MC that
+# stands in for 2024-2026 (signal yields and missing-hits fits alike).
+# Raises on any MC sample that is not 2023_postBPix.
+pileup_target_year = os.environ.get("DISAPPTRKS_PILEUP_TARGET_YEAR")
+weights_classes = common_weights
+pileup_weight_name = "pileup"
+if pileup_target_year:
+    weights_classes = [
+        *common_weights,
+        pileup_weights.make_pileup_target_weight(
+            pileup_target_year, pileup_weights.load_payload()
+        ),
+    ]
+    pileup_weight_name = "pileup_target"
 signal_pileup_bysample = (
-    {"SIGNAL_Chargino": {"inclusive": ["pileup"]}} if enable_signal_pileup else {}
+    {"SIGNAL_Chargino": {"inclusive": [pileup_weight_name]}}
+    if enable_signal_pileup
+    else {}
 )
+# The missing-hits correction fits compare data with pileup-reweighted
+# background MC, as the legacy hits jobs did (applyPUReweighting=True,
+# no missing-hits correction). Pileup is MC-only, so data is unaffected.
+common_inclusive_weights = ["genWeight", "lumi", "XS"]
+if category_mode in ("missing_hits_control", "isr_zmumu"):
+    common_inclusive_weights.append(pileup_weight_name)
+if category_mode == "isr_zmumu":
+    # Run 2 weightsWithMuonSF in the Z->mumu ISR study: muon tight ID, tight PF isolation and IsoMu24
+    # trigger SFs (MUO-POG muon_Z.json via PocketCoffea), MC only, on the two selected Z muons; the
+    # trigger SF on the leading one only (isr_weights.make_leading_muon_trigger_sf_weight).
+    parameters.lepton_scale_factors.muon_sf.collection = "ISRZMuMuMuon"
+    for _year in ("2022_preEE", "2022_postEE", "2023_preBPix", "2023_postBPix"):
+        parameters.lepton_scale_factors.muon_sf.sf_name[_year].iso = "NUM_TightPFIso_DEN_TightID"
+    weights_classes = [*weights_classes, isr_weights.make_leading_muon_trigger_sf_weight()]
+    common_inclusive_weights += ["sf_mu_id", "sf_mu_iso", "sf_mu_trigger_leading"]
+    signal_pileup_bysample = {}
+
+# Opt-in signal ISR reweighting (SIG-07) with its up/down variation (SYST-05), Run 2 method
+# (isr_weights.py: Z->mumu data/MC scale factor at the generator-level electroweakino-pair pT,
+# one per MC campaign from the dataset year; 2023D's for the 2024-2026 template runs). Added
+# next to the pileup weight for SIGNAL_Chargino; off by default, so outputs are unchanged.
+enable_signal_isr = _env_flag("DISAPPTRKS_SIGNAL_ISR")
+if enable_signal_isr:
+    weights_classes = [
+        *weights_classes,
+        isr_weights.make_isr_weight(
+            isr_weights.load_scale_factors(
+                os.environ.get("DISAPPTRKS_ISR_SF_FILE", isr_weights.DEFAULT_PATH)
+            )
+        ),
+    ]
+    _signal_inclusive = signal_pileup_bysample.get("SIGNAL_Chargino", {}).get("inclusive", [])
+    signal_pileup_bysample = {"SIGNAL_Chargino": {"inclusive": [*_signal_inclusive, "isr"]}}
+
+
+# Opt-in official jet energy corrections (2026-10-28). The OSUv2 2023 data Nano was produced with
+# 130X_dataRun3_PromptAnalysis_v1, whose JECs leave 2023C/D data jets ~10-15% low vs MC (Z+jet balance);
+# PocketCoffea's JetsCalibrator recomputes Jet from raw with the default JME tags (Summer22(EE)_22Sep2023_V4,
+# Summer23(BPix)Prompt23_V4; data incl. L2L3Residual, MC with JER smearing). Only the AK4 PUPPI "Jet"
+# collection is recalibrated; MET/MetNoMu are NOT touched (separate follow-up). Off by default.
+# DISAPPTRKS_PUPPI_METNOMU=1 (2026-10-28) additionally recomputes Type-1 PUPPI MET from RawPuppiMET with the same
+# calibrated Jet + CorrT1METJet (PocketCoffea METCalibrator, JME NanoAOD recipe) and rebuilds MetNoMu from it plus
+# the PF muons (workflow.apply_object_preselection) -- replacing the stored PF-MET-based OSUNano MetNoMu, whose 2023
+# data Type-1 JEC is ~6-10 % low. Implies the jet calibration.
+enable_puppi_met_no_mu = _env_flag("DISAPPTRKS_PUPPI_METNOMU")
+enable_jet_calibration = _env_flag("DISAPPTRKS_JET_CALIBRATION") or enable_puppi_met_no_mu
+analysis_calibrators = []
+if enable_jet_calibration:
+    from pocket_coffea.lib.calibrators.common import JetsCalibrator, METCalibrator
+
+    for _jec_year in list(parameters.jets_calibration.collection.keys()):
+        if not str(_jec_year).startswith("202"):
+            parameters.jets_calibration.collection[_jec_year] = {"AK4PFchs": "Jet"}
+        elif enable_puppi_met_no_mu:
+            # the METCalibrator needs the calibrated low-pT CorrT1METJet (its rawFactor) as well
+            parameters.jets_calibration.collection[_jec_year] = {
+                "AK4PFPuppi": "Jet", "AK4CorrT1METJetPuppi": "CorrT1METJet"}
+        else:
+            parameters.jets_calibration.collection[_jec_year] = {"AK4PFPuppi": "Jet"}
+    analysis_calibrators = [JetsCalibrator, METCalibrator] if enable_puppi_met_no_mu else [JetsCalibrator]
 
 
 cfg = Configurator(
@@ -1787,7 +2059,7 @@ cfg = Configurator(
         "filter": dataset_filter,
     },
     workflow=DisappTrksProcessor,
-    calibrators=[],
+    calibrators=analysis_calibrators,
     skim=skim_cuts,
     preselections=data_quality_cuts,
     categories=category_selection,
@@ -1800,14 +2072,16 @@ cfg = Configurator(
     # common_weights bundle (pileup, lepton/jet SFs, ...) for future use;
     # only genWeight/lumi/XS are activated by default (plus pileup for
     # SIGNAL_Chargino with DISAPPTRKS_SIGNAL_PILEUP=1, see above).
-    weights={"common": {"inclusive": ["genWeight", "lumi", "XS"]}, "bysample": signal_pileup_bysample},
-    weights_classes=common_weights,
+    weights={"common": {"inclusive": common_inclusive_weights}, "bysample": signal_pileup_bysample},
+    weights_classes=weights_classes,
     variations={"weights": {"common": {"inclusive": []}, "bysample": signal_pileup_bysample}},
     variables=_variables_for_mode(category_mode, {
         **high_purity_study_variables,
         **high_purity_dedx_hit_variables,
         **signal_dedx_track_variables,
         **search_region_yield_variables,
+        **missing_hits_control_variables,
+        **isr_zmumu_variables,
         **(fake_sideband_track_variables if enable_fake_sideband_histograms else {}),
         "nIsoTrack": HistConf(
             [

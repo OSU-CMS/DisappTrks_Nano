@@ -851,6 +851,22 @@ def _dxy_fit_model(xvals, amplitude: float, sigma: float, constant: float):
     return amplitude * np.exp(-0.5 * (xvals / sigma) ** 2) + constant
 
 
+def _dxy_fit_curve(fit: DxyTransferFactorFit, edges, signed_edges):
+    """Return (xfit, yfit) for a transfer-factor fit, scaled to signed-bin counts."""
+
+    import numpy as np
+
+    xfit = np.linspace(float(signed_edges[0]), float(signed_edges[-1]), 1000)
+    yfit = _dxy_fit_model(np.abs(xfit), fit.amplitude, fit.sigma, fit.constant)
+    if "absDxy" in fit.histogram:
+        # The folded histogram contains both signs.  Convert its counts/bin
+        # model to the signed histogram's counts/bin before drawing it.
+        folded_width = float(np.median(np.diff(np.asarray(edges, dtype=float))))
+        signed_width = float(np.median(np.diff(signed_edges)))
+        yfit *= signed_width / (2.0 * folded_width)
+    return xfit, yfit
+
+
 def plot_dxy_transfer_factor(
     counts,
     edges,
@@ -888,25 +904,19 @@ def plot_dxy_transfer_factor(
     signed_counts = np.asarray(signed_counts, dtype=float)
     signed_edges = np.asarray(signed_edges, dtype=float)
     centers = 0.5 * (signed_edges[:-1] + signed_edges[1:])
-    xfit = np.linspace(float(signed_edges[0]), float(signed_edges[-1]), 1000)
-    yfit = _dxy_fit_model(np.abs(xfit), fit.amplitude, fit.sigma, fit.constant)
-    if signed_counts is not None and signed_edges is not None and "absDxy" in fit.histogram:
-        # The folded histogram contains both signs.  Convert its counts/bin
-        # model to the signed histogram's counts/bin before drawing it.
-        folded_width = float(np.median(np.diff(np.asarray(edges, dtype=float))))
-        signed_width = float(np.median(np.diff(signed_edges)))
-        yfit *= signed_width / (2.0 * folded_width)
+    xfit, yfit = _dxy_fit_curve(fit, edges, signed_edges)
 
     fig, ax = plt.subplots(figsize=(6.4, 4.8))
-    ax.stairs(signed_counts, signed_edges, label="data", color="black", linewidth=1.5)
     ax.errorbar(
         centers,
         signed_counts,
+        xerr=0.5 * np.diff(signed_edges),
         yerr=np.sqrt(np.maximum(signed_counts, 1.0)),
         fmt="o",
         color="black",
         markersize=3,
         linewidth=1,
+        label="data",
     )
     ax.plot(
         xfit,
@@ -956,7 +966,109 @@ def plot_dxy_transfer_factor(
         va="top",
         bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.8, "edgecolor": "0.8"},
     )
-    ax.legend(loc="upper right", bbox_to_anchor=(1.0, 0.78), fontsize=8)
+    ax.legend(loc="upper left", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def plot_dxy_transfer_factor_overlay(
+    entries: Sequence[Mapping[str, Any]],
+    path: Path,
+    *,
+    control_region: str,
+    layer_label: str = "n_layers = 4",
+    cms_label: str = "CMS Preliminary",
+    energy_text: str = "13.6 TeV",
+    colors: Sequence[str] | None = None,
+) -> None:
+    """Overlay several periods' dxy transfer-factor fits on one CMS-style plot.
+
+    Each entry of ``entries`` needs ``label`` (legend text, e.g. a period and
+    its luminosity), ``edges``/``counts`` (the folded |dxy| histogram the fit
+    was performed against -- used only to get the fit curve's bin-width
+    normalization right), ``signed_edges``/``signed_counts`` (what gets drawn),
+    and ``fit`` (a :class:`DxyTransferFactorFit`).
+    """
+
+    import numpy as np
+
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        raise RuntimeError("matplotlib is required to write transfer-factor overlay plots") from exc
+
+    if not entries:
+        raise ValueError("plot_dxy_transfer_factor_overlay requires at least one entry")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    default_colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    palette = list(colors) if colors is not None else default_colors
+
+    fig, ax = plt.subplots(figsize=(7.2, 6.4))
+    xmin = xmax = ymax = None
+    for index, entry in enumerate(entries):
+        signed_counts = np.asarray(entry["signed_counts"], dtype=float)
+        signed_edges = np.asarray(entry["signed_edges"], dtype=float)
+        centers = 0.5 * (signed_edges[:-1] + signed_edges[1:])
+        fit: DxyTransferFactorFit = entry["fit"]
+        xfit, yfit = _dxy_fit_curve(fit, entry["edges"], signed_edges)
+        color = palette[index % len(palette)]
+
+        ax.errorbar(
+            centers,
+            signed_counts,
+            xerr=0.5 * np.diff(signed_edges),
+            yerr=np.sqrt(np.maximum(signed_counts, 1.0)),
+            fmt="o",
+            color=color,
+            markersize=4,
+            linewidth=1,
+            label=str(entry["label"]),
+        )
+        ax.plot(xfit, yfit, color=color, linewidth=2)
+
+        xmin = float(signed_edges[0]) if xmin is None else min(xmin, float(signed_edges[0]))
+        xmax = float(signed_edges[-1]) if xmax is None else max(xmax, float(signed_edges[-1]))
+        entry_ymax = float(np.max(signed_counts + np.sqrt(np.maximum(signed_counts, 1.0))))
+        ymax = entry_ymax if ymax is None else max(ymax, entry_ymax)
+
+    ax.set_xlabel(r"track $d_{0}$ [cm]")
+    ax.set_ylabel("Entries / 0.04 cm")
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(0.0, 1.55 * ymax if ymax else None)
+    ax.tick_params(direction="in", top=True, right=True, which="both", labelsize=12)
+    ax.minorticks_on()
+
+    ax.text(
+        0.0,
+        1.02,
+        cms_label,
+        transform=ax.transAxes,
+        ha="left",
+        va="bottom",
+        fontsize=16,
+        fontweight="bold",
+    )
+    ax.text(
+        1.0,
+        1.02,
+        energy_text,
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=14,
+    )
+    ax.text(
+        0.05,
+        0.95,
+        f"{control_region} {layer_label}",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=13,
+    )
+    ax.legend(loc="upper left", bbox_to_anchor=(0.05, 0.82), frameon=False, fontsize=10)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
