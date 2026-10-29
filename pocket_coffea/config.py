@@ -2050,6 +2050,9 @@ if enable_jet_calibration:
         else:
             parameters.jets_calibration.collection[_jec_year] = {"AK4PFPuppi": "Jet"}
     analysis_calibrators = [JetsCalibrator, METCalibrator] if enable_puppi_met_no_mu else [JetsCalibrator]
+    if enable_puppi_met_no_mu and "2026" not in parameters.met_calibration:
+        # PocketCoffea 0.9.13 ships no 2026 METCalibrator entry; 2026 Nano (v15) has the same PUPPI branches as 2025.
+        parameters.met_calibration["2026"] = OmegaConf.to_container(parameters.met_calibration["2025"])
 
 
 cfg = Configurator(
