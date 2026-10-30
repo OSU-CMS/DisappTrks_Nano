@@ -46,6 +46,7 @@ from cuts import (
     high_purity_study_layer_axis_cuts,
     high_purity_study_selection_axis_cuts,
     jet_veto_map,
+    jet_jec_sanity,
     lepton_background_cuts,
     lepton_pveto_cuts,
     met_hlt,
@@ -373,7 +374,7 @@ parameters["disapptrks"] = {
     "puppi_met_no_mu": os.environ.get("DISAPPTRKS_PUPPI_METNOMU", "").lower()
     in ("1", "true", "yes", "on"),
 }
-data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map]
+data_quality_cuts = [golden_json_lumi, event_flags, jet_veto_map, jet_jec_sanity]
 
 
 def _skim_cuts_for_mode(mode, sample):

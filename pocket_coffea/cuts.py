@@ -1024,6 +1024,23 @@ jet_veto_map = Cut(
     function=_jet_veto_map,
 )
 
+
+def _jet_jec_sanity(events, params, **kwargs):
+    # JME Run 3 L2Relative issue: rare jets (mostly HF) get a JEC factor > 10 (rawFactor > 0.9) and an absurd pT.
+    # Veto the event rather than drop the jet, since the Type-1 MET has already been built from it. Evaluated
+    # after the calibrators, so it checks the recalibrated jets (and CorrT1METJet when the METCalibrator runs).
+    mask = ak.all(events.Jet.rawFactor <= params["max_raw_factor"], axis=1)
+    if "CorrT1METJet" in events.fields and "rawFactor" in events.CorrT1METJet.fields:
+        mask = mask & ak.all(events.CorrT1METJet.rawFactor <= params["max_raw_factor"], axis=1)
+    return mask
+
+
+jet_jec_sanity = Cut(
+    name="jet_jec_sanity",
+    params={"max_raw_factor": 0.9},
+    function=_jet_jec_sanity,
+)
+
 def _has_isr_zmumu(events, params, **kwargs):
     return events.ISRZMuMu["pass"]
 
