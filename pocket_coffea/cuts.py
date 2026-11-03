@@ -544,21 +544,17 @@ def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
     """Evaluate the Run-3 JME jet-veto map using a concrete local payload."""
     import correctionlib
 
-    jets = events["Jet"]
-    if "jetId" in jets.fields:
-        jet_id = jets.jetId
-    else:
-        # Only recompute if the stored NanoAOD jetId branch is absent.  This
-        # avoids requiring a PocketCoffea jet-ID correction entry for newly
-        # added data-taking years such as 2025.
-        from pocket_coffea.lib.jets import compute_jetId
+    # PocketCoffea's compute_jetId: JME recipe per NanoAOD version (v12 forward
+    # repair of the stored jetId, v15 jetid.json.gz). Never the raw jetId.
+    from pocket_coffea.lib.jets import compute_jetId
 
-        jet_id = compute_jetId(
-            events,
-            "Jet",
-            processor_params,
-            _jet_id_compute_year(processor_params, mapped_year),
-        )
+    jets = events["Jet"]
+    jet_id = compute_jetId(
+        events,
+        "Jet",
+        processor_params,
+        _jet_id_compute_year(processor_params, mapped_year),
+    )
     jets = ak.with_field(jets, jet_id, "jetId_corrected")
     mask_for_veto_map = (
         (jets["jetId_corrected"] >= 6)

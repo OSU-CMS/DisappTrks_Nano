@@ -297,50 +297,19 @@ def low_mt_mask(leptons, met, *, mt_max: float = 40.0):
 def run3_tight_lepton_veto_jet_mask(jets):
     """Run-3 TightLepVeto jet ID for NanoAOD jets.
 
-    Prefer the stored NanoAOD ``jetId`` bitmask when available.  Some OSUNano
-    productions do not keep the multiplicity branches needed to reconstruct the
-    ID from raw fractions, while ``jetId`` is exactly the compact branch meant
-    for this use case.  If ``jetId`` is unavailable, fall back to the explicit
-    Run-3 TightLepVeto reconstruction used by the first smoke-test files.
+    Reads ``jetId_corrected``, PocketCoffea's ``compute_jetId`` result (attached
+    in ``DisappTrksProcessor.process_extra_after_skim``), which applies the JME
+    recipe for each NanoAOD version: the forward-region repair of the stored
+    ``jetId`` in v12 (2022-2023) and the ``jetid.json.gz`` definition in v15
+    (2024 onwards, where ``jetId`` is no longer stored).  The raw stored
+    ``jetId`` is never used directly.
     """
-    if "jetId" in jets.fields:
-        return (jets.jetId & 6) == 6
-
-    abs_eta = abs(jets.eta)
-    multiplicity = jets.chMultiplicity + jets.neMultiplicity
-    central = (
-        (abs_eta <= 2.6)
-        & (jets.neHEF < 0.99)
-        & (jets.neEmEF < 0.90)
-        & (multiplicity > 1)
-        & (jets.muEF < 0.8)
-        & (jets.chHEF > 0.01)
-        & (jets.chMultiplicity > 0)
-        & (jets.chEmEF < 0.80)
-    )
-    transition = (
-        (abs_eta > 2.6)
-        & (abs_eta <= 2.7)
-        & (jets.neHEF < 0.90)
-        & (jets.neEmEF < 0.99)
-        & (jets.muEF < 0.8)
-        & (jets.chMultiplicity > 0)
-        & (jets.chEmEF < 0.80)
-    )
-    forward = (
-        (abs_eta > 2.7)
-        & (abs_eta <= 3.0)
-        & (jets.neHEF < 0.99)
-        & (jets.neEmEF < 0.99)
-        & (jets.neMultiplicity > 1)
-    )
-    very_forward = (
-        (abs_eta > 3.0)
-        & (abs_eta <= 5.0)
-        & (jets.neEmEF < 0.4)
-        & (jets.neMultiplicity > 10)
-    )
-    return central | transition | forward | very_forward
+    if "jetId_corrected" not in jets.fields:
+        raise AttributeError(
+            "jets lack jetId_corrected; attach PocketCoffea's compute_jetId "
+            "result (pocket_coffea.lib.jets.compute_jetId) first"
+        )
+    return jets.jetId_corrected >= 6
 
 
 def hadronic_tau_veto_object_mask(

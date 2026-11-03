@@ -1208,18 +1208,12 @@ def _jet_veto_map_correction_name(cset, processor_params, mapped_year):
 def _evaluate_jet_veto_map(events, processor_params, mapped_year, payload_file):
     import correctionlib
 
+    from pocket_coffea.lib.jets import compute_jetId
+
     jets = events["Jet"]
-    if "jetId" in jets.fields:
-        jet_id_mask = (jets.jetId & 6) == 6
-    else:
-        # Only recompute if the stored NanoAOD jetId branch is absent.  Use the
-        # local Run-3 TightLepVeto reconstruction rather than PocketCoffea's
-        # correctionlib-backed compute_jetId helper because our Awkward-1 event
-        # loop cannot call correctionlib's awkward.transform path.
-        jet_id_mask = run3_tight_lepton_veto_jet_mask(jets)
-    jets = ak.with_field(jets, jet_id_mask, "jetId_corrected")
+    jets = ak.with_field(jets, compute_jetId(events, "Jet", processor_params, mapped_year), "jetId_corrected")
     mask_for_veto_map = (
-        jets["jetId_corrected"]
+        (jets["jetId_corrected"] >= 6)
         & (abs(jets.eta) < 5.19)
         & (jets.pt > 15.0)
         & ((jets["neEmEF"] + jets["chEmEF"]) < 0.9)
@@ -2015,6 +2009,17 @@ class DisappTrksProcessor(BaseProcessorABC):
 
     def process_extra_after_skim(self):
         super().process_extra_after_skim()
+        # Jet ID (2026-11-03): PocketCoffea's compute_jetId applies the JME recipe per NanoAOD version
+        # (v12 forward-region repair of the stored jetId, v15 jetid.json.gz). Every analysis jet selection
+        # reads it through run3_tight_lepton_veto_jet_mask.
+        from pocket_coffea.lib.jets import compute_jetId
+
+        jet_id_year = _jet_veto_map_parameter_year(self._year, self._era, self.params)
+        self.events["Jet"] = ak.with_field(
+            self.events.Jet,
+            compute_jetId(self.events, "Jet", self.params, jet_id_year),
+            "jetId_corrected",
+        )
         # MET-no-mu fix (2026-10-27): add back only PF muons, as Run 2 did -- the stored OSUNano MetNoMu adds
         # every muon. Done once here, before anything reads MetNoMu (basic selection, lepton MET-minus-one,
         # background columns); skimmed-file export happens earlier, so skims keep the raw branch.
