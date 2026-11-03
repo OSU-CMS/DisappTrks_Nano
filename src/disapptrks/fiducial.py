@@ -33,6 +33,8 @@ class FiducialMapSummary:
     significance: np.ndarray
     hot_spots: tuple[HotSpot, ...]
     stddev_excluded_bins: tuple[ExcludedBin, ...] = ()
+    # share of the full-map variance carried by the single most deviant bin; near 1 means one bin sets sigma
+    top_bin_variance_share: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -43,6 +45,7 @@ class FiducialMapSummary:
                 asdict(excluded_bin)
                 for excluded_bin in self.stddev_excluded_bins
             ],
+            "top_bin_variance_share": self.top_bin_variance_share,
         }
 
 
@@ -53,6 +56,7 @@ def summarize_fiducial_map(
     phi_edges: np.ndarray,
     threshold: float = 2.0,
     stddev_exclude_top: int = 0,
+    stddev_clip: float | None = None,
 ) -> FiducialMapSummary:
     """Reproduce the legacy bin-by-bin inefficiency hot-spot calculation.
 
@@ -60,9 +64,18 @@ def summarize_fiducial_map(
     number of pathological bins.  It removes the highest-inefficiency occupied
     bins from the standard-deviation calculation only; the mean inefficiency and
     final hot-spot test are still evaluated on the full map.
+
+    ``stddev_clip`` does the same without choosing N by hand (iterative sigma
+    clipping): bins more than ``stddev_clip`` standard deviations above the mean
+    are dropped and the mean and standard deviation recomputed from the remaining
+    bins, until no further bin is dropped.  Both are clipped because a few extreme
+    bins inflate the pooled mean as well as the spread.  Clipped bins are recorded
+    in ``stddev_excluded_bins`` and are still tested against the final mean/stddev.
     """
     if stddev_exclude_top < 0:
         raise ValueError("stddev_exclude_top must be non-negative")
+    if stddev_clip is not None and stddev_clip <= 0.0:
+        raise ValueError("stddev_clip must be positive")
 
     before = np.asarray(before, dtype=float)
     after = np.asarray(after, dtype=float)
@@ -102,17 +115,29 @@ def summarize_fiducial_map(
                 )
             )
 
-    n_stddev = int(np.count_nonzero(stddev_mask))
-    stddev = (
-        float(
-            np.sqrt(
-                np.sum((inefficiency[stddev_mask] - mean) ** 2)
-                / (n_stddev - 1)
-            )
-        )
-        if n_stddev > 1
-        else 0.0
-    )
+    def _stddev(mask, center):
+        n = int(np.count_nonzero(mask))
+        return float(np.sqrt(np.sum((inefficiency[mask] - center) ** 2) / (n - 1))) if n > 1 else 0.0
+
+    stddev = _stddev(stddev_mask, mean)
+    if stddev_clip is not None:
+        while stddev > 0.0:
+            clipped = stddev_mask & (inefficiency - mean > stddev_clip * stddev)
+            if not np.any(clipped) or np.count_nonzero(stddev_mask & ~clipped) < 2:
+                break
+            for ix, iy in np.argwhere(clipped):
+                excluded_bins.append(
+                    ExcludedBin(
+                        eta=float((eta_edges[ix] + eta_edges[ix + 1]) / 2.0),
+                        phi=float((phi_edges[iy] + phi_edges[iy + 1]) / 2.0),
+                        inefficiency=float(inefficiency[ix, iy]),
+                    )
+                )
+            stddev_mask &= ~clipped
+            mean = float(after[stddev_mask].sum() / before[stddev_mask].sum())
+            stddev = _stddev(stddev_mask, mean)
+    deviation2 = (inefficiency[occupied] - mean) ** 2
+    top_bin_variance_share = float(deviation2.max() / deviation2.sum()) if deviation2.sum() > 0.0 else 0.0
     significance = np.zeros_like(after)
     if stddev > 0.0:
         significance[occupied] = (inefficiency[occupied] - mean) / stddev
@@ -139,7 +164,19 @@ def summarize_fiducial_map(
         significance=significance,
         hot_spots=tuple(hot_spots),
         stddev_excluded_bins=tuple(excluded_bins),
+        top_bin_variance_share=top_bin_variance_share,
     )
+
+
+# Largest share of the full-map variance one bin may carry before sigma is considered outlier-dominated. Normal
+# Run-3 maps are at 0.04-0.16; the 2024 electron map, where the legacy calculation found 5 hot spots instead of ~90,
+# is at 0.78.
+MAX_TOP_BIN_VARIANCE_SHARE = 0.5
+
+
+def outlier_dominated(summary: FiducialMapSummary, max_share: float = MAX_TOP_BIN_VARIANCE_SHARE) -> bool:
+    """True if the map found no hot spots or one bin dominates its variance (sigma inflated by outliers)."""
+    return not summary.hot_spots or summary.top_bin_variance_share > max_share
 
 
 def _walk_hists(value: Any):
@@ -256,6 +293,7 @@ def make_fiducial_map_from_outputs(
     category: str = "inclusive",
     threshold: float = 2.0,
     stddev_exclude_top: int = 0,
+    stddev_clip: float | None = None,
 ) -> tuple[FiducialMapSummary, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     before, eta_edges, phi_edges = summed_hist2d_counts_edges(
         outputs,
@@ -283,6 +321,7 @@ def make_fiducial_map_from_outputs(
             phi_edges,
             threshold,
             stddev_exclude_top=stddev_exclude_top,
+            stddev_clip=stddev_clip,
         ),
         before,
         after,

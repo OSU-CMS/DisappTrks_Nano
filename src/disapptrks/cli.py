@@ -42,6 +42,7 @@ from .fake_tracks import (
 )
 from .fiducial import (
     make_fiducial_map_from_outputs,
+    outlier_dominated,
     plot_fiducial_map_payload,
     write_fiducial_map_payload,
 )
@@ -1958,7 +1959,18 @@ def _make_fiducial_map_command(args: argparse.Namespace) -> int:
         category=args.category,
         threshold=args.threshold,
         stddev_exclude_top=args.stddev_exclude_top,
+        stddev_clip=args.stddev_clip,
     )
+    sigma_fix = args.stddev_exclude_top > 0 or args.stddev_clip is not None
+    if outlier_dominated(summary) and not sigma_fix and not args.allow_outlier_dominated:
+        print(
+            f"ERROR: {args.flavor} map looks outlier-dominated -- hot spots={len(summary.hot_spots)}, "
+            f"most deviant bin carries {summary.top_bin_variance_share:.0%} of the variance, "
+            f"stddev={summary.stddev_inefficiency:.6g}. Not writing {args.output_json}. Rerun with "
+            "--stddev-exclude-top N (as for the 2024 electron map, N=2) or --stddev-clip K, "
+            "or --allow-outlier-dominated to write it as is."
+        )
+        return 2
     write_fiducial_map_payload(
         summary,
         before=before,
@@ -1977,6 +1989,7 @@ def _make_fiducial_map_command(args: argparse.Namespace) -> int:
             "category": args.category,
             "threshold": args.threshold,
             "stddev_exclude_top": args.stddev_exclude_top,
+            "stddev_clip": args.stddev_clip,
             "input_files": [str(path) for path in args.files],
         },
     )
@@ -1989,6 +2002,8 @@ def _make_fiducial_map_command(args: argparse.Namespace) -> int:
         f"stddev={summary.stddev_inefficiency:.6g}, "
         f"hot spots={len(summary.hot_spots)}"
     )
+    if not summary.hot_spots:
+        print(f"WARNING: {args.flavor} map has no hot spots.")
     if summary.stddev_excluded_bins:
         print(
             "Excluded from stddev calculation: "
@@ -3008,6 +3023,26 @@ def main():
         help=(
             "Exclude the N highest-inefficiency occupied eta-phi bins from the "
             "stddev calculation only. Default 0 preserves legacy behavior."
+        ),
+    )
+    fiducial_map.add_argument(
+        "--stddev-clip",
+        type=float,
+        default=None,
+        help=(
+            "Iteratively drop bins more than this many standard deviations above "
+            "the mean from the stddev calculation (they are still tested). "
+            "Default off preserves legacy behavior. Not suited to muon maps: "
+            "most of their bins have zero inefficiency, and clipping can drive "
+            "the stddev to 0 and leave no hot spots."
+        ),
+    )
+    fiducial_map.add_argument(
+        "--allow-outlier-dominated",
+        action="store_true",
+        help=(
+            "Write the map even if it has no hot spots or one bin carries more "
+            "than half of the variance (otherwise the command stops)."
         ),
     )
     fiducial_map.add_argument(

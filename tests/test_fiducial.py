@@ -70,6 +70,64 @@ def test_fiducial_stddev_can_exclude_extreme_outlier():
     assert robust.stddev_inefficiency < legacy.stddev_inefficiency
 
 
+def test_fiducial_stddev_clip_finds_hot_spots_hidden_by_extreme_bins():
+    before = np.full((10, 10), 100.0)
+    after = np.ones((10, 10))
+    after[::2, :] = 2.0  # ordinary bin-to-bin spread
+    after[0, 1] = 20.0
+    after[9, 9] = 500.0
+    after[9, 8] = 400.0
+    edges = np.arange(11.0)
+
+    legacy = summarize_fiducial_map(before, after, edges, edges, threshold=2.0)
+    clipped = summarize_fiducial_map(before, after, edges, edges, threshold=2.0, stddev_clip=3.0)
+
+    legacy_spots = {(hot_spot.eta, hot_spot.phi) for hot_spot in legacy.hot_spots}
+    clipped_spots = {(hot_spot.eta, hot_spot.phi) for hot_spot in clipped.hot_spots}
+
+    # two extreme bins hide the moderate one from the legacy calculation; one exclude-top bin is not enough
+    assert (0.5, 1.5) not in legacy_spots
+    assert (0.5, 1.5) not in {
+        (h.eta, h.phi)
+        for h in summarize_fiducial_map(before, after, edges, edges, threshold=2.0, stddev_exclude_top=1).hot_spots
+    }
+    assert {(0.5, 1.5), (9.5, 9.5), (9.5, 8.5)} <= clipped_spots
+    assert {(b.eta, b.phi) for b in clipped.stddev_excluded_bins} >= {(9.5, 9.5), (9.5, 8.5)}
+    assert clipped.stddev_inefficiency < legacy.stddev_inefficiency
+    assert clipped.mean_inefficiency < legacy.mean_inefficiency
+    assert legacy.top_bin_variance_share > 0.5
+
+
+def test_outlier_dominated_flags_a_single_extreme_bin():
+    from disapptrks.fiducial import outlier_dominated
+
+    before = np.full((10, 10), 100.0)
+    after = np.ones((10, 10))
+    after[::2, :] = 2.0
+    after[0, 1:7] = 8.0  # several ordinary hot spots, as in real maps (top-bin share ~0.15)
+    edges = np.arange(11.0)
+    normal = summarize_fiducial_map(before, after, edges, edges, threshold=2.0)
+    after[9, 9] = 500.0
+    dominated = summarize_fiducial_map(before, after, edges, edges, threshold=2.0)
+
+    assert not outlier_dominated(normal)
+    assert outlier_dominated(dominated)
+    assert dominated.top_bin_variance_share > 0.5 > normal.top_bin_variance_share
+
+
+def test_fiducial_stddev_clip_leaves_a_uniform_map_alone():
+    before = np.full((10, 10), 100.0)
+    after = np.ones((10, 10))
+    after[3, 3] = 2.0
+    edges = np.arange(11.0)
+
+    legacy = summarize_fiducial_map(before, after, edges, edges, threshold=2.0)
+    clipped = summarize_fiducial_map(before, after, edges, edges, threshold=2.0, stddev_clip=20.0)
+
+    assert clipped.stddev_inefficiency == legacy.stddev_inefficiency
+    assert clipped.stddev_excluded_bins == ()
+
+
 def test_make_fiducial_map_from_outputs_sums_2d_histograms():
     eta_edges = np.array([-1.0, 0.0, 1.0])
     phi_edges = np.array([-2.0, 0.0, 2.0])
