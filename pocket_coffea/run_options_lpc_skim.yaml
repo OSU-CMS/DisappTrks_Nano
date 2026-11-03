@@ -2,10 +2,10 @@
 # Direct Condor is preferred upstream, but these conservative settings keep
 # each full-event export task below the normal worker memory/scratch limits.
 scaleout: 50
-chunksize: 25000
+chunksize: 100000
 cores-per-worker: 1
-mem-per-worker: "6GB"
-disk-per-worker: "10GB"
+mem-per-worker: "3GB"
+disk-per-worker: "3GB"
 queue: "workday"
 adaptive: false
 retries: 10

@@ -11,21 +11,21 @@
 #     --executor-custom-setup executors_lpc.py \
 #     --custom-run-options run_options_lpc_dask.yaml
 
-scaleout: 2
-chunksize: 50000
+scaleout: 200
+chunksize: 150000
 cores-per-worker: 1
 mem-per-worker: "4GB"
 disk-per-worker: "2GB"
 queue: "microcentury"
 adaptive: false
 retries: 3
-tree-reduction: 20
+tree-reduction: 10
 skip-bad-files: true
 
 # Let lpcjobqueue choose an LPC-safe scheduler port unless you need to pin one.
 dask-scheduler-port: null
 dask-scheduler-host: null
-dask-worker-start-timeout: 1800
+dask-worker-start-timeout: 18000
 
 # The lpcjobqueue bootstrap creates/activates the .env inside ./shell. Workers
 # should use that same virtualenv so lpcjobqueue, PocketCoffea, and this package
