@@ -1983,6 +1983,36 @@ def add_event_derived_fields(events):
     )
 
 
+def met_trigger_efficiency_muons(events, *, match_dr: float = 0.01):
+    """Tag muons of the MET-trigger efficiency, the legacy ``GrandOrDenominator`` (TriggerAnalysisSelections.py).
+
+    pT > 55 GeV, |eta| < 2.1, tight ID, tight PF isolation (pfRelIso04_all < 0.15) and no missing inner or
+    middle tracker hits. NanoAOD muons carry no hit pattern, so the hit cuts are taken from the muon's own
+    IsolatedTrack (dR < ``match_dr``). The muon stands in for the disappearing track: it can fire the IsoTrk50
+    leg, while MET-no-mu treats it as invisible.
+    """
+    import awkward as ak
+    import numpy as np
+
+    muons = events.Muon
+    muons = muons[(muons.pt > 55.0) & (abs(muons.eta) < 2.1) & muons.tightId & (muons.pfRelIso04_all < 0.15)]
+    tracks = events.IsoTrack
+    tracks = tracks[(tracks.missingInnerHits == 0) & (tracks.missingMiddleHits == 0)]
+    pairs = ak.cartesian({"mu": muons, "trk": tracks}, nested=True)
+    dr = np.hypot(pairs.mu.eta - pairs.trk.eta, delta_phi(pairs.mu.phi, pairs.trk.phi))
+    return muons[ak.any(dr < match_dr, axis=2)]
+
+
+def met_trigger_efficiency_denominator(events, analysis_event):
+    """Legacy ``GrandOrDenominator``: >= 1 tag muon (met_trigger_efficiency_muons) and a central leading jet
+    (cutLeadJetCentral: |eta| <= 2.4, or no jet at all). The single-muon trigger is the mode's skim."""
+    import awkward as ak
+
+    has_muon = ak.num(met_trigger_efficiency_muons(events)) >= 1
+    central = (abs(analysis_event.leadingJet_eta) <= 2.4) | (analysis_event.leadingJet_pt < 0)
+    return has_muon & central
+
+
 def isr_zmumu_muons(events):
     """Muons passing the legacy ZtoMuMu muon cuts (pT > 26, |eta| < 2.1, tight ID, tight PF isolation)."""
     muons = events.Muon

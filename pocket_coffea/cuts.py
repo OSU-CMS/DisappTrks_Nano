@@ -1041,6 +1041,17 @@ jet_jec_sanity = Cut(
     function=_jet_jec_sanity,
 )
 
+def _has_met_trigger_efficiency_denominator(events, params, **kwargs):
+    return events.METTriggerEfficiency["denominator"]
+
+
+has_met_trigger_efficiency_denominator = Cut(
+    name="has_met_trigger_efficiency_denominator",
+    params={},
+    function=_has_met_trigger_efficiency_denominator,
+)
+
+
 def _has_isr_zmumu(events, params, **kwargs):
     return events.ISRZMuMu["pass"]
 

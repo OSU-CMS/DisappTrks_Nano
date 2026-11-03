@@ -21,6 +21,7 @@ from disapptrks.selections import (
     met_no_mu_pf_only,
     met_no_mu_puppi,
     isr_zmumu_candidate,
+    met_trigger_efficiency_denominator,
     isr_zmumu_muons,
     add_isotrack_derived_fields,
     apply_hit_drop_correction,
@@ -2208,6 +2209,11 @@ class DisappTrksProcessor(BaseProcessorABC):
             # muons the MC muon ID/iso/trigger scale factors are evaluated on (Nano muons are pT-ordered)
             self.events["ISRZMuMuMuon"] = isr_zmumu_muons(self.events)
             self.events["ISRZMuMuLeadingMuon"] = self.events.ISRZMuMuMuon[:, :1]
+        if self._category_mode() == "met_trigger_efficiency":
+            # MET-trigger efficiency tag-muon sample (TRIG-02/03), Muon data and W->lnu MC.
+            self.events["METTriggerEfficiency"] = ak.zip(
+                {"denominator": met_trigger_efficiency_denominator(self.events, self.events.AnalysisEvent)}
+            )
         self.events["IsoTrackProbe"] = self.events.IsoTrack[
             base_probe_track_mask(self.events.IsoTrack)
         ]

@@ -76,6 +76,7 @@ from cuts import (
 from cuts import (
     has_isr_zmumu,
     has_isr_zmumu_jet,
+    has_met_trigger_efficiency_denominator,
     has_missing_hits_ctrl_track_no_inner_middle,
     has_missing_hits_muon_ctrl_track,
     has_muon_veto_os_mass10_pair,
@@ -423,6 +424,9 @@ def _skim_cuts_for_mode(mode, sample):
         return [met_hlt]
     if mode == "isr_zmumu":
         # data (Muon PD) and every background-MC sample alike
+        return [single_muon_hlt]
+    if mode == "met_trigger_efficiency":
+        # Muon PD data and W->lnu MC (legacy triggersSingleMu)
         return [single_muon_hlt]
     return []
 
@@ -825,6 +829,15 @@ elif category_mode == "isr_zmumu":
         # the legacy ZtoMuMuISRStudy phase space the ISR SF was measured in (adds the basic-selection jet cuts)
         "isr_zmumu_jet": [has_isr_zmumu_jet],
     }
+elif category_mode == "met_trigger_efficiency":
+    # MET-trigger efficiency (TRIG-02/03), Run 2 GrandOr method: in single-muon events with a tag muon, the
+    # fraction firing the signal MET trigger OR (met_hlt) vs MET-no-mu, in Muon data and W->lnu MC; the
+    # data/MC ratio is the signal trigger scale factor (legacy TriggerWeightProducer grandOrWeight).
+    selected_categories = {
+        "inclusive": common_categories["inclusive"],
+        "met_trigger_denominator": [has_met_trigger_efficiency_denominator],
+        "met_trigger_numerator": [has_met_trigger_efficiency_denominator, met_hlt],
+    }
 elif category_mode == "all":
     selected_categories = {
         **common_categories,
@@ -847,7 +860,7 @@ else:
         "tau_ele_pmiss_poffline, tau_pmiss_poffline, tau_trigger_probability, "
         "fake_tracks, high_purity_study, z_sideband_skim, muon_backgrounds, "
         "egamma_backgrounds, fiducial_maps, signal_acceptance, search_region, "
-        "missing_hits_control, isr_zmumu, all."
+        "missing_hits_control, isr_zmumu, met_trigger_efficiency, all."
     )
 
 selected_categories = {
@@ -954,6 +967,7 @@ def _variables_for_mode(mode, variables):
         "search_region": ("searchRegionYield",),
         "missing_hits_control": ("missingHits",),
         "isr_zmumu": ("isrZMuMu",),
+        "met_trigger_efficiency": ("metTriggerEfficiency",),
     }
     prefixes = prefixes_by_mode.get(mode)
     if prefixes is None:
@@ -1601,6 +1615,15 @@ if category_mode == "search_region":
             # requiring high purity, silently leaving this histogram empty.
             only_categories=[f"disappearing_track_{_layer}"],
         )
+met_trigger_efficiency_variables = {}
+if category_mode == "met_trigger_efficiency":
+    # Fine binning; the efficiency script merges bins.
+    met_trigger_efficiency_variables["metTriggerEfficiency_METNoMu"] = HistConf(
+        [Axis(coll="AnalysisEvent", field="METNoMu_pt", bins=200, start=0.0, stop=1000.0,
+              label=r"$p_{T}^{miss,\mu\!\!\!/}$ [GeV]")],
+        only_categories=["met_trigger_denominator", "met_trigger_numerator"],
+    )
+
 isr_zmumu_variables = {}
 if category_mode == "isr_zmumu":
     # Fine binning; the scale-factor script merges bins to the target statistical precision.
@@ -1995,7 +2018,7 @@ signal_pileup_bysample = (
 # background MC, as the legacy hits jobs did (applyPUReweighting=True,
 # no missing-hits correction). Pileup is MC-only, so data is unaffected.
 common_inclusive_weights = ["genWeight", "lumi", "XS"]
-if category_mode in ("missing_hits_control", "isr_zmumu"):
+if category_mode in ("missing_hits_control", "isr_zmumu", "met_trigger_efficiency"):
     common_inclusive_weights.append(pileup_weight_name)
 if category_mode == "isr_zmumu":
     # Run 2 weightsWithMuonSF in the Z->mumu ISR study: muon tight ID, tight PF isolation and IsoMu24
@@ -2086,6 +2109,7 @@ cfg = Configurator(
         **search_region_yield_variables,
         **missing_hits_control_variables,
         **isr_zmumu_variables,
+        **met_trigger_efficiency_variables,
         **(fake_sideband_track_variables if enable_fake_sideband_histograms else {}),
         "nIsoTrack": HistConf(
             [
